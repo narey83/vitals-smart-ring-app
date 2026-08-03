@@ -45,6 +45,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var sendButton: MaterialButton
     private lateinit var heartButton: MaterialButton
     private lateinit var oxygenButton: MaterialButton
+    private lateinit var pressureButton: MaterialButton
     private lateinit var readAllButton: MaterialButton
     private lateinit var commandInput: EditText
     private lateinit var frameCheck: CheckBox
@@ -105,8 +106,10 @@ class MainActivity : AppCompatActivity() {
         oxygenButton = findViewById(R.id.oxygenButton)
         readAllButton = findViewById(R.id.readAllButton)
         readAllButton.setOnClickListener { readEverything() }
+        pressureButton = findViewById(R.id.pressureButton)
         heartButton.setOnClickListener { measure(0x00, "heart rate") }
-        oxygenButton.setOnClickListener { measure(0x02, "SpO2") }
+        oxygenButton.setOnClickListener { measure(0x02, "blood oxygen") }
+        pressureButton.setOnClickListener { measure(0x01, "blood pressure") }
         sendButton.setOnClickListener { sendCommand() }
         scanButton.setOnClickListener { requestBluetoothThen { startScan() } }
         connectButton.setOnClickListener { requestBluetoothThen { connectToKnownRing() } }
@@ -426,9 +429,37 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun logNotification(characteristic: BluetoothGattCharacteristic, value: ByteArray) {
-        val reading = if (characteristic.uuid == HEART_RATE) decodeHeartRate(value) else null
+        val reading = if (characteristic.uuid == HEART_RATE) decodeHeartRate(value) else decodeFrame(value)
         append("${clock.format(Date())} NOTIFY ${shortUuid(characteristic.uuid)}: ${value.toHex()}" +
             (reading?.let { "   -> $it" } ?: "") + "\n")
+    }
+
+    /**
+     * Readings the ring pushes unprompted once a measurement is running. Each was confirmed by
+     * starting the matching measurement and watching the values move; see PROTOCOL.md.
+     */
+    private fun decodeFrame(value: ByteArray): String? {
+        if (value.size < 6) return null
+        val group = value[0].toInt() and 0xFF
+        val command = value[1].toInt() and 0xFF
+        val payload = value.copyOfRange(4, value.size - 2)
+        fun byte(i: Int) = payload[i].toInt() and 0xFF
+        return when {
+            group == 0x06 && command == 0x01 && payload.isNotEmpty() -> "${byte(0)} bpm"
+            group == 0x06 && command == 0x02 && payload.isNotEmpty() -> "${byte(0)}% blood oxygen"
+            // Bytes beyond the first two are left raw: their meaning is not established.
+            group == 0x06 && command == 0x03 && payload.size >= 2 -> "blood pressure ${byte(0)}/${byte(1)}"
+            group == 0x04 && command == 0x0E && payload.isNotEmpty() ->
+                "${measurementName(byte(0))} measurement finished"
+            else -> null
+        }
+    }
+
+    private fun measurementName(type: Int) = when (type) {
+        0x00 -> "heart rate"
+        0x01 -> "blood pressure"
+        0x02 -> "blood oxygen"
+        else -> "type $type"
     }
 
     /**

@@ -55,7 +55,7 @@
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_marginTop="12dp"
-        android:text="Measure heart rate now"
+        android:text="Heart rate"
         app:layout_constraintEnd_toStartOf="@id/oxygenButton"
         app:layout_constraintHorizontal_weight="1"
         app:layout_constraintStart_toStartOf="parent"
@@ -68,9 +68,21 @@
         android:layout_height="wrap_content"
         android:layout_marginStart="8dp"
         android:text="SpO2"
-        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintEnd_toStartOf="@id/pressureButton"
         app:layout_constraintHorizontal_weight="1"
         app:layout_constraintStart_toEndOf="@id/heartButton"
+        app:layout_constraintTop_toTopOf="@id/heartButton" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/pressureButton"
+        style="@style/Widget.Material3.Button.OutlinedButton"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:text="Pressure"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintHorizontal_weight="1"
+        app:layout_constraintStart_toEndOf="@id/oxygenButton"
         app:layout_constraintTop_toTopOf="@id/heartButton" />
 
     <com.google.android.material.button.MaterialButton

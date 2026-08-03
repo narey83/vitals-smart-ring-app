@@ -57,8 +57,7 @@ Written to `be940001`. Payload excludes the header and CRC, which are computed.
 | Group/cmd | Payload | Meaning | Status |
 |---|---|---|---|
 | `01 00` | `YY YY MM DD HH MM SS 00` | set clock, year uint16 LE | verified by matching wall clock |
-| `03 2F` | `01 00` | start heart-rate measurement | **verified** — LED lights, values flow |
-| `03 2F` | `01 02` | start SpO2 measurement | inferred, same shape |
+| `03 2F` | `01 <type>` | start measurement: type `00` heart rate, `01` blood pressure, `02` blood oxygen | **all three verified** |
 | `03 2F` | `00 00` | stop measurement | inferred |
 | `02 00` | `47 43` (`"GC"`) | `GetDeviceInfo`, 30-byte reply | captured, not decoded |
 | `02 01` | `47 46` (`"GF"`) | `GetDeviceSupportFunction`, 66-byte capability bitmap | captured, not decoded |
@@ -77,8 +76,17 @@ The full 329-command table, lifted from the vendor SDK, is in [COMMANDS.md](COMM
 | Group/cmd | Payload | Meaning | Status |
 |---|---|---|---|
 | `06 01` | `<bpm>` | live heart rate, one byte | **verified** — matches `2a37` reading for reading |
-| `04 0E` | `<type> 01` | measurement complete; app acknowledges with `04 0E` + `00` | **verified** |
-| `05 80` | varies | data push | captured, not decoded |
+| `06 02` | `<percent>` | live blood oxygen, one byte | **verified** — 93–99% observed |
+| `06 03` | `<systolic> <diastolic> …` | live blood pressure | **verified** — 115/75, 116/76 observed |
+| `04 0E` | `<type> 01` | measurement complete, `type` as above; app acknowledges with `04 0E` + `00` | **verified** |
+| `05 80` | varies | history block push | captured, not decoded |
+
+`06 03` carries a third byte tracking close to the systolic value (`4B`, `4C`, `4E`) and then
+eleven zero bytes. It is probably pulse, but that is unconfirmed, so this app prints only the
+two values it is sure of and leaves the rest visible as hex.
+
+Blood pressure from an optical ring is estimated from the pulse waveform rather than measured.
+Treat it as a trend, not a reading, and never as a medical device.
 
 ## Reading a heart rate — verified end to end
 
@@ -152,10 +160,10 @@ store rather than an unsupported query: nothing had been recorded yet.
 
 ## Not yet decoded
 
-- **SpO2 values.** `AppStartMeasurement` with type `02` starts it; the value encoding is
-  unconfirmed. `Real_UploadBloodOxygen` (`06 02`) is the frame to watch.
 - **The `05 80` block payload.** Shape is `01 00 06 00` then two varying bytes (`03 E8` here,
   `22 F8` in the vendor capture).
+- **The third byte of `06 03`**, and the 30-byte `GetDeviceInfo` and 40-byte
+  `GetPowerStatistics` replies beyond the battery percentage.
 - **The `ae01`/`ae02` handshake.** Magic header `FE DC BA`, then 16-byte encrypted blobs, then
   literal ASCII `"pass"`. Not required for anything above — the command channel answered our
   frames without it.
