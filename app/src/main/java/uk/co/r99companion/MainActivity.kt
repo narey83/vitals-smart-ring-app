@@ -10,6 +10,7 @@ import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothProfile
 import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanResult
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -20,18 +21,21 @@ import android.widget.ScrollView
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.app.AlertDialog
 import androidx.core.content.ContextCompat
 import com.google.android.material.button.MaterialButton
 import java.util.UUID
 
 class MainActivity : AppCompatActivity() {
     private lateinit var scanButton: MaterialButton
+    private lateinit var shareButton: MaterialButton
     private lateinit var status: TextView
     private lateinit var log: TextView
     private lateinit var logScroll: ScrollView
     private val handler = Handler(Looper.getMainLooper())
     private var gatt: BluetoothGatt? = null
     private var scanning = false
+    private val candidates = linkedMapOf<String, ScanResult>()
 
     private val permissions = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -46,10 +50,12 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         scanButton = findViewById(R.id.scanButton)
+        shareButton = findViewById(R.id.shareButton)
         status = findViewById(R.id.status)
         log = findViewById(R.id.log)
         logScroll = findViewById(R.id.logScroll)
         scanButton.setOnClickListener { requestBluetoothAndScan() }
+        shareButton.setOnClickListener { shareLog() }
         append("This app does not send health data anywhere.\n")
     }
 
@@ -67,11 +73,12 @@ class MainActivity : AppCompatActivity() {
         if (bluetooth == null || !bluetooth.isEnabled) { showStatus("Turn Bluetooth on, then try again."); return }
         if (scanning) return
         scanning = true
+        candidates.clear()
         scanButton.isEnabled = false
         showStatus("Scanning for nearby Bluetooth rings…")
         append("Scan started\n")
         bluetooth.bluetoothLeScanner.startScan(scanner)
-        handler.postDelayed({ stopScan("No ring found. Wake or charge it, then retry.") }, 15_000)
+        handler.postDelayed({ finishScan() }, 12_000)
     }
 
     @SuppressLint("MissingPermission")
@@ -83,18 +90,40 @@ class MainActivity : AppCompatActivity() {
         message?.let(::showStatus)
     }
 
+    private fun finishScan() {
+        if (!scanning) return
+        stopScan()
+        if (candidates.isEmpty()) {
+            showStatus("No ring found. Wake or charge it, then retry.")
+            return
+        }
+        val items = candidates.values.map { result ->
+            val name = result.device.name ?: result.scanRecord?.deviceName ?: "Unnamed BLE device"
+            "$name • ${result.device.address} • ${result.rssi} dBm"
+        }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("Choose your R99 ring")
+            .setItems(items) { _, which -> connect(candidates.values.elementAt(which)) }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
     private val scanner = object : ScanCallback() {
         @SuppressLint("MissingPermission")
         override fun onScanResult(callbackType: Int, result: ScanResult) {
             val name = result.device.name ?: result.scanRecord?.deviceName ?: "Unnamed BLE device"
-            // R99 variants are commonly advertised as R99, SmartHealth, or with no name.
+            candidates[result.device.address] = result
             append("Found $name (${result.device.address}), ${result.rssi} dBm\n")
-            stopScan()
-            showStatus("Connecting to $name…")
-            gatt?.close()
-            gatt = result.device.connectGatt(this@MainActivity, false, callback, BluetoothDeviceTransport.LE)
         }
         override fun onScanFailed(errorCode: Int) { stopScan("Scan failed (code $errorCode). Restart Bluetooth and try again.") }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun connect(result: ScanResult) {
+        val name = result.device.name ?: result.scanRecord?.deviceName ?: "Unnamed BLE device"
+        showStatus("Connecting to $name…")
+        gatt?.close()
+        gatt = result.device.connectGatt(this, false, callback, BluetoothDeviceTransport.LE)
     }
 
     private object BluetoothDeviceTransport { const val LE = 2 }
@@ -145,6 +174,14 @@ class MainActivity : AppCompatActivity() {
     private fun append(text: String) {
         log.append(text)
         logScroll.post { logScroll.fullScroll(View.FOCUS_DOWN) }
+    }
+
+    private fun shareLog() {
+        startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_SUBJECT, "R99 Companion Bluetooth protocol log")
+            putExtra(Intent.EXTRA_TEXT, log.text.toString())
+        }, "Share protocol log"))
     }
 
     override fun onDestroy() { gatt?.close(); super.onDestroy() }
