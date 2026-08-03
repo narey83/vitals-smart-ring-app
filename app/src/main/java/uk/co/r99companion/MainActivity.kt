@@ -34,6 +34,7 @@ import androidx.core.view.WindowInsetsCompat
 import com.google.android.material.button.MaterialButton
 import java.io.File
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import java.util.UUID
@@ -49,9 +50,20 @@ class MainActivity : AppCompatActivity() {
     private lateinit var readAllButton: MaterialButton
     private lateinit var commandInput: EditText
     private lateinit var frameCheck: CheckBox
+    private lateinit var monitorButton: MaterialButton
+    private lateinit var photoButton: MaterialButton
+    private lateinit var timeButton: MaterialButton
     private lateinit var status: TextView
     private lateinit var log: TextView
     private lateinit var logScroll: ScrollView
+    private lateinit var valueHeart: TextView
+    private lateinit var valueOxygen: TextView
+    private lateinit var valuePressure: TextView
+    private lateinit var valueSteps: TextView
+    private lateinit var valueBattery: TextView
+
+    private var monitoring = false
+    private var shutterMode = false
 
     /** Every characteristic the ring will accept a write on, keyed by a short label. */
     private val writable = linkedMapOf<String, BluetoothGattCharacteristic>()
@@ -107,6 +119,17 @@ class MainActivity : AppCompatActivity() {
         readAllButton = findViewById(R.id.readAllButton)
         readAllButton.setOnClickListener { readEverything() }
         pressureButton = findViewById(R.id.pressureButton)
+        monitorButton = findViewById(R.id.monitorButton)
+        photoButton = findViewById(R.id.photoButton)
+        timeButton = findViewById(R.id.timeButton)
+        valueHeart = findViewById(R.id.valueHeart)
+        valueOxygen = findViewById(R.id.valueOxygen)
+        valuePressure = findViewById(R.id.valuePressure)
+        valueSteps = findViewById(R.id.valueSteps)
+        valueBattery = findViewById(R.id.valueBattery)
+        monitorButton.setOnClickListener { setAutomaticMonitoring(!monitoring) }
+        photoButton.setOnClickListener { setShutterMode(!shutterMode) }
+        timeButton.setOnClickListener { setRingClock() }
         heartButton.setOnClickListener { measure(0x00, "heart rate") }
         oxygenButton.setOnClickListener { measure(0x02, "blood oxygen") }
         pressureButton.setOnClickListener { measure(0x01, "blood pressure") }
@@ -432,6 +455,96 @@ class MainActivity : AppCompatActivity() {
         val reading = if (characteristic.uuid == HEART_RATE) decodeHeartRate(value) else decodeFrame(value)
         append("${clock.format(Date())} NOTIFY ${shortUuid(characteristic.uuid)}: ${value.toHex()}" +
             (reading?.let { "   -> $it" } ?: "") + "\n")
+        updateReadings(characteristic, value)
+    }
+
+    /**
+     * Mirrors whatever the ring reports into the readings panel. Every field here was confirmed
+     * against the hardware or read out of the vendor SDK's own parser; see PROTOCOL.md.
+     */
+    private fun updateReadings(characteristic: BluetoothGattCharacteristic, value: ByteArray) {
+        fun at(source: ByteArray, i: Int) = source[i].toInt() and 0xFF
+        // fea1 is a bare 10-byte push with no frame around it.
+        if (shortUuid(characteristic.uuid) == "fea1" && value.size >= 9) {
+            val steps = at(value, 1) or (at(value, 2) shl 8) or (at(value, 3) shl 16)
+            val distance = at(value, 4) or (at(value, 5) shl 8) or (at(value, 6) shl 16)
+            val calories = at(value, 7) or (at(value, 8) shl 8)
+            valueSteps.text = "Steps — $steps, distance $distance, calories $calories"
+            return
+        }
+        if (value.size < 6) return
+        val group = at(value, 0)
+        val command = at(value, 1)
+        val payload = value.copyOfRange(4, value.size - 2)
+        fun byte(i: Int) = at(payload, i)
+        when {
+            group == 0x06 && command == 0x01 && payload.isNotEmpty() ->
+                valueHeart.text = "Heart rate — ${byte(0)} bpm"
+            group == 0x06 && command == 0x02 && payload.isNotEmpty() ->
+                valueOxygen.text = "Blood oxygen — ${byte(0)}%"
+            group == 0x06 && command == 0x03 && payload.size >= 2 ->
+                valuePressure.text = "Blood pressure — ${byte(0)}/${byte(1)} (estimated)"
+            // GetDeviceInfo: the SDK reads battery state at [4] and the percentage at [5].
+            group == 0x02 && command == 0x00 && payload.size >= 6 ->
+                valueBattery.text = "Battery — ${byte(5)}%" +
+                    if (byte(4) != 0) " (charging)" else ""
+            group == 0x02 && command == 0x0C && payload.size >= 8 -> {
+                val steps = byte(0) or (byte(1) shl 8) or (byte(2) shl 16)
+                val calories = byte(3) or (byte(4) shl 8)
+                val distance = byte(5) or (byte(6) shl 8) or (byte(7) shl 16)
+                valueSteps.text = "Steps — $steps, distance $distance, calories $calories"
+            }
+        }
+    }
+
+    /**
+     * Turns on the ring's own periodic sampling. Without this the ring measures only when asked,
+     * which is why its stored history comes back empty.
+     */
+    private fun setAutomaticMonitoring(on: Boolean) {
+        val flag = if (on) 0x01.toByte() else 0x00.toByte()
+        val minutes = 0x05.toByte()
+        if (!send(byteArrayOf(0x01, 0x0C, flag, minutes), "heart-rate monitoring")) return
+        send(byteArrayOf(0x01, 0x26, flag, minutes), "blood-oxygen monitoring")
+        monitoring = on
+        monitorButton.text = "Automatic monitoring: ${if (on) "on, every 5 min" else "off"}"
+    }
+
+    private fun setShutterMode(on: Boolean) {
+        if (!send(byteArrayOf(0x03, 0x0E, if (on) 0x01 else 0x00), "shutter mode")) return
+        shutterMode = on
+        photoButton.text = "Shutter mode: ${if (on) "on — shake the ring" else "off"}"
+    }
+
+    /** The ring keeps its own clock, and its history is stamped with it. */
+    private fun setRingClock() {
+        val now = Calendar.getInstance()
+        val year = now.get(Calendar.YEAR)
+        send(byteArrayOf(
+            0x01, 0x00,
+            year.toByte(), (year shr 8).toByte(),
+            (now.get(Calendar.MONTH) + 1).toByte(),
+            now.get(Calendar.DAY_OF_MONTH).toByte(),
+            now.get(Calendar.HOUR_OF_DAY).toByte(),
+            now.get(Calendar.MINUTE).toByte(),
+            now.get(Calendar.SECOND).toByte(),
+            0x00
+        ), "clock")
+    }
+
+    /** Frames and queues one command, reporting whether the radio accepted it. */
+    private fun send(bytes: ByteArray, label: String): Boolean {
+        val active = gatt
+        val channel = writable[COMMAND_CHANNEL]
+        if (active == null || channel == null) { showStatus("Connect to the ring first."); return false }
+        val frame = asFrame(bytes)
+        enqueue {
+            val sent = write(active, channel, frame)
+            append("\n${clock.format(Date())} SET $label: ${frame.toHex()}" +
+                "${if (sent) "" else "  [REFUSED by radio]"}\n")
+            sent
+        }
+        return true
     }
 
     /**

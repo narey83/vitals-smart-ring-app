@@ -61,8 +61,20 @@ Written to `be940001`. Payload excludes the header and CRC, which are computed.
 | `03 2F` | `00 00` | stop measurement | inferred |
 | `02 00` | `47 43` (`"GC"`) | `GetDeviceInfo`, 30-byte reply | captured, not decoded |
 | `02 01` | `47 46` (`"GF"`) | `GetDeviceSupportFunction`, 66-byte capability bitmap | captured, not decoded |
-| `02 0C` | none | `GetNowStep` — today's steps, distance, calories | **verified** |
-| `02 25` | none | `GetPowerStatistics` — includes battery percentage | **verified** |
+| `02 0C` | none | `GetNowStep` — steps `[0..2]`, calories `[3..4]`, distance `[5..7]`, all LE | **verified** |
+| `02 25` | none | `GetPowerStatistics`, 38-byte reply | captured, not decoded |
+| `01 0C` | `<on> <minutes>` | `settingHeartMonitor` — periodic heart rate | **verified**, accepted |
+| `01 26` | `<on> <minutes>` | `settingBloodOxygenModeMonitor` — periodic SpO2 | **verified**, accepted |
+| `03 0E` | `<on>` | `AppControlTakePhoto` — arm the shutter gesture | **verified** |
+| `01 02` | `<type> <goal uint32 LE> <2 more>` | `settingGoal` | from the SDK, untested |
+| `01 03` | 4 bytes | `settingUserInfo` | from the SDK, untested |
+
+Battery is **not** in `GetPowerStatistics`. The SDK reads it from the `GetDeviceInfo` (`02 00`)
+reply: payload `[4]` is `deviceBatteryState` and `[5]` is `deviceBatteryValue`, which gives 98%
+on this ring. The `64` byte in `GetPowerStatistics` is something else.
+
+Without `settingHeartMonitor` the ring measures only when asked, which is why its history reads
+back empty.
 | `05 02`/`04`/`06`/`1A` | none | stored history: sport, sleep, heart, blood oxygen | verified as reachable; all returned zero records |
 
 The two literal payloads `"GC"` and `"GF"` are copied from the vendor app. Queries the ring does
