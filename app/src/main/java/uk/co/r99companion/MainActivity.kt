@@ -451,6 +451,9 @@ class MainActivity : AppCompatActivity() {
             group == 0x06 && command == 0x03 && payload.size >= 2 -> "blood pressure ${byte(0)}/${byte(1)}"
             group == 0x04 && command == 0x0E && payload.isNotEmpty() ->
                 "${measurementName(byte(0))} measurement finished"
+            // The ring is not a Bluetooth keyboard: this reaches whichever app holds the
+            // connection, so no other camera app can ever see it.
+            group == 0x04 && command == 0x03 -> "shutter pressed on the ring"
             else -> null
         }
     }
