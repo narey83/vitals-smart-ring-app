@@ -117,12 +117,45 @@ the vendor app). Vendor images are served from `https://staticpage.ycaviation.co
 is upload-only, and nRF52 parts ship with readback protection that also blocks SWD. Obtaining
 the vendor's image from their server is possible; extracting the running image is not.
 
+## What this ring actually supports — verified
+
+`GetDeviceSupportFunction` (`02 01`, payload `"GF"`) returns a 60-byte bitmap. The vendor SDK
+decodes it in `DataUnpack.saveDeviceSupportFunctionData`, one flag per bit, most significant
+bit first, which maps 174 named flags onto the payload. Applied to this ring's reply
+(`F9 09 00 00 00 00 0C D8 10 04 01 B2 B6 00 40 0F …`), 31 are set:
+
+**Present:** StepCount, Sleep, RealData, FirmwareUpdate, HeartRate, Blood, BloodOxygen,
+MoreSport, FactorySetting, BloodLevel, SkinColor, WeChatSport, TodayWeather, TomorrowWeather,
+BloodPressureCalibration, ManualTakePhoto, RealExerciseData, TestHeart, TestBlood, TestSpo2,
+WatchScreenBrightness, PauseExercise, BatteryInfoUpload, and the sport modes MountainClimbing,
+Running, Riding, RopeSkipping, Walking, Yoga, Golf, Dance.
+
+**Absent** — worth stating plainly, because rings in this class are often sold as though they
+do these: HRV, ECG, body temperature, respiratory rate, stress/pressure, blood sugar, blood
+fat, VO2 max, and every associated alarm. Those bits are zero. No protocol work will produce
+that data; the firmware does not implement it.
+
+## Stored history — verified
+
+History queries take no arguments. The reply opens with a uint16 LE record count, and when
+there is data the ring follows up by pushing `Health_HistoryBlock` (`05 80`) unprompted:
+
+```
+--> 05 06 06 00 83 20                                   Health_HistoryHeart
+<-- 05 06 10 00 | 01 00 | 01 00 00 00 06 00 00 00       count = 1, then the record
+<-- 05 80 0C 00 | 01 00 06 00 03 E8                     the block itself
+```
+
+`Health_HistorySport` and `Health_HistorySleep` answered `00 00` — zero records — on both this
+app and the vendor's. The ring reports `Sleep` as a supported feature, so this is an empty
+store rather than an unsupported query: nothing had been recorded yet.
+
 ## Not yet decoded
 
 - **SpO2 values.** `AppStartMeasurement` with type `02` starts it; the value encoding is
   unconfirmed. `Real_UploadBloodOxygen` (`06 02`) is the frame to watch.
-- **The capability bitmap** returned by `GetDeviceSupportFunction` — this is what would say
-  definitively which features the firmware implements.
+- **The `05 80` block payload.** Shape is `01 00 06 00` then two varying bytes (`03 E8` here,
+  `22 F8` in the vendor capture).
 - **The `ae01`/`ae02` handshake.** Magic header `FE DC BA`, then 16-byte encrypted blobs, then
   literal ASCII `"pass"`. Not required for anything above — the command channel answered our
   frames without it.
