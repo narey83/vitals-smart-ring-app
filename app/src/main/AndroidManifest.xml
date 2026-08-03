@@ -1,11 +1,18 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
+    <!-- Android 12 and newer -->
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <!-- Android 8 to 11 refuse to scan or connect without these -->
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
+    <!-- Pre-12 Android treats a BLE scan as a location request; fine location is the one
+         that actually returns results, but it must be paired with coarse. -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" android:maxSdkVersion="30" />
     <application
         android:allowBackup="true"
-        android:label="R99 Companion"
+        android:label="@string/app_name"
         android:theme="@style/Theme.R99Companion">
         <activity android:name=".MainActivity" android:exported="true">
             <intent-filter>

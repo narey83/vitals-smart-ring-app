@@ -5,20 +5,34 @@ A free, local-first starter companion for the generic **R99 / SmartHealth** heal
 ## What this first version does
 
 - asks only for Bluetooth permissions;
-- scans for nearby Bluetooth Low Energy devices;
+- scans for nearby Bluetooth Low Energy devices, closest first;
 - connects to the selected result;
-- shows the ring's Bluetooth GATT services, characteristics, and readable bytes on screen.
+- shows the ring's Bluetooth GATT services, characteristics, and readable bytes on screen;
+- subscribes to every notifying characteristic, so live packets the ring pushes are logged with timestamps.
 
-The final point is intentional. R99 firmware does not publish a documented data protocol. The service map and byte log are the evidence needed to build the decoder for heart rate, SpO2, sleep, steps, and battery without relying on SmartHealth or Ringlo.
+The last two points are the purpose. R99 firmware does not publish a documented data protocol. The service map, the byte log, and the timing of the pushed packets are the evidence needed to build the decoder for heart rate, SpO2, sleep, steps, and battery without relying on SmartHealth or Ringlo.
+
+## Build it
+
+Either route produces the same APK.
+
+**Android Studio:** install the current stable release, choose **Open**, select this folder, and accept the SDK components it offers.
+
+**Command line:** needs a JDK 17 and an Android SDK (platform 35, build-tools 35.0.0). Point Gradle at the SDK, then build:
+
+```bash
+echo "sdk.dir=/path/to/android-sdk" > local.properties
+./gradlew assembleDebug          # app/build/outputs/apk/debug/app-debug.apk
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+```
 
 ## Use it
 
-1. Install the current stable Android Studio, then select **Open** and choose this folder.
-2. Let Android Studio install the Android SDK/Gradle components it offers.
-3. Connect an Android phone (developer mode + USB debugging) or choose a real Android device; Bluetooth LE cannot be properly tested in the emulator.
-4. Run the app. Charge the R99 and keep it beside the phone.
-5. Tap **Find my R99 ring** and grant Bluetooth access.
-6. When it connects, copy or screenshot the **Bluetooth protocol log** and share it here.
+1. Connect a real Android phone with developer mode and USB debugging on. Bluetooth LE cannot be properly tested in the emulator.
+2. Run the app. Charge the R99 and keep it beside the phone.
+3. Tap **Find my R99 ring** and grant Bluetooth access.
+4. Pick your ring from the list; the strongest signal is normally the one on your hand.
+5. Leave it connected for a minute so pushed packets accumulate, then use **Share protocol log**.
 
 ## Important limits
 
