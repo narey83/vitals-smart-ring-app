@@ -112,6 +112,17 @@ two values it is sure of and leaves the rest visible as hex.
 Blood pressure from an optical ring is estimated from the pulse waveform rather than measured.
 Treat it as a trend, not a reading, and never as a medical device.
 
+**Automatic sampling reports on `2a37` alone — verified.** The periodic heart readings that
+`settingHeartMonitor` (`01 0C`) turns on arrive as bare two-byte SIG frames such as `04 52`
+(flags `04`, 82 bpm) and never as `06 01`. The `06 nn` frames above belong to a measurement the
+app started; a client that listens only for those sees nothing at all between taps, however
+faithfully the ring is sampling. Anything collecting in the background has to subscribe to
+`2a37` and write down what arrives there.
+
+Automatic blood oxygen and pressure remain unaccounted for: neither `06 02`/`06 03` nor any
+other recognisable frame turns up at the interval. They may be reaching the ring's stored
+history instead, which is still undecoded.
+
 ## Reading a heart rate — verified end to end
 
 1. Connect to the ring (it is paired, so it does not advertise; connect by address).

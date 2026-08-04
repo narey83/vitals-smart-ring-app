@@ -171,6 +171,17 @@ class CollectorService : Service() {
             }
             return
         }
+        // Where the ring's own periodic sampling lands: it reports automatic heart readings on
+        // the standard SIG characteristic, not as an 06 01 frame. Dropping these was why the
+        // fifteen minute checks never appeared in the app.
+        if (characteristic.uuid == Ring.HEART_RATE) {
+            Ring.readStandardHeartRate(value)?.let {
+                history.record("heart", it)
+                latest = "$it bpm"
+                refresh()
+            }
+            return
+        }
         when (val reading = Ring.read(value)) {
             is Ring.Reading.Heart -> {
                 history.record("heart", reading.bpm)
@@ -187,7 +198,13 @@ class CollectorService : Service() {
                 latest = "${reading.systolic}/${reading.diastolic}"
                 refresh()
             }
-            else -> Unit
+            // ponytail: heart arrives on the SIG characteristic above, but automatic blood
+            // oxygen and pressure still show up nowhere. Log what else the ring pushes while
+            // unattended; drop this once those two are identified as well. Frames this app
+            // knows but does not collect, such as the battery reply, are not the mystery.
+            else -> if (BuildConfig.DEBUG && reading == null) {
+                android.util.Log.d("r99", "unrecognised push ${value.joinToString("") { "%02X".format(it) }}")
+            }
         }
     }
 
