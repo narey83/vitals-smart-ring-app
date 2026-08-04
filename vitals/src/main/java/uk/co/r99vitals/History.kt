@@ -17,8 +17,10 @@ import java.util.Locale
  * A file of one reading per line rather than a database: the volume is a few readings an hour,
  * it is trivially exportable, and it can be read by anything.
  */
-class History(context: Context) {
-    private val file = File(context.filesDir, "readings.csv")
+class History(private val file: File) {
+
+    constructor(context: Context) : this(File(context.filesDir, "readings.csv"))
+
     private val stamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.UK)
 
     /**
@@ -37,6 +39,20 @@ class History(context: Context) {
     private companion object {
         /** Readings closer together than this belong to the same measurement. */
         const val BURST = 90_000L
+
+        /**
+         * Held across the whole process while the file is rewritten.
+         *
+         * Recording is read, change, write back — and there are two writers: the activity
+         * records what arrives while it is open, the collector service records what arrives
+         * when it is not, and both hold a connection at once with their callbacks on different
+         * threads. Without this, one could read the file while the other was midway through
+         * replacing it, see nothing there, and write back a file containing only its own
+         * reading. That is not a theoretical race: it emptied a day of readings.
+         *
+         * The lock lives on the companion because the two writers are separate instances.
+         */
+        val writing = Any()
     }
 
     /**
@@ -49,27 +65,36 @@ class History(context: Context) {
      * settled rather than where it started.
      */
     fun record(kind: String, value: Int, extra: Int = 0, burst: Long = BURST, manual: Boolean = false) {
-        runCatching {
-            val now = System.currentTimeMillis()
-            val lines = if (file.exists()) file.readLines().filter { it.isNotBlank() }.toMutableList()
-                else mutableListOf()
-            // Search back for the last entry of this kind, not merely the last line: the ring
-            // interleaves activity frames between readings, so two heart readings are never
-            // adjacent and comparing against the previous line would never match.
-            val previous = lines.indexOfLast { it.split(",").getOrNull(1) == kind }
-            val within = previous >= 0 &&
-                now - (lines[previous].split(",")[0].toLongOrNull() ?: 0L) < burst
-            // Keep the burst's original timestamp when replacing. Updating it to now would slide
-            // the window forward with every reading, so a continuous stream would collapse into a
-            // single row that is rewritten for ever and never allowed to start a new one.
-            if (within) {
-                val began = lines[previous].split(",")[0]
-                // A burst that began with a tap stays the wearer's reading even as it settles.
-                val asked = manual || lines[previous].split(",").getOrNull(4) == "1"
-                lines[previous] = "$began,$kind,$value,$extra,${if (asked) 1 else 0}"
+        synchronized(writing) {
+            runCatching {
+                val now = System.currentTimeMillis()
+                val lines = if (file.exists()) file.readLines().filter { it.isNotBlank() }.toMutableList()
+                    else mutableListOf()
+                // Search back for the last entry of this kind, not merely the last line: the ring
+                // interleaves activity frames between readings, so two heart readings are never
+                // adjacent and comparing against the previous line would never match.
+                val previous = lines.indexOfLast { it.split(",").getOrNull(1) == kind }
+                val within = previous >= 0 &&
+                    now - (lines[previous].split(",")[0].toLongOrNull() ?: 0L) < burst
+                // Keep the burst's original timestamp when replacing. Updating it to now would slide
+                // the window forward with every reading, so a continuous stream would collapse into a
+                // single row that is rewritten for ever and never allowed to start a new one.
+                if (within) {
+                    val began = lines[previous].split(",")[0]
+                    // A burst that began with a tap stays the wearer's reading even as it settles.
+                    val asked = manual || lines[previous].split(",").getOrNull(4) == "1"
+                    lines[previous] = "$began,$kind,$value,$extra,${if (asked) 1 else 0}"
+                }
+                else lines.add("$now,$kind,$value,$extra,${if (manual) 1 else 0}")
+                // Written beside the real file and moved into place, so that being killed
+                // partway through leaves the old readings rather than half of the new ones.
+                val pending = File(file.parentFile, file.name + ".writing")
+                pending.writeText(lines.joinToString("\n", postfix = "\n"))
+                if (!pending.renameTo(file)) {
+                    file.writeText(pending.readText())
+                    pending.delete()
+                }
             }
-            else lines.add("$now,$kind,$value,$extra,${if (manual) 1 else 0}")
-            file.writeText(lines.joinToString("\n", postfix = "\n"))
         }
     }
 

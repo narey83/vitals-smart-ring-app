@@ -12,6 +12,14 @@ import kotlin.math.roundToInt
  * Round trips are stable to within a unit, which is the best that whole feet and inches allow:
  * 175 cm reads as 5'9" and 5'9" stores as 175 cm.
  */
+/**
+ * How weight is read, which is its own question.
+ *
+ * Someone can want their height in feet and their weight in kilos, and in Britain often does,
+ * so this is not tied to the metric switch that governs height and distance.
+ */
+enum class WeightUnit { Kg, Stones, Pounds }
+
 object Units {
 
     private const val CM_PER_INCH = 2.54
@@ -55,10 +63,10 @@ object Units {
         else -> "%.2f mi".format(metres / 1609.344)
     }
 
-    fun weight(kg: Int, metric: Boolean, stones: Boolean = false): String = when {
-        metric -> "$kg kg"
-        stones -> kgToStones(kg).let { (st, lb) -> "$st st $lb lb" }
-        else -> "${kgToLb(kg)} lb"
+    fun weight(kg: Int, unit: WeightUnit): String = when (unit) {
+        WeightUnit.Kg -> "$kg kg"
+        WeightUnit.Stones -> kgToStones(kg).let { (st, lb) -> "$st st $lb lb" }
+        WeightUnit.Pounds -> "${kgToLb(kg)} lb"
     }
 
     fun height(cm: Int, metric: Boolean): String =

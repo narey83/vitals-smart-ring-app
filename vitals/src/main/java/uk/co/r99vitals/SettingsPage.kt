@@ -85,8 +85,8 @@ data class Profile(
     val weightKg: Int = 75,
     /** Which units to show. Height and weight are stored in metric either way. */
     val metric: Boolean = true,
-    /** Weight in stones and pounds rather than pounds alone. Imperial only; kg ignores it. */
-    val stones: Boolean = true
+    /** Read separately from [metric]: feet and inches alongside kilos is a real preference. */
+    val weightUnit: WeightUnit = WeightUnit.Stones
 ) {
     companion object {
         fun read(prefs: SharedPreferences) = Profile(
@@ -97,7 +97,15 @@ data class Profile(
             heightCm = prefs.getInt("height", 175),
             weightKg = prefs.getInt("weight", 75),
             metric = prefs.getBoolean("metric", true),
-            stones = prefs.getBoolean("stones", true)
+            weightUnit = prefs.getString("weightUnit", null)
+                ?.let { name -> runCatching { WeightUnit.valueOf(name) }.getOrNull() }
+            // Profiles written before weight had its own setting are carried across from what
+            // the metric and stones switches meant between them.
+                ?: when {
+                    prefs.getBoolean("metric", true) -> WeightUnit.Kg
+                    prefs.getBoolean("stones", true) -> WeightUnit.Stones
+                    else -> WeightUnit.Pounds
+                }
         )
     }
 
@@ -122,7 +130,7 @@ data class Profile(
         .putInt("height", heightCm)
         .putInt("weight", weightKg)
         .putBoolean("metric", metric)
-        .putBoolean("stones", stones)
+        .putString("weightUnit", weightUnit.name)
         .apply()
 }
 
@@ -206,7 +214,7 @@ fun SettingsPage(
                 editing = Editing.Height
             }
             Divider()
-            Value("Weight", Units.weight(profile.weightKg, profile.metric, profile.stones)) {
+            Value("Weight", Units.weight(profile.weightKg, profile.weightUnit)) {
                 editing = Editing.Weight
             }
         }
@@ -502,20 +510,24 @@ private fun WheelSheet(
                         }
                     }
                 }
-                Editing.Weight -> if (profile.metric) {
-                    Picker(profile.weightKg, 30..200, { "$it kg" }, Modifier.width(160.dp)) {
-                        onProfile(profile.copy(weightKg = it))
-                    }
-                } else {
-                    // Stones or plain pounds is a choice about weight alone, so it is made here
-                    // rather than in the Units row, which also governs height and distance.
+                Editing.Weight -> {
+                    // All three offered together, whatever Units says: weight is the one people
+                    // are most particular about, and it does not follow from height.
                     Row {
-                        Toggle("Stones", profile.stones) { onProfile(profile.copy(stones = true)) }
+                        Toggle("Kilos", profile.weightUnit == WeightUnit.Kg) {
+                            onProfile(profile.copy(weightUnit = WeightUnit.Kg))
+                        }
                         Spacer(Modifier.width(8.dp))
-                        Toggle("Pounds", !profile.stones) { onProfile(profile.copy(stones = false)) }
+                        Toggle("Stones", profile.weightUnit == WeightUnit.Stones) {
+                            onProfile(profile.copy(weightUnit = WeightUnit.Stones))
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        Toggle("Pounds", profile.weightUnit == WeightUnit.Pounds) {
+                            onProfile(profile.copy(weightUnit = WeightUnit.Pounds))
+                        }
                     }
                     Spacer(Modifier.height(20.dp))
-                    if (profile.stones) {
+                    if (profile.weightUnit == WeightUnit.Stones) {
                         Row(horizontalArrangement = Arrangement.Center) {
                             Picker(stone, 4..31, { "$it st" }, Modifier.width(110.dp)) {
                                 stone = it
@@ -527,9 +539,13 @@ private fun WheelSheet(
                                 onProfile(profile.copy(weightKg = Units.stonesToKg(stone, it)))
                             }
                         }
-                    } else {
+                    } else if (profile.weightUnit == WeightUnit.Pounds) {
                         Picker(Units.kgToLb(profile.weightKg), 66..440, { "$it lb" }, Modifier.width(160.dp)) {
                             onProfile(profile.copy(weightKg = Units.lbToKg(it)))
+                        }
+                    } else {
+                        Picker(profile.weightKg, 30..200, { "$it kg" }, Modifier.width(160.dp)) {
+                            onProfile(profile.copy(weightKg = it))
                         }
                     }
                 }

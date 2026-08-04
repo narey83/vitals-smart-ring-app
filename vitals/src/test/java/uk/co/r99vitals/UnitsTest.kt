@@ -58,9 +58,9 @@ class UnitsTest {
         // 75 kg is 165 lb, which is 11 stone 11.
         assertEquals(11 to 11, Units.kgToStones(75))
         assertEquals(75, Units.stonesToKg(11, 11))
-        assertEquals("11 st 11 lb", Units.weight(75, metric = false, stones = true))
-        assertEquals("165 lb", Units.weight(75, metric = false))
-        assertEquals("75 kg", Units.weight(75, metric = true, stones = true))
+        assertEquals("11 st 11 lb", Units.weight(75, WeightUnit.Stones))
+        assertEquals("165 lb", Units.weight(75, WeightUnit.Pounds))
+        assertEquals("75 kg", Units.weight(75, WeightUnit.Kg))
     }
 
     @Test fun `distance reads in whichever units are wanted`() {
