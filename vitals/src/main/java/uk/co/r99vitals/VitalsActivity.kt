@@ -11,6 +11,10 @@ import android.bluetooth.BluetoothGattDescriptor
 import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothProfile
 import android.bluetooth.BluetoothStatusCodes
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -57,6 +61,26 @@ class VitalsActivity : AppCompatActivity() {
     /** Which measurement the round-robin is on, so one tap reads all three in turn. */
     private var sweep = emptyList<Int>()
 
+    /**
+     * Debug-only control over adb, so the app can be driven without tapping:
+     *
+     *   adb shell am broadcast -a uk.co.r99vitals.RUN --es do heart
+     *
+     * Registered only in debug builds. A released Vitals has no exported receiver at all.
+     */
+    private val overAdb = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            runOnUiThread {
+                when (intent?.getStringExtra("do")) {
+                    "connect" -> askThenConnect()
+                    "heart" -> measure(Ring.HEART, "heart rate")
+                    "oxygen" -> measure(Ring.OXYGEN, "blood oxygen")
+                    "pressure" -> measure(Ring.PRESSURE, "blood pressure")
+                }
+            }
+        }
+    }
+
     private val adapter: BluetoothAdapter?
         get() = (getSystemService(BLUETOOTH_SERVICE) as BluetoothManager).adapter
 
@@ -86,6 +110,11 @@ class VitalsActivity : AppCompatActivity() {
         pressureButton.setOnClickListener { measure(Ring.PRESSURE, "blood pressure") }
         historyButton.setOnClickListener { showHistory() }
         showTrend()
+        if (BuildConfig.DEBUG) {
+            ContextCompat.registerReceiver(
+                this, overAdb, IntentFilter("uk.co.r99vitals.RUN"), ContextCompat.RECEIVER_EXPORTED
+            )
+        }
         askThenConnect()
     }
 
@@ -297,6 +326,7 @@ class VitalsActivity : AppCompatActivity() {
 
     @SuppressLint("MissingPermission")
     override fun onDestroy() {
+        runCatching { unregisterReceiver(overAdb) }
         handler.removeCallbacksAndMessages(null)
         gatt?.disconnect()
         gatt?.close()

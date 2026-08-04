@@ -223,9 +223,12 @@ class MainActivity : AppCompatActivity() {
         log.text = runCatching { logFile.readText().takeLast(20_000) }.getOrDefault("")
         append("\n=== session ${sessionClock.format(Date())} ===\n")
         append("This app does not send health data anywhere.\n")
-        ContextCompat.registerReceiver(
-            this, overAdb, IntentFilter("uk.co.r99companion.RUN"), ContextCompat.RECEIVER_EXPORTED
-        )
+        // Debug builds only: an exported receiver in a shipped app is an open door.
+        if (BuildConfig.DEBUG) {
+            ContextCompat.registerReceiver(
+                this, overAdb, IntentFilter("uk.co.r99companion.RUN"), ContextCompat.RECEIVER_EXPORTED
+            )
+        }
     }
 
     /**
