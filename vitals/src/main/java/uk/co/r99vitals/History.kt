@@ -40,11 +40,15 @@ class History(context: Context) {
     fun record(kind: String, value: Int, extra: Int = 0) {
         runCatching {
             val now = System.currentTimeMillis()
-            val lines = if (file.exists()) file.readLines().toMutableList() else mutableListOf()
-            val previous = lines.lastOrNull()?.split(",")
-            val sameBurst = previous != null && previous.size >= 4 &&
-                previous[1] == kind && now - (previous[0].toLongOrNull() ?: 0L) < BURST
-            if (sameBurst) lines[lines.lastIndex] = "$now,$kind,$value,$extra"
+            val lines = if (file.exists()) file.readLines().filter { it.isNotBlank() }.toMutableList()
+                else mutableListOf()
+            // Search back for the last entry of this kind, not merely the last line: the ring
+            // interleaves activity frames between readings, so two heart readings are never
+            // adjacent and comparing against the previous line would never match.
+            val previous = lines.indexOfLast { it.split(",").getOrNull(1) == kind }
+            val within = previous >= 0 &&
+                now - (lines[previous].split(",")[0].toLongOrNull() ?: 0L) < BURST
+            if (within) lines[previous] = "$now,$kind,$value,$extra"
             else lines.add("$now,$kind,$value,$extra")
             file.writeText(lines.joinToString("\n", postfix = "\n"))
         }
