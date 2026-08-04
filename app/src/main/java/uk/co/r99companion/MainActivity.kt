@@ -694,9 +694,7 @@ class MainActivity : AppCompatActivity() {
             group == 0x02 && command == 0x00 && payload.size >= 6 -> {
                 valueBattery.text = "Battery — ${byte(5)}%" +
                     if (byte(4) != 0) " (charging)" else ""
-                val rest = payload.drop(6).joinToString(" ") { "%02X".format(it) }
-                valueFirmware.text = "Firmware — V${byte(3)}.${byte(2)}, device id ${byte(0)}" +
-                    if (rest.isNotEmpty()) "\n  further version bytes: $rest" else ""
+                valueFirmware.text = "Firmware — V${byte(3)}.${byte(2)}, device id ${byte(0)}"
             }
             group == 0x02 && command == 0x0C && payload.size >= 8 -> {
                 val steps = byte(0) or (byte(1) shl 8) or (byte(2) shl 16)
@@ -772,12 +770,18 @@ class MainActivity : AppCompatActivity() {
             ?: if (payload.size == 1) {
                 if (payload[0] == 0x00.toByte()) "Accepted." else "Rejected by the ring."
             } else null
+        // A reply this app understands needs no hex: that is working shown for its own sake.
+        // Raw bytes appear when there is nothing to translate, or when they are asked for.
+        val wantHex = meaning == null || hexCheck.isChecked
+        // Only call it text when it plausibly is: a lone byte that happens to fall in the
+        // printable range is a number, not a word.
+        val looksTextual = text.length >= 4 && text.length >= payload.size - 1
         AlertDialog.Builder(this)
             .setTitle(label)
             .setMessage(buildString {
-                meaning?.let { append(it).append("\n\n") }
-                append("Reply bytes\n").append(bytes)
-                if (text.isNotBlank()) append("\n\nAs text\n").append(text)
+                append(meaning ?: "The ring answered, but this app cannot translate it yet.")
+                if (looksTextual) append("\n\n").append(text)
+                if (wantHex) append("\n\nRaw reply from the ring\n").append(bytes)
             })
             .setPositiveButton("Close", null)
             .show()
