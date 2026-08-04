@@ -76,6 +76,12 @@ data class HourGroup(
     val hour: Int,
     val summary: String,
     val rows: List<Row>,
+    /**
+     * The spread behind the summary, where one exists. An hour with a single reading has no
+     * range worth stating, and a total has no range at all, so both leave this null rather
+     * than printing something that reads like information.
+     */
+    val range: String? = null,
     /** An hour that happened but amounts to nothing, drawn back rather than in the accent. */
     val quiet: Boolean = false
 ) {
@@ -259,12 +265,18 @@ private fun HourRow(hour: HourGroup, accent: Color) {
                 Spacer(Modifier.width(8.dp))
                 Text("%02d:00".format(hour.hour), color = Ink.text, fontSize = 15.sp)
             }
-            Text(
-                hour.summary,
-                color = if (hour.quiet) Ink.muted else accent,
-                fontSize = 15.sp,
-                fontWeight = if (hour.quiet) FontWeight.Normal else FontWeight.Medium
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                hour.range?.let {
+                    Text(it, color = Ink.muted, fontSize = 13.sp)
+                    Spacer(Modifier.width(10.dp))
+                }
+                Text(
+                    hour.summary,
+                    color = if (hour.quiet) Ink.muted else accent,
+                    fontSize = 15.sp,
+                    fontWeight = if (hour.quiet) FontWeight.Normal else FontWeight.Medium
+                )
+            }
         }
         if (open) {
             hour.rows.forEach { row ->

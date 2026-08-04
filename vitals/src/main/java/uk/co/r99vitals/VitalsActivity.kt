@@ -473,7 +473,10 @@ class VitalsActivity : AppCompatActivity() {
                 "Blood oxygen", "%", Ink.oxygen,
                 Icons.Rounded.Bloodtype,
                 last?.value?.toString(), readings, entries,
-                hours = hourly(entries, { "${it.map { r -> r.value }.average().roundToInt()}%" }) { "${it.value}%" }
+                hours = hourly(
+                    entries,
+                    summary = { "${it.map { r -> r.value }.average().roundToInt()}%" }
+                ) { "${it.value}%" }
             )
             Tab.Pressure -> VitalDay(
                 "Blood pressure", "mmHg", Ink.pressure,
@@ -482,7 +485,7 @@ class VitalsActivity : AppCompatActivity() {
                 note = "Estimated from the pulse waveform, not measured with a cuff.",
                 hours = hourly(
                     entries,
-                    { hour ->
+                    summary = { hour ->
                         // Both halves average separately: the highest systolic and the lowest
                         // diastolic of an hour rarely belong to the same reading.
                         "${hour.map { it.value }.average().roundToInt()}/" +
@@ -522,9 +525,10 @@ class VitalsActivity : AppCompatActivity() {
                 "Heart rate", "bpm", Ink.heart,
                 Icons.Rounded.Favorite,
                 last?.value?.toString(), readings, entries,
-                hours = hourly(entries, { "${it.map { r -> r.value }.average().roundToInt()}" }) {
-                    it.value.toString()
-                }
+                hours = hourly(
+                    entries,
+                    summary = { "${it.map { r -> r.value }.average().roundToInt()}" }
+                ) { it.value.toString() }
             )
         }
     }
@@ -539,6 +543,7 @@ class VitalsActivity : AppCompatActivity() {
     private fun hourly(
         entries: List<History.Entry>,
         summary: (List<History.Entry>) -> String,
+        range: (List<History.Entry>) -> String? = { spread(it.map { r -> r.value }) },
         value: (History.Entry) -> String
     ): List<HourGroup> {
         if (entries.isEmpty()) return emptyList()
@@ -550,11 +555,19 @@ class VitalsActivity : AppCompatActivity() {
                 HourGroup(
                     hour = hour,
                     summary = summary(readings),
+                    range = range(readings),
                     rows = readings.map {
                         HourGroup.Row(hourMinute.format(it.at), value(it), manual = it.manual)
                     }
                 )
             }
+    }
+
+    /** Low to high, or nothing at all when every reading in the hour was the same. */
+    private fun spread(values: List<Int>): String? {
+        val low = values.min()
+        val high = values.max()
+        return if (low == high) null else "$low–$high"
     }
 
     private fun showTrend() {
