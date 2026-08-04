@@ -21,7 +21,18 @@ class History(context: Context) {
     private val file = File(context.filesDir, "readings.csv")
     private val stamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.UK)
 
-    data class Entry(val at: Date, val kind: String, val value: Int, val extra: Int)
+    /**
+     * [manual] marks a reading the wearer asked for by tapping Measure, as opposed to one the
+     * ring took on its own schedule. Rows written before this was recorded have no such column
+     * and read as not manual, which is the honest answer rather than a guess either way.
+     */
+    data class Entry(
+        val at: Date,
+        val kind: String,
+        val value: Int,
+        val extra: Int,
+        val manual: Boolean = false
+    )
 
     private companion object {
         /** Readings closer together than this belong to the same measurement. */
@@ -37,7 +48,7 @@ class History(context: Context) {
      * previous one of the same kind replaces it, so what is kept is where the measurement
      * settled rather than where it started.
      */
-    fun record(kind: String, value: Int, extra: Int = 0, burst: Long = BURST) {
+    fun record(kind: String, value: Int, extra: Int = 0, burst: Long = BURST, manual: Boolean = false) {
         runCatching {
             val now = System.currentTimeMillis()
             val lines = if (file.exists()) file.readLines().filter { it.isNotBlank() }.toMutableList()
@@ -53,9 +64,11 @@ class History(context: Context) {
             // single row that is rewritten for ever and never allowed to start a new one.
             if (within) {
                 val began = lines[previous].split(",")[0]
-                lines[previous] = "$began,$kind,$value,$extra"
+                // A burst that began with a tap stays the wearer's reading even as it settles.
+                val asked = manual || lines[previous].split(",").getOrNull(4) == "1"
+                lines[previous] = "$began,$kind,$value,$extra,${if (asked) 1 else 0}"
             }
-            else lines.add("$now,$kind,$value,$extra")
+            else lines.add("$now,$kind,$value,$extra,${if (manual) 1 else 0}")
             file.writeText(lines.joinToString("\n", postfix = "\n"))
         }
     }
@@ -65,7 +78,12 @@ class History(context: Context) {
             val parts = line.split(",")
             if (parts.size < 4) return@mapNotNull null
             val at = parts[0].toLongOrNull() ?: return@mapNotNull null
-            Entry(Date(at), parts[1], parts[2].toIntOrNull() ?: return@mapNotNull null, parts[3].toIntOrNull() ?: 0)
+            Entry(
+                Date(at), parts[1],
+                parts[2].toIntOrNull() ?: return@mapNotNull null,
+                parts[3].toIntOrNull() ?: 0,
+                manual = parts.getOrNull(4) == "1"
+            )
         }
     }.getOrDefault(emptyList())
 
@@ -96,7 +114,7 @@ class History(context: Context) {
         }
     }
 
-    fun asCsv(): String = "time,kind,value,extra\n" + all().joinToString("\n") {
-        "${stamp.format(it.at)},${it.kind},${it.value},${it.extra}"
+    fun asCsv(): String = "time,kind,value,extra,manual\n" + all().joinToString("\n") {
+        "${stamp.format(it.at)},${it.kind},${it.value},${it.extra},${if (it.manual) 1 else 0}"
     }
 }

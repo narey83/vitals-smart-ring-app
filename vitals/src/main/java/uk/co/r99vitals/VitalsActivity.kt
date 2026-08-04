@@ -33,18 +33,24 @@ import android.os.Looper
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.appcompat.app.AppCompatActivity
+import androidx.appcompat.app.AppCompatDelegate
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
 import java.util.Calendar
+import java.util.Locale
+import kotlin.math.roundToInt
 
 /**
  * A quiet view of what the ring knows. The debugger app in this repository is where the protocol
  * is explored; this one shows readings and nothing else.
  */
+private val hourMinute = SimpleDateFormat("HH:mm", Locale.UK)
+
 class VitalsActivity : AppCompatActivity() {
     private var ui by mutableStateOf(VitalsState())
     private var tab by mutableStateOf(Tab.Today)
@@ -58,6 +64,7 @@ class VitalsActivity : AppCompatActivity() {
 
     private var interval = 15   // minutes; 0 means off
     private var settingsOpen by mutableStateOf(false)
+    private var nightMode by mutableStateOf(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
     private var profile by mutableStateOf(Profile())
     private val saved by lazy { getSharedPreferences("ring", MODE_PRIVATE) }
     private var ringAddress: String?
@@ -78,6 +85,9 @@ class VitalsActivity : AppCompatActivity() {
 
     /** Which measurement the round-robin is on, so one tap reads all three in turn. */
     private var sweep = emptyList<Int>()
+
+    /** Set while a measurement the wearer tapped for is running, so its readings are marked. */
+    private var userAsked = false
 
     /**
      * Debug-only control over adb, so the app can be driven without tapping:
@@ -112,6 +122,13 @@ class VitalsActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         history = History(this)
         workouts = Workouts(this)
+        // Set before anything is drawn. AppCompatDelegate rather than a flag Compose reads,
+        // because it switches the whole configuration: the status bar icons come from
+        // values-night, and a palette the app picked on its own would leave them wrong.
+        nightMode = saved.getInt("night", AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
+        AppCompatDelegate.setDefaultNightMode(nightMode)
+        // Changing it recreates the activity, so remember which page was open across that.
+        settingsOpen = savedInstanceState?.getBoolean("settings") == true
         interval = saved.getInt("interval", 15)
         profile = Profile.read(saved)
         ui = ui.copy(interval = interval, stepGoal = saved.getInt("goal", 10_000), metric = profile.metric)
@@ -134,7 +151,13 @@ class VitalsActivity : AppCompatActivity() {
                     ringAddress = ringAddress,
                     // Typing writes to the phone on every keystroke, which is cheap. The ring is
                     // only told once, on the way out, rather than a frame per character.
+                    nightMode = nightMode,
                     onProfile = { profile = it; it.write(saved); ui = ui.copy(metric = it.metric) },
+                    onNightMode = { mode ->
+                        nightMode = mode
+                        saved.edit().putInt("night", mode).apply()
+                        AppCompatDelegate.setDefaultNightMode(mode)
+                    },
                     onGoal = { goal ->
                         ui = ui.copy(stepGoal = goal)
                         saved.edit().putInt("goal", goal).apply()
@@ -179,6 +202,11 @@ class VitalsActivity : AppCompatActivity() {
             )
         }
         askThenConnect()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putBoolean("settings", settingsOpen)
     }
 
     private fun askThenConnect() {
@@ -295,6 +323,7 @@ class VitalsActivity : AppCompatActivity() {
     private fun measure(type: Int, label: String) {
         if (command == null) { ui = ui.copy(link = "Not connected yet"); connect(); return }
         ui = ui.copy(measuring = "Measuring $label — keep still")
+        userAsked = true
         setButtonsEnabled(false)
         enqueue { write(Ring.startMeasuring(type)) }
     }
@@ -418,13 +447,23 @@ class VitalsActivity : AppCompatActivity() {
             Tab.Oxygen -> VitalDay(
                 "Blood oxygen", "%", Ink.oxygen,
                 Icons.Rounded.Bloodtype,
-                last?.value?.toString(), readings, entries
+                last?.value?.toString(), readings, entries,
+                hours = hourly(entries, { "${it.map { r -> r.value }.average().roundToInt()}%" }) { "${it.value}%" }
             )
             Tab.Pressure -> VitalDay(
                 "Blood pressure", "mmHg", Ink.pressure,
                 Icons.Rounded.MonitorHeart,
                 last?.let { "${it.value}/${it.extra}" }, readings, entries,
-                note = "Estimated from the pulse waveform, not measured with a cuff."
+                note = "Estimated from the pulse waveform, not measured with a cuff.",
+                hours = hourly(
+                    entries,
+                    { hour ->
+                        // Both halves average separately: the highest systolic and the lowest
+                        // diastolic of an hour rarely belong to the same reading.
+                        "${hour.map { it.value }.average().roundToInt()}/" +
+                            "${hour.map { it.extra }.average().roundToInt()}"
+                    }
+                ) { "${it.value}/${it.extra}" }
             )
             Tab.Steps -> {
                 // The ring reports a running total, so both the bars and the rows below them are
@@ -436,15 +475,61 @@ class VitalsActivity : AppCompatActivity() {
                     Icons.Rounded.DirectionsWalk,
                     Steps.total(entries).takeIf { it > 0 }?.let { "%,d".format(it) },
                     hours.map { it.steps }, entries,
-                    canMeasure = false, asBars = true, hours = hours
+                    canMeasure = false, asBars = true,
+                    // An hour the ring never reported on is not the same as an hour spent still,
+                    // so hours with no readings at all are left out rather than shown as zero.
+                    hours = hours.filter { it.slots.isNotEmpty() }.map { hour ->
+                        HourGroup(
+                            hour = hour.hour,
+                            summary = if (hour.steps > 0) "%,d".format(hour.steps) else "—",
+                            rows = hour.slots.map {
+                                HourGroup.Row(
+                                    "%02d:%02d".format(it.hour, it.minute),
+                                    if (it.steps > 0) "%,d".format(it.steps) else "0"
+                                )
+                            },
+                            quiet = hour.steps == 0
+                        )
+                    }
                 )
             }
             else -> VitalDay(
                 "Heart rate", "bpm", Ink.heart,
                 Icons.Rounded.Favorite,
-                last?.value?.toString(), readings, entries
+                last?.value?.toString(), readings, entries,
+                hours = hourly(entries, { "${it.map { r -> r.value }.average().roundToInt()}" }) {
+                    it.value.toString()
+                }
             )
         }
+    }
+
+    /**
+     * A day's readings grouped into the hours they arrived in.
+     *
+     * Steps are the exception and do their own thing, because a running total has to be
+     * differenced before it means anything. Everything else is simply read, so an hour is a
+     * summary of the readings in it and opens to show them.
+     */
+    private fun hourly(
+        entries: List<History.Entry>,
+        summary: (List<History.Entry>) -> String,
+        value: (History.Entry) -> String
+    ): List<HourGroup> {
+        if (entries.isEmpty()) return emptyList()
+        val clock = java.util.Calendar.getInstance()
+        return entries
+            .groupBy { clock.apply { time = it.at }.get(java.util.Calendar.HOUR_OF_DAY) }
+            .toSortedMap()
+            .map { (hour, readings) ->
+                HourGroup(
+                    hour = hour,
+                    summary = summary(readings),
+                    rows = readings.map {
+                        HourGroup.Row(hourMinute.format(it.at), value(it), manual = it.manual)
+                    }
+                )
+            }
     }
 
     private fun showTrend() {
@@ -617,17 +702,21 @@ class VitalsActivity : AppCompatActivity() {
         when (val reading = Ring.read(value)) {
             is Ring.Reading.Heart -> {
                 ui = ui.copy(heart = reading.bpm)
-                history.record("heart", reading.bpm, burst = if (ui.workout != null) 10_000L else 90_000L)
+                history.record(
+                    "heart", reading.bpm,
+                    burst = if (ui.workout != null) 10_000L else 90_000L,
+                    manual = userAsked
+                )
                 if (ui.workout != null) ui = ui.copy(workoutBeats = ui.workoutBeats + reading.bpm)
                 showTrend()
             }
             is Ring.Reading.Oxygen -> {
                 ui = ui.copy(oxygen = reading.percent)
-                history.record("oxygen", reading.percent)
+                history.record("oxygen", reading.percent, manual = userAsked)
             }
             is Ring.Reading.Pressure -> {
                 ui = ui.copy(systolic = reading.systolic, diastolic = reading.diastolic)
-                history.record("pressure", reading.systolic, reading.diastolic)
+                history.record("pressure", reading.systolic, reading.diastolic, manual = userAsked)
             }
             is Ring.Reading.Power -> ui = ui.copy(
                 link = "Your ring", battery = reading.percent, charging = reading.charging,
@@ -635,6 +724,7 @@ class VitalsActivity : AppCompatActivity() {
             )
             is Ring.Reading.Finished -> {
                 setButtonsEnabled(true)
+                userAsked = false
                 ui = ui.copy(measuring = null)
                 showTrend()
                 if (ui.workout != null) keepMeasuring()

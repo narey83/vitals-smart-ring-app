@@ -26,6 +26,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.appcompat.app.AppCompatDelegate
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -82,7 +83,9 @@ fun SettingsPage(
     state: VitalsState,
     firmware: String?,
     ringAddress: String?,
+    nightMode: Int,
     onProfile: (Profile) -> Unit,
+    onNightMode: (Int) -> Unit,
     onGoal: (Int) -> Unit,
     onInterval: (Int) -> Unit,
     onRepair: () -> Unit,
@@ -177,6 +180,18 @@ fun SettingsPage(
         // button would only ever cost you a day's history.
         Panel {
             Action("Forget this ring and pick another") { onRepair() }
+        }
+
+        Section("APPEARANCE")
+        Panel {
+            listOf(
+                AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM to "Follow the system",
+                AppCompatDelegate.MODE_NIGHT_NO to "Light",
+                AppCompatDelegate.MODE_NIGHT_YES to "Dark"
+            ).forEachIndexed { i, (mode, label) ->
+                if (i > 0) Divider()
+                Pick(label, nightMode == mode) { onNightMode(mode) }
+            }
         }
 
         Section("YOUR DATA")

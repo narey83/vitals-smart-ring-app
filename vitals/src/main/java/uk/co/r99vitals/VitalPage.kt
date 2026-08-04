@@ -22,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ChevronLeft
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.ExpandMore
+import androidx.compose.material.icons.rounded.TouchApp
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -60,12 +61,29 @@ data class VitalDay(
     val canMeasure: Boolean = true,
     /** Steps accumulate, so they read as hourly bars rather than a climbing line. */
     val asBars: Boolean = false,
-    /** Steps only: the day cut into hours, each holding its own quarter hours. */
-    val hours: List<Steps.Hour> = emptyList()
+    /** The day cut into hours, each opening to show what it was made of. */
+    val hours: List<HourGroup> = emptyList()
 )
 
+/**
+ * One hour of a vital, and the rows it opens to reveal.
+ *
+ * What an hour means differs by vital — steps add up, a heart rate averages — so the summary
+ * arrives already worked out and already formatted. This is a shape for showing, not for
+ * calculating in.
+ */
+data class HourGroup(
+    val hour: Int,
+    val summary: String,
+    val rows: List<Row>,
+    /** An hour that happened but amounts to nothing, drawn back rather than in the accent. */
+    val quiet: Boolean = false
+) {
+    /** [manual] marks a reading the wearer asked for rather than one the ring took itself. */
+    data class Row(val at: String, val value: String, val manual: Boolean = false)
+}
+
 private val dayLabel = SimpleDateFormat("EEEE d MMMM", Locale.UK)
-private val timeLabel = SimpleDateFormat("HH:mm", Locale.UK)
 
 @Composable
 fun VitalPage(
@@ -192,30 +210,8 @@ fun VitalPage(
             Spacer(Modifier.height(4.dp))
             // An hour the ring never reported on is not the same as an hour spent still, so
             // hours with no readings at all are left out rather than shown as zero.
-            day.hours.filter { it.slots.isNotEmpty() }.asReversed().forEach { hour ->
-                HourRow(hour, day.accent)
-            }
-        } else if (day.entries.isNotEmpty()) {
-            Spacer(Modifier.height(26.dp))
-            Text(
-                "READINGS", color = Ink.muted, fontSize = 11.sp,
-                fontWeight = FontWeight.Bold, letterSpacing = 1.6.sp
-            )
-            Spacer(Modifier.height(10.dp))
-            // Newest first: the recent ones are the ones being looked for.
-            day.entries.asReversed().take(60).forEach { entry ->
-                Row(
-                    Modifier.fillMaxWidth().padding(vertical = 7.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(timeLabel.format(entry.at), color = Ink.muted, fontSize = 14.sp)
-                    Text(
-                        if (entry.kind == "pressure") "${entry.value}/${entry.extra}"
-                        else entry.value.toString(),
-                        color = Ink.text, fontSize = 14.sp
-                    )
-                }
-            }
+            // Newest hour first: the recent ones are the ones being looked for.
+            day.hours.asReversed().forEach { hour -> HourRow(hour, day.accent) }
         }
     }
 }
@@ -232,14 +228,14 @@ private fun HourAxis() {
 }
 
 /**
- * One hour, which opens to show the quarter hours that made it up.
+ * One hour, which opens to show what it was made of.
  *
- * The hour is the figure worth reading, so a day is a short list of hours rather than a wall of
- * ninety-six rows. The quarters answer "when in that hour", which is a question you only
- * sometimes have, so they stay folded away until asked for.
+ * The hour is the figure worth reading, so a day is a short list rather than a wall of rows.
+ * What is inside answers "when in that hour", which is a question you only sometimes have, so
+ * it stays folded away until asked for.
  */
 @Composable
-private fun HourRow(hour: Steps.Hour, accent: Color) {
+private fun HourRow(hour: HourGroup, accent: Color) {
     var open by remember { mutableStateOf(false) }
     val turn by animateFloatAsState(if (open) 180f else 0f, label = "chevron")
     Column(
@@ -264,23 +260,36 @@ private fun HourRow(hour: Steps.Hour, accent: Color) {
                 Text("%02d:00".format(hour.hour), color = Ink.text, fontSize = 15.sp)
             }
             Text(
-                if (hour.steps > 0) "%,d".format(hour.steps) else "—",
-                color = if (hour.steps > 0) accent else Ink.muted,
+                hour.summary,
+                color = if (hour.quiet) Ink.muted else accent,
                 fontSize = 15.sp,
-                fontWeight = if (hour.steps > 0) FontWeight.Medium else FontWeight.Normal
+                fontWeight = if (hour.quiet) FontWeight.Normal else FontWeight.Medium
             )
         }
         if (open) {
-            hour.slots.forEach { slot ->
+            hour.rows.forEach { row ->
                 Row(
                     Modifier.fillMaxWidth().padding(start = 24.dp, top = 7.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("%02d:%02d".format(slot.hour, slot.minute), color = Ink.muted, fontSize = 13.sp)
-                    Text(
-                        if (slot.steps > 0) "%,d".format(slot.steps) else "0",
-                        color = Ink.muted, fontSize = 13.sp
-                    )
+                    Text(row.at, color = Ink.muted, fontSize = 13.sp)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        // A reading the wearer stood still for is worth telling apart from one
+                        // the ring took while they were doing something else.
+                        if (row.manual) {
+                            Icon(
+                                Icons.Rounded.TouchApp, "Measured by you",
+                                tint = accent, modifier = Modifier.size(13.dp)
+                            )
+                            Spacer(Modifier.width(5.dp))
+                        }
+                        Text(
+                            row.value,
+                            color = if (row.manual) accent else Ink.muted,
+                            fontSize = 13.sp
+                        )
+                    }
                 }
             }
             Spacer(Modifier.height(4.dp))
