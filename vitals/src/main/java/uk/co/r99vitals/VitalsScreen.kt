@@ -29,7 +29,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Air
+import androidx.compose.material.icons.rounded.Bloodtype
 import androidx.compose.material.icons.rounded.Battery1Bar
 import androidx.compose.material.icons.rounded.Battery3Bar
 import androidx.compose.material.icons.rounded.Battery5Bar
@@ -113,7 +113,7 @@ fun VitalsScreen(
         Row(Modifier.fillMaxWidth()) {
             SmallCard(
                 "BLOOD OXYGEN", state.oxygen?.let { "$it%" }, Ink.oxygen,
-                Modifier.weight(1f), icon = Icons.Rounded.Air
+                Modifier.weight(1f), icon = Icons.Rounded.Bloodtype
             )
             Spacer(Modifier.width(12.dp))
             SmallCard(
@@ -128,7 +128,7 @@ fun VitalsScreen(
         Row(Modifier.fillMaxWidth()) {
             Pill("Heart", Ink.heart, state.measuring == null, Modifier.weight(1f), Icons.Rounded.Favorite) { onMeasure(Ring.HEART) }
             Spacer(Modifier.width(10.dp))
-            Pill("SpO₂", Ink.oxygen, state.measuring == null, Modifier.weight(1f), Icons.Rounded.Air) { onMeasure(Ring.OXYGEN) }
+            Pill("SpO₂", Ink.oxygen, state.measuring == null, Modifier.weight(1f), Icons.Rounded.Bloodtype) { onMeasure(Ring.OXYGEN) }
             Spacer(Modifier.width(10.dp))
             Pill("BP", Ink.pressure, state.measuring == null, Modifier.weight(1f), Icons.Rounded.MonitorHeart) { onMeasure(Ring.PRESSURE) }
         }

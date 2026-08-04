@@ -4,7 +4,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Air
+import androidx.compose.material.icons.rounded.Bloodtype
 import androidx.compose.material.icons.rounded.DirectionsWalk
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.GridView
@@ -24,7 +24,7 @@ import androidx.compose.ui.unit.sp
 enum class Tab(val label: String, val icon: ImageVector, val accent: Color) {
     Today("Today", Icons.Rounded.GridView, Ink.text),
     Heart("Heart", Icons.Rounded.Favorite, Ink.heart),
-    Oxygen("SpO₂", Icons.Rounded.Air, Ink.oxygen),
+    Oxygen("SpO₂", Icons.Rounded.Bloodtype, Ink.oxygen),
     Pressure("BP", Icons.Rounded.MonitorHeart, Ink.pressure),
     Steps("Steps", Icons.Rounded.DirectionsWalk, Ink.motion)
 }

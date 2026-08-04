@@ -22,7 +22,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Air
+import androidx.compose.material.icons.rounded.Bloodtype
 import androidx.compose.material.icons.rounded.DirectionsWalk
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.MonitorHeart
@@ -299,7 +299,7 @@ class VitalsActivity : AppCompatActivity() {
         return when (which) {
             Tab.Oxygen -> VitalDay(
                 "Blood oxygen", "%", Ink.oxygen,
-                Icons.Rounded.Air,
+                Icons.Rounded.Bloodtype,
                 last?.value?.toString(), readings, entries
             )
             Tab.Pressure -> VitalDay(
