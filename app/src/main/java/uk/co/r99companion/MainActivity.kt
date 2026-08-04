@@ -761,6 +761,22 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
+    /** Renders the capability bitmap as two plain lists rather than 60 bytes of hex. */
+    private fun describeCapabilities(payload: ByteArray): String {
+        fun set(c: Capability) =
+            c.index < payload.size && ((payload[c.index].toInt() and 0xFF) shr c.bit) and 1 == 1
+        val yes = CAPABILITIES.filter(::set).map { it.label }
+        val no = CAPABILITIES.filterNot(::set).map { it.label }
+        return buildString {
+            append("This ring implements ${yes.size} of ${CAPABILITIES.size} features.\n\n")
+            append("PRESENT\n")
+            yes.forEach { append("  ").append(it).append('\n') }
+            append("\nABSENT — the firmware has no such feature, so no amount of\n")
+            append("protocol work will produce this data.\n\n")
+            no.chunked(3).forEach { append("  ").append(it.joinToString(", ")).append('\n') }
+        }
+    }
+
     private fun showReply(label: String, value: ByteArray) {
         val payload = value.copyOfRange(4, value.size - 2)
         val bytes = payload.joinToString(" ") { "%02X".format(it) }.ifEmpty { "(no payload)" }
@@ -772,6 +788,11 @@ class MainActivity : AppCompatActivity() {
             } else null
         // A reply this app understands needs no hex: that is working shown for its own sake.
         // Raw bytes appear when there is nothing to translate, or when they are asked for.
+        // The capability bitmap is a list, not a sentence, so it gets the full-height view.
+        if ((value[0].toInt() and 0xFF) == 0x02 && (value[1].toInt() and 0xFF) == 0x01 && payload.size >= 8) {
+            showText("What this ring supports", describeCapabilities(payload))
+            return
+        }
         val wantHex = meaning == null || hexCheck.isChecked
         // Only call it text when it plausibly is: a lone byte that happens to fall in the
         // printable range is a number, not a word.
@@ -835,6 +856,10 @@ class MainActivity : AppCompatActivity() {
                 val calories = byte(3) or (byte(4) shl 8)
                 val distance = byte(5) or (byte(6) shl 8) or (byte(7) shl 16)
                 "$steps steps, $distance distance, $calories calories"
+            }
+            group == 0x02 && command == 0x01 && payload.size >= 8 -> {
+                val on = CAPABILITIES.count { it.index < payload.size && (byte(it.index) shr it.bit) and 1 == 1 }
+                "$on of ${CAPABILITIES.size} features supported — tap to list them"
             }
             group == 0x02 && command == 0x03 && payload.isNotEmpty() ->
                 "the ring calls itself \"${readable(payload.toList())}\""
