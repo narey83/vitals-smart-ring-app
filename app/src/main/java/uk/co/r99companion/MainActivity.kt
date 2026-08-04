@@ -444,6 +444,12 @@ class MainActivity : AppCompatActivity() {
         val payload = parseHex(commandInput.text.toString())
         if (payload == null) { showStatus("Enter an even number of hex digits, such as 03."); return }
         val bytes = if (frameCheck.isChecked) asFrame(payload) else payload
+        if (payload.size >= 2) {
+            val name = ALL_COMMANDS.firstOrNull {
+                it.group == (payload[0].toInt() and 0xFF) && it.command == (payload[1].toInt() and 0xFF)
+            }?.name ?: "raw command"
+            awaiting = Triple(payload[0].toInt() and 0xFF, payload[1].toInt() and 0xFF, name)
+        }
         val targets = writable.keys.toTypedArray()
         AlertDialog.Builder(this)
             .setTitle("Send ${bytes.toHex()} to")
@@ -491,6 +497,14 @@ class MainActivity : AppCompatActivity() {
         val routine = label == "fea1" || label == "2a37"
         record(fileText, screenText, routine)
         updateReadings(characteristic, value)
+        val expected = awaiting
+        if (expected != null && value.size >= 6 &&
+            (value[0].toInt() and 0xFF) == expected.first &&
+            (value[1].toInt() and 0xFF) == expected.second
+        ) {
+            awaiting = null
+            showReply(expected.third, value)
+        }
     }
 
     /**
@@ -572,12 +586,39 @@ class MainActivity : AppCompatActivity() {
         ), "clock")
     }
 
+    /**
+     * The command whose reply should be shown in a dialog rather than only appended to the log.
+     * The ring echoes group and command, so the reply is matched on those.
+     */
+    private var awaiting: Triple<Int, Int, String>? = null
+
+    private fun showReply(label: String, value: ByteArray) {
+        val payload = value.copyOfRange(4, value.size - 2)
+        val bytes = payload.joinToString(" ") { "%02X".format(it) }.ifEmpty { "(no payload)" }
+        val text = payload.map { it.toInt() and 0xFF }
+            .filter { it in 32..126 }.map { it.toChar() }.joinToString("")
+        val meaning = decodeFrame(value)
+            ?: if (payload.size == 1) {
+                if (payload[0] == 0x00.toByte()) "Accepted." else "Rejected by the ring."
+            } else null
+        AlertDialog.Builder(this)
+            .setTitle(label)
+            .setMessage(buildString {
+                meaning?.let { append(it).append("\n\n") }
+                append("Reply bytes\n").append(bytes)
+                if (text.isNotBlank()) append("\n\nAs text\n").append(text)
+            })
+            .setPositiveButton("Close", null)
+            .show()
+    }
+
     /** Frames and queues one command, reporting whether the radio accepted it. */
     private fun send(bytes: ByteArray, label: String): Boolean {
         val active = gatt
         val channel = writable[COMMAND_CHANNEL]
         if (active == null || channel == null) { showStatus("Connect to the ring first."); return false }
         val frame = asFrame(bytes)
+        awaiting = Triple(bytes[0].toInt() and 0xFF, bytes[1].toInt() and 0xFF, label)
         enqueue {
             val sent = write(active, channel, frame)
             append("\n${clock.format(Date())} SET $label: ${frame.toHex()}" +
@@ -819,19 +860,49 @@ class MainActivity : AppCompatActivity() {
         // single mistaken tap. Type 52535953 by hand if you ever genuinely want it.
     )
 
+    /**
+     * Sends any command to any writable characteristic. The command channel is what the ring
+     * normally listens on, but nothing stops a command being aimed elsewhere, so the choice is
+     * offered rather than assumed.
+     */
+    private fun dispatch(bytes: ByteArray, label: String) {
+        val active = gatt
+        if (active == null || writable.isEmpty()) { showStatus("Connect to the ring first."); return }
+        val frame = if (frameCheck.isChecked) asFrame(bytes) else bytes
+        if (bytes.size >= 2) {
+            awaiting = Triple(bytes[0].toInt() and 0xFF, bytes[1].toInt() and 0xFF, label)
+        }
+        val targets = writable.keys.toTypedArray()
+        val preferred = targets.indexOf(COMMAND_CHANNEL).coerceAtLeast(0)
+        AlertDialog.Builder(this)
+            .setTitle(label)
+            .setSingleChoiceItems(targets, preferred) { dialog, which ->
+                dialog.dismiss()
+                val channel = writable.getValue(targets[which])
+                enqueue {
+                    val sent = write(active, channel, frame)
+                    append("\n${clock.format(Date())} SEND $label -> ${shortUuid(channel.uuid)}: " +
+                        "${frame.toHex()}${if (sent) "" else "  [REFUSED by radio]"}\n")
+                    sent
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
     private fun confirmThenSend(command: RingCommand) {
         val payload = parseHex(commandInput.text.toString())
             ?: defaultPayloads[command.group to command.command]
             ?: byteArrayOf()
         val bytes = byteArrayOf(command.group.toByte(), command.command.toByte()) + payload
-        if (!command.risky) { send(bytes, command.name); return }
+        if (!command.risky) { dispatch(bytes, command.name); return }
         AlertDialog.Builder(this)
             .setTitle(command.name)
             .setMessage(
                 "This command can erase stored data, reset the ring, or start a firmware " +
                     "transfer. It will be sent as ${asFrame(bytes).toHex()}.\n\nSend it?"
             )
-            .setPositiveButton("Send anyway") { _, _ -> send(bytes, command.name) }
+            .setPositiveButton("Send anyway") { _, _ -> dispatch(bytes, command.name) }
             .setNegativeButton("Cancel", null)
             .show()
     }
