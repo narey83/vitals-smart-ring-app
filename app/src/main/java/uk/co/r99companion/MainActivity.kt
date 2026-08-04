@@ -607,6 +607,11 @@ class MainActivity : AppCompatActivity() {
             // The ring is not a Bluetooth keyboard: this reaches whichever app holds the
             // connection, so no other camera app can ever see it.
             group == 0x04 && command == 0x03 -> "shutter pressed on the ring"
+            // The ring's two refusals. Without these the app looked like it did nothing at all.
+            payload.size == 1 && payload[0] == 0xFC.toByte() ->
+                "this firmware does not implement that command"
+            payload.size == 1 && payload[0] == 0xFE.toByte() ->
+                "the ring rejected that — it wants an argument"
             // The firmware's own debug log, sent as plain ASCII a few entries at a time.
             group == 0x02 && command == 0x08 ->
                 payload.map { it.toInt() and 0xFF }
@@ -794,8 +799,30 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
+    /**
+     * A few commands only answer when given a literal argument the vendor app sends; without it
+     * the ring replies FE. These are used when the hex box is empty.
+     */
+    private val defaultPayloads = mapOf(
+        (0x02 to 0x00) to byteArrayOf(0x47, 0x43),   // "GC"  GetDeviceInfo
+        (0x02 to 0x01) to byteArrayOf(0x47, 0x46),   // "GF"  GetDeviceSupportFunction
+        (0x02 to 0x03) to byteArrayOf(0x47, 0x50),   // "GP"  GetDeviceName
+        (0x02 to 0x07) to byteArrayOf(0x43, 0x46),   // "CF"  GetDeviceUserConfig
+        (0x02 to 0x11) to byteArrayOf(0x49, 0x53),   // "IS"  GetRealBloodOxygen
+        (0x02 to 0x12) to byteArrayOf(0x4A, 0x54),   // "JT"  GetCurrentAmbientLightIntensity
+        (0x02 to 0x13) to byteArrayOf(0x4B, 0x55),   // "KU"  GetCurrentAmbientTempAndHumidity
+        (0x02 to 0x28) to byteArrayOf(0x47, 0x46),   // "GF"  GetMeasurementFunction
+        (0x02 to 0x29) to byteArrayOf(0x47, 0x46),   // "GF"  GetAlgorithmicLicense
+        (0x02 to 0x2A) to byteArrayOf(0x47, 0x46),   // "GF"  GetTerminalConf
+        (0x02 to 0x2B) to byteArrayOf(0x47, 0x43),   // "GC"  GetSunGoldConf
+        // settingRestoreFactory needs "RSYS"; deliberately not listed, so a wipe cannot be a
+        // single mistaken tap. Type 52535953 by hand if you ever genuinely want it.
+    )
+
     private fun confirmThenSend(command: RingCommand) {
-        val payload = parseHex(commandInput.text.toString()) ?: byteArrayOf()
+        val payload = parseHex(commandInput.text.toString())
+            ?: defaultPayloads[command.group to command.command]
+            ?: byteArrayOf()
         val bytes = byteArrayOf(command.group.toByte(), command.command.toByte()) + payload
         if (!command.risky) { send(bytes, command.name); return }
         AlertDialog.Builder(this)
@@ -815,7 +842,8 @@ class MainActivity : AppCompatActivity() {
         if (active == null || channel == null) { showStatus("Connect to the ring first."); return }
         append("\n=== reading every safe query ===\n")
         readOnlyQueries.forEach { (spec, name) ->
-            val (group, command, payload) = spec
+            val (group, command, listed) = spec
+            val payload = if (listed.isEmpty()) defaultPayloads[group to command] ?: listed else listed
             val bytes = asFrame(byteArrayOf(group.toByte(), command.toByte()) + payload)
             enqueue {
                 val sent = write(active, channel, bytes)

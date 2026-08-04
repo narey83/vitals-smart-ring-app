@@ -192,6 +192,32 @@ Answering all 70 readable commands, 40 reply `FC` (not implemented). `GetDeviceM
 
 Turning on `settingHeartMonitor` took `Health_HistoryHeart` from one record to four.
 
+## Refusal codes and required arguments
+
+A one-byte payload is the ring saying no. `FC` means the firmware does not implement that
+command; `FE` means it rejected the request, typically for a missing argument.
+
+Thirteen commands carry a fixed literal argument in the SDK, sent as ASCII:
+
+| Command | Argument |
+|---|---|
+| `GetDeviceInfo` | `"GC"` |
+| `GetDeviceSupportFunction`, `GetMeasurementFunction`, `GetAlgorithmicLicense`, `GetTerminalConf` | `"GF"` |
+| `GetDeviceName` | `"GP"` |
+| `GetDeviceUserConfig` | `"CF"` |
+| `GetRealBloodOxygen` | `"IS"` |
+| `GetCurrentAmbientLightIntensity` | `"JT"` |
+| `GetCurrentAmbientTempAndHumidity` | `"KU"` |
+| `GetSunGoldConf` | `"GC"` |
+| `settingRestoreFactory` | `"RSYS"` |
+
+Supplying the correct argument did **not** change any refusal: everything that answered `FC`
+without it answers `FC` with it, so those really are absent from this firmware rather than
+merely mis-called. `GetDeviceName` still answers `FE` even given `"GP"`.
+
+`settingRestoreFactory` needing `"RSYS"` is a deliberate interlock — a factory wipe cannot be
+sent by accident.
+
 ## Not yet decoded
 
 - **The `05 80` block payload.** Shape is `01 00 06 00` then two varying bytes (`03 E8` here,
