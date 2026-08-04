@@ -21,6 +21,11 @@ import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Air
+import androidx.compose.material.icons.rounded.DirectionsWalk
+import androidx.compose.material.icons.rounded.Favorite
+import androidx.compose.material.icons.rounded.MonitorHeart
 import android.widget.TextView
 import android.os.Handler
 import android.os.Looper
@@ -39,6 +44,8 @@ import java.util.Calendar
  */
 class VitalsActivity : AppCompatActivity() {
     private var ui by mutableStateOf(VitalsState())
+    private var tab by mutableStateOf(Tab.Today)
+    private var dayOffset by mutableStateOf(0)
     private lateinit var history: History
 
     private var interval = 15   // minutes; 0 means off
@@ -94,8 +101,12 @@ class VitalsActivity : AppCompatActivity() {
         history = History(this)
         interval = getSharedPreferences("ring", MODE_PRIVATE).getInt("interval", 15)
         setContent {
-            VitalsScreen(
+            Shell(
+                tab = tab,
+                onTab = { tab = it; dayOffset = 0 },
                 state = ui,
+                dayOffset = dayOffset,
+                onDay = { dayOffset = it.coerceAtMost(0) },
                 onMeasure = { type ->
                     measure(type, when (type) {
                         Ring.HEART -> "heart rate"
@@ -104,8 +115,9 @@ class VitalsActivity : AppCompatActivity() {
                     })
                 },
                 onInterval = { chooseInterval() },
-                onHistory = { showHistory() },
-                onLink = { if (command == null) askThenConnect() }
+                onExport = { showHistory() },
+                onLink = { if (command == null) askThenConnect() },
+                dayFor = { pageFor(it) }
             )
         }
         showTrend()
@@ -265,6 +277,50 @@ class VitalsActivity : AppCompatActivity() {
         if (command == null) { ui = ui.copy(link = "Not connected yet"); return }
         Ring.automaticMonitoring(interval > 0, if (interval > 0) interval else 15)
             .forEach { frame -> enqueue { write(frame) } }
+    }
+
+    /** One vital, one day, assembled from what has been written down. */
+    private fun pageFor(which: Tab): VitalDay {
+        val start = java.util.Calendar.getInstance().apply {
+            add(java.util.Calendar.DAY_OF_YEAR, dayOffset)
+            set(java.util.Calendar.HOUR_OF_DAY, 0); set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0); set(java.util.Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        val end = start + 24 * 60 * 60 * 1000
+        val kind = when (which) {
+            Tab.Oxygen -> "oxygen"
+            Tab.Pressure -> "pressure"
+            Tab.Steps -> "steps"
+            else -> "heart"
+        }
+        val entries = history.all().filter { it.kind == kind && it.at.time in start until end }
+        val readings = entries.map { it.value }
+        val last = entries.lastOrNull()
+        return when (which) {
+            Tab.Oxygen -> VitalDay(
+                "Blood oxygen", "%", Ink.oxygen,
+                Icons.Rounded.Air,
+                last?.value?.toString(), readings, entries
+            )
+            Tab.Pressure -> VitalDay(
+                "Blood pressure", "mmHg", Ink.pressure,
+                Icons.Rounded.MonitorHeart,
+                last?.let { "${it.value}/${it.extra}" }, readings, entries,
+                note = "Estimated from the pulse waveform, not measured with a cuff."
+            )
+            Tab.Steps -> VitalDay(
+                "Movement", "steps", Ink.motion,
+                Icons.Rounded.DirectionsWalk,
+                // Steps are a running total, so the day's figure is its highest point.
+                readings.maxOrNull()?.let { "%,d".format(it) }, readings, entries,
+                canMeasure = false
+            )
+            else -> VitalDay(
+                "Heart rate", "bpm", Ink.heart,
+                Icons.Rounded.Favorite,
+                last?.value?.toString(), readings, entries
+            )
+        }
     }
 
     private fun showTrend() {

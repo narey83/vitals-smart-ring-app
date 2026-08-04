@@ -103,8 +103,6 @@ fun VitalsScreen(
             .fillMaxSize()
             .background(Ink.canvas)
             .verticalScroll(rememberScrollState())
-            // Android 15 draws every app edge to edge, so the status bar would sit on the title.
-            .windowInsetsPadding(WindowInsets.systemBars)
             .padding(horizontal = 20.dp)
             .padding(top = 24.dp, bottom = 32.dp)
     ) {
@@ -137,7 +135,7 @@ fun VitalsScreen(
         Spacer(Modifier.height(10.dp))
         Quiet(if (state.interval == 0) "Automatic readings off" else "Automatic readings every ${state.interval} min", onInterval)
         Spacer(Modifier.height(8.dp))
-        Quiet("History", onHistory)
+        Quiet("Export readings", onHistory)
         Spacer(Modifier.height(20.dp))
         Text(
             "Readings stay on this phone. This app has no internet permission, so it cannot " +
@@ -223,7 +221,7 @@ private fun HeartCard(state: VitalsState) {
             if (state.trend.size > 1) {
                 Spacer(Modifier.height(18.dp))
                 // Full bleed to the card edges: a plot inset on both sides reads as a thumbnail.
-                Trend(
+                TrendChart(
                     state.trend, Ink.heart,
                     Modifier.fillMaxWidth().height(120.dp).padding(horizontal = 0.dp)
                 )
@@ -238,7 +236,7 @@ private fun HeartCard(state: VitalsState) {
 
 /** A trend drawn as a shape, because at this size the shape is the information. */
 @Composable
-private fun Trend(values: List<Int>, accent: Color, modifier: Modifier) {
+fun TrendChart(values: List<Int>, accent: Color, modifier: Modifier) {
     val grow by animateFloatAsState(1f, tween(700), label = "grow")
     Canvas(modifier) {
         val raw = if (values.size > 90) values.takeLast(90) else values
@@ -383,6 +381,9 @@ private fun Quiet(text: String, onClick: () -> Unit) {
         }
     }
 }
+
+fun Modifier.clickableNoRippleShared(onClick: () -> Unit): Modifier =
+    this.clickable(interactionSource = null, indication = null, onClick = onClick)
 
 private fun Modifier.clickableNoRipple(onClick: () -> Unit): Modifier =
     this.clickable(interactionSource = null, indication = null, onClick = onClick)
