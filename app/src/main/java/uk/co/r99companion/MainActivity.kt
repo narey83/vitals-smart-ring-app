@@ -398,6 +398,9 @@ class MainActivity : AppCompatActivity() {
                     append("Listening for live notifications…\n")
                     false
                 }
+                // The ring stamps its stored records with its own clock, so a drifting clock
+                // means wrongly dated history. Correct it on every connection.
+                setRingClock()
             }
         }
 
@@ -506,6 +509,17 @@ class MainActivity : AppCompatActivity() {
             characteristic.writeType = type
             @Suppress("DEPRECATION") gatt.writeCharacteristic(characteristic)
         }
+    }
+
+    /**
+     * Stored records open with a uint32 little endian count of seconds since 2000-01-01, not the
+     * Unix epoch. Confirmed against a record written while this app was watching.
+     */
+    private fun stamp(record: List<Byte>): String {
+        var seconds = 0L
+        for (i in 3 downTo 0) seconds = (seconds shl 8) or (record[i].toLong() and 0xFF)
+        val epoch2000 = 946_684_800_000L
+        return sessionClock.format(Date(epoch2000 + seconds * 1000L))
     }
 
     private fun readable(bytes: List<Byte>) =
@@ -868,8 +882,18 @@ class MainActivity : AppCompatActivity() {
             }
             group == 0x02 && command == 0x03 && payload.isNotEmpty() ->
                 "the ring calls itself \"${readable(payload.toList())}\""
-            // Every history query answers with a record count first.
-            group == 0x05 && payload.size >= 2 -> {
+            // Stored heart rate: six bytes per record, a timestamp then the reading.
+            group == 0x05 && command == 0x15 && payload.size >= 6 ->
+                payload.toList().chunked(6).filter { it.size == 6 }.joinToString("\n") {
+                    "${stamp(it)}  ${it[5].toInt() and 0xFF} bpm"
+                }
+            // Stored blood pressure: eight bytes per record.
+            group == 0x05 && command == 0x17 && payload.size >= 8 ->
+                payload.toList().chunked(8).filter { it.size == 8 }.joinToString("\n") {
+                    "${stamp(it)}  ${it[5].toInt() and 0xFF}/${it[6].toInt() and 0xFF}"
+                }
+            // Only the queries answer with a count; the pushes above carry data.
+            group == 0x05 && command !in setOf(0x15, 0x17) && payload.size >= 2 -> {
                 val count = byte(0) or (byte(1) shl 8)
                 if (count == 0) "no records stored" else "$count record${if (count == 1) "" else "s"} stored"
             }
