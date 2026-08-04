@@ -3,4 +3,8 @@
     <color name="forest">#0C5132</color>
     <color name="mint">#C9F7D5</color>
     <color name="paper">#F7FAF5</color>
+
+    <!-- Pale, where Vitals is dark: the two apps sit next to each other on the launcher and
+         should not be the same icon. -->
+    <color name="icon_background">#FFEDF3E9</color>
 </resources>

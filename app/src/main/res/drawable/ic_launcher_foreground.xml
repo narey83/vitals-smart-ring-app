@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    The same ring Vitals wears, inverted.
+
+    The debugger's palette is a light one, so the band is dark here rather than bright: a pale
+    ring on pale paper is the mistake this avoids. The two apps sit next to each other on the
+    launcher and have to be told apart at a glance, which one shape in two tempers does better
+    than two unrelated shapes.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <path
+        android:fillType="evenOdd"
+        android:pathData="M54,28 a26,26 0 1,0 0,52 a26,26 0 1,0 0,-52 z M54,37.5 a16.5,16.5 0 1,0 0,33 a16.5,16.5 0 1,0 0,-33 z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="32"
+                android:startY="30"
+                android:endX="78"
+                android:endY="80"
+                android:type="linear">
+                <item android:offset="0" android:color="#FF6E7F72" />
+                <item android:offset="0.5" android:color="#FF33423A" />
+                <item android:offset="1" android:color="#FF162019" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Paler than the band and darker than the paper, so the hole still has a wall. -->
+    <path
+        android:fillType="evenOdd"
+        android:fillColor="#FFC2D2C4"
+        android:pathData="M54,37.5 a16.5,16.5 0 1,0 0,33 a16.5,16.5 0 1,0 0,-33 z M54,39.5 a16,16 0 1,0 0,32 a16,16 0 1,0 0,-32 z" />
+
+    <path
+        android:fillColor="#FF0C5132"
+        android:pathData="M69,64.5 a4.5,4.5 0 1,0 0,9 a4.5,4.5 0 1,0 0,-9 z" />
+    <path
+        android:fillColor="#FFC9F7D5"
+        android:pathData="M69,67 a2,2 0 1,0 0,4 a2,2 0 1,0 0,-4 z" />
+</vector>

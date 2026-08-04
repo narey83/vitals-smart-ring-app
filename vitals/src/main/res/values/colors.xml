@@ -10,4 +10,8 @@
     <color name="oxygen">#4CC9F0</color>
     <color name="pressure">#B388FF</color>
     <color name="motion">#5CE1A6</color>
+
+    <!-- The launcher icon's backdrop: the app's own canvas, so a black ring is not lost on a
+         dark launcher and the mark keeps the same ink as the app behind it. -->
+    <color name="icon_background">#0E1319</color>
 </resources>

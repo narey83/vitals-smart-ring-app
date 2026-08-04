@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    The ring, traced rather than photographed.
+
+    A product shot of a black ring is a dark blob at 48dp: the shape is lost, the sensor board
+    is invisible, and it disappears entirely against a dark launcher. This is the same object
+    reduced to what survives at that size — a band, its hole, and the green sensor.
+
+    The canvas is 108dp but a launcher masks it down to the middle 72dp, so nothing here reaches
+    further than 26 from the centre. That leaves the mark clear of every mask shape rather than
+    merely surviving the circle.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- The band, as one path with its hole punched out by evenOdd: outer 26, inner 16.5. -->
+    <path
+        android:fillType="evenOdd"
+        android:pathData="M54,28 a26,26 0 1,0 0,52 a26,26 0 1,0 0,-52 z M54,37.5 a16.5,16.5 0 1,0 0,33 a16.5,16.5 0 1,0 0,-33 z">
+        <aapt:attr name="android:fillColor">
+            <!-- Lit from the top left, which is what makes a flat ring read as a curved one. -->
+            <gradient
+                android:startX="32"
+                android:startY="30"
+                android:endX="78"
+                android:endY="80"
+                android:type="linear">
+                <item android:offset="0" android:color="#FFF4F8FC" />
+                <item android:offset="0.5" android:color="#FF9DAAB9" />
+                <item android:offset="1" android:color="#FF48535F" />
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- The inner wall, so the hole reads as depth rather than as a cut-out. -->
+    <path
+        android:fillType="evenOdd"
+        android:fillColor="#FF262E37"
+        android:pathData="M54,37.5 a16.5,16.5 0 1,0 0,33 a16.5,16.5 0 1,0 0,-33 z M54,39.5 a14.5,14.5 0 1,0 0,29 a14.5,14.5 0 1,0 0,-29 z" />
+
+    <!-- The sensor, sitting on the band rather than over its edge: the one piece of colour. -->
+    <path
+        android:fillColor="#FF5CE1A6"
+        android:pathData="M69,64.5 a4.5,4.5 0 1,0 0,9 a4.5,4.5 0 1,0 0,-9 z" />
+    <path
+        android:fillColor="#FF0B1F17"
+        android:pathData="M69,67 a2,2 0 1,0 0,4 a2,2 0 1,0 0,-4 z" />
+</vector>
