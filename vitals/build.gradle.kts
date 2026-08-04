@@ -55,4 +55,7 @@ dependencies {
     // Local, on-device only: Health Connect is IPC, not a network service, so the app keeps
     // its guarantee of having no INTERNET permission.
     implementation("androidx.health.connect:connect-client:1.1.0-alpha07")
+
+    // Ring speaks in frames, which are pure bytes and so testable on the JVM without a ring.
+    testImplementation("junit:junit:4.13.2")
 }
