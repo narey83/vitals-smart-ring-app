@@ -240,18 +240,48 @@
             android:text="Wrap as a ring frame (adds length and CRC)"
             android:textColor="@color/ink" />
 
-        <TextView
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="14dp"
-            android:text="Bluetooth protocol log"
-            android:textColor="@color/forest"
-            android:textStyle="bold" />
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Bluetooth protocol log"
+                android:textColor="@color/forest"
+                android:textStyle="bold" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/pauseButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Pause" />
+        </LinearLayout>
+
+        <CheckBox
+            android:id="@+id/quietCheck"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:checked="true"
+            android:text="Hide the once-a-second heartbeat traffic"
+            android:textColor="@color/ink" />
+
+        <CheckBox
+            android:id="@+id/hexCheck"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:checked="false"
+            android:text="Show raw hex as well as decoded values"
+            android:textColor="@color/ink" />
 
         <ScrollView
             android:id="@+id/logScroll"
             android:layout_width="match_parent"
-            android:layout_height="300dp"
+            android:layout_height="420dp"
             android:layout_marginTop="6dp"
             android:background="@color/mint"
             android:padding="10dp">

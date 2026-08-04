@@ -63,8 +63,15 @@ class MainActivity : AppCompatActivity() {
     private lateinit var valueSteps: TextView
     private lateinit var valueBattery: TextView
 
+    private lateinit var pauseButton: MaterialButton
+    private lateinit var quietCheck: CheckBox
+    private lateinit var hexCheck: CheckBox
+
     private var monitoring = false
     private var shutterMode = false
+    private var paused = false
+    private val held = StringBuilder()
+    private var heldLines = 0
 
     /** Every characteristic the ring will accept a write on, keyed by a short label. */
     private val writable = linkedMapOf<String, BluetoothGattCharacteristic>()
@@ -115,6 +122,10 @@ class MainActivity : AppCompatActivity() {
         sendButton = findViewById(R.id.sendButton)
         commandInput = findViewById(R.id.commandInput)
         frameCheck = findViewById(R.id.frameCheck)
+        quietCheck = findViewById(R.id.quietCheck)
+        hexCheck = findViewById(R.id.hexCheck)
+        pauseButton = findViewById(R.id.pauseButton)
+        pauseButton.setOnClickListener { setPaused(!paused) }
         heartButton = findViewById(R.id.heartButton)
         oxygenButton = findViewById(R.id.oxygenButton)
         readAllButton = findViewById(R.id.readAllButton)
@@ -141,7 +152,8 @@ class MainActivity : AppCompatActivity() {
         connectButton.setOnClickListener { requestBluetoothThen { connectToKnownRing() } }
         shareButton.setOnClickListener { shareLog() }
         // Restore earlier captures: a restart must never destroy evidence already gathered.
-        log.text = runCatching { logFile.readText() }.getOrDefault("")
+        // The file grows without limit; only the recent tail is worth putting on screen.
+        log.text = runCatching { logFile.readText().takeLast(20_000) }.getOrDefault("")
         append("\n=== session ${sessionClock.format(Date())} ===\n")
         append("This app does not send health data anywhere.\n")
     }
@@ -360,12 +372,12 @@ class MainActivity : AppCompatActivity() {
         @Deprecated("Use the byte-array overload on Android 13+")
         override fun onCharacteristicRead(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, statusCode: Int) {
             @Suppress("DEPRECATION") val value = characteristic.value ?: byteArrayOf()
-            runOnUiThread { append("READ ${characteristic.uuid}: ${value.toHex()} (status $statusCode)\n") }
+            runOnUiThread { append("READ ${shortUuid(characteristic.uuid)}: ${value.toHex()} (status $statusCode)\n") }
             stepComplete()
         }
 
         override fun onCharacteristicRead(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, value: ByteArray, statusCode: Int) {
-            runOnUiThread { append("READ ${characteristic.uuid}: ${value.toHex()} (status $statusCode)\n") }
+            runOnUiThread { append("READ ${shortUuid(characteristic.uuid)}: ${value.toHex()} (status $statusCode)\n") }
             stepComplete()
         }
 
@@ -380,7 +392,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         override fun onDescriptorWrite(gatt: BluetoothGatt, descriptor: BluetoothGattDescriptor, statusCode: Int) {
-            runOnUiThread { append("  SUBSCRIBED ${descriptor.characteristic.uuid} (status $statusCode)\n") }
+            runOnUiThread { append("  SUBSCRIBED ${shortUuid(descriptor.characteristic.uuid)} (status $statusCode)\n") }
             stepComplete()
         }
 
@@ -456,8 +468,18 @@ class MainActivity : AppCompatActivity() {
 
     private fun logNotification(characteristic: BluetoothGattCharacteristic, value: ByteArray) {
         val reading = if (characteristic.uuid == HEART_RATE) decodeHeartRate(value) else decodeFrame(value)
-        append("${clock.format(Date())} NOTIFY ${shortUuid(characteristic.uuid)}: ${value.toHex()}" +
-            (reading?.let { "   -> $it" } ?: "") + "\n")
+        val label = shortUuid(characteristic.uuid)
+        val time = clock.format(Date())
+        val fileText = "$time NOTIFY $label: ${value.toHex()}" + (reading?.let { "   -> $it" } ?: "") + "\n"
+        // On screen, lead with the meaning; the hex is optional and the file keeps it regardless.
+        val screenText = when {
+            reading != null && !hexCheck.isChecked -> "$time  $reading\n"
+            reading != null -> "$time  $reading\n           ${value.toHex()}\n"
+            else -> "$time  $label: ${value.toHex()}\n"
+        }
+        // fea1 and 2a37 repeat every second or two and say nothing the panel does not show.
+        val routine = label == "fea1" || label == "2a37"
+        record(fileText, screenText, routine)
         updateReadings(characteristic, value)
     }
 
@@ -774,10 +796,35 @@ class MainActivity : AppCompatActivity() {
 
     private fun ByteArray.toHex() = joinToString(" ") { "%02X".format(it) }
     private fun showStatus(text: String) { status.text = text }
-    private fun append(text: String) {
-        log.append(text)
-        runCatching { logFile.appendText(text) }
+    private fun append(text: String) = record(text, text, routine = false)
+
+    /**
+     * The file always gets everything. The screen is the part a person has to read, so it can
+     * be paused, can drop the once-a-second traffic, and can show decoded values without hex.
+     */
+    private fun record(fileText: String, screenText: String, routine: Boolean) {
+        runCatching { logFile.appendText(fileText) }
+        if (routine && quietCheck.isChecked) return
+        if (paused) {
+            held.append(screenText)
+            heldLines += screenText.count { it == '\n' }
+            pauseButton.text = "Resume ($heldLines)"
+            return
+        }
+        log.append(screenText)
         logScroll.post { logScroll.fullScroll(View.FOCUS_DOWN) }
+    }
+
+    private fun setPaused(value: Boolean) {
+        paused = value
+        if (!paused) {
+            log.append(held)
+            held.setLength(0)
+            heldLines = 0
+            logScroll.post { logScroll.fullScroll(View.FOCUS_DOWN) }
+        }
+        pauseButton.text = if (paused) "Resume (0)" else "Pause"
+        showStatus(if (paused) "Log paused — scroll back and read; nothing is being lost." else "Log running.")
     }
 
     private fun shareLog() {
