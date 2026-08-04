@@ -87,7 +87,8 @@ data class VitalsState(
     val measuring: String? = null,
     val trend: List<Int> = emptyList(),
     val trendCaption: String = "",
-    val interval: Int = 15
+    val interval: Int = 15,
+    val streaming: Boolean = false
 )
 
 @Composable

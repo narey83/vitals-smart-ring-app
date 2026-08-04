@@ -117,6 +117,7 @@ class VitalsActivity : AppCompatActivity() {
                 onInterval = { chooseInterval() },
                 onExport = { showHistory() },
                 onLink = { if (command == null) askThenConnect() },
+                onStream = { toggleStreaming() },
                 dayFor = { pageFor(it) }
             )
         }
@@ -245,6 +246,23 @@ class VitalsActivity : AppCompatActivity() {
         ui = ui.copy(measuring = "Measuring $label — keep still")
         setButtonsEnabled(false)
         enqueue { write(Ring.startMeasuring(type)) }
+    }
+
+    /**
+     * Continuous tracking, for a walk or a workout. The ring keeps sending until told to stop,
+     * so readings are kept every fifteen seconds rather than collapsed to one per measurement:
+     * during exercise the shape of the climb is the point.
+     */
+    private fun toggleStreaming() {
+        if (command == null) { ui = ui.copy(link = "Not connected yet"); connect(); return }
+        val on = !ui.streaming
+        ui = ui.copy(streaming = on)
+        // AppControlReal only opens the tap; the sensor itself is run by a measurement, which
+        // the ring ends after about half a minute. Continuous therefore means starting another
+        // one each time the last finishes.
+        enqueue { write(Ring.streamLive(on)) }
+        if (on) enqueue { write(Ring.startMeasuring(Ring.HEART)) }
+        else enqueue { write(Ring.stopMeasuring()) }
     }
 
     private fun setButtonsEnabled(enabled: Boolean) { /* driven by ui.measuring */ }
@@ -451,7 +469,7 @@ class VitalsActivity : AppCompatActivity() {
         when (val reading = Ring.read(value)) {
             is Ring.Reading.Heart -> {
                 ui = ui.copy(heart = reading.bpm)
-                history.record("heart", reading.bpm)
+                history.record("heart", reading.bpm, burst = if (ui.streaming) 15_000L else 90_000L)
                 showTrend()
             }
             is Ring.Reading.Oxygen -> {
@@ -467,6 +485,10 @@ class VitalsActivity : AppCompatActivity() {
                 setButtonsEnabled(true)
                 ui = ui.copy(measuring = null)
                 showTrend()
+                // Keep the sensor going while continuous tracking is on.
+                if (ui.streaming) handler.postDelayed({
+                    if (ui.streaming) enqueue { write(Ring.startMeasuring(Ring.HEART)) }
+                }, 2_000)
             }
             else -> Unit
         }

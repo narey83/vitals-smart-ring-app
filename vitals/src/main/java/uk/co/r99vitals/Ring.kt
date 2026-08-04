@@ -45,6 +45,16 @@ object Ring {
 
     fun stopMeasuring() = frame(0x03, 0x2F, byteArrayOf(0x00, 0x00))
 
+    /**
+     * Continuous streaming rather than a single measurement.
+     *
+     * AppControlReal, captured from the vendor app, which used it whenever it wanted a live
+     * figure instead of a thirty-second reading. Readings then arrive for as long as it is left
+     * on, which is what a workout wants and what a spot measurement cannot give.
+     */
+    fun streamLive(on: Boolean, type: Int = 0x02) =
+        frame(0x03, 0x09, byteArrayOf(if (on) 0x01 else 0x00, 0x00, type.toByte()))
+
     /** Reads firmware and battery. The literal "GC" is required; the ring refuses without it. */
     fun deviceInfo() = frame(0x02, 0x00, byteArrayOf(0x47, 0x43))
 

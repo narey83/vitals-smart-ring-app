@@ -44,6 +44,7 @@ fun Shell(
     onInterval: () -> Unit,
     onExport: () -> Unit,
     onLink: () -> Unit,
+    onStream: () -> Unit,
     dayFor: (Tab) -> VitalDay
 ) {
     Scaffold(
@@ -77,6 +78,7 @@ fun Shell(
                     day = dayFor(tab),
                     dayOffset = dayOffset,
                     busy = state.measuring != null,
+                    streaming = state.streaming,
                     onDay = onDay,
                     onMeasure = {
                         onMeasure(

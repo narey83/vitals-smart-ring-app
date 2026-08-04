@@ -37,7 +37,7 @@ class History(context: Context) {
      * previous one of the same kind replaces it, so what is kept is where the measurement
      * settled rather than where it started.
      */
-    fun record(kind: String, value: Int, extra: Int = 0) {
+    fun record(kind: String, value: Int, extra: Int = 0, burst: Long = BURST) {
         runCatching {
             val now = System.currentTimeMillis()
             val lines = if (file.exists()) file.readLines().filter { it.isNotBlank() }.toMutableList()
@@ -47,8 +47,14 @@ class History(context: Context) {
             // adjacent and comparing against the previous line would never match.
             val previous = lines.indexOfLast { it.split(",").getOrNull(1) == kind }
             val within = previous >= 0 &&
-                now - (lines[previous].split(",")[0].toLongOrNull() ?: 0L) < BURST
-            if (within) lines[previous] = "$now,$kind,$value,$extra"
+                now - (lines[previous].split(",")[0].toLongOrNull() ?: 0L) < burst
+            // Keep the burst's original timestamp when replacing. Updating it to now would slide
+            // the window forward with every reading, so a continuous stream would collapse into a
+            // single row that is rewritten for ever and never allowed to start a new one.
+            if (within) {
+                val began = lines[previous].split(",")[0]
+                lines[previous] = "$began,$kind,$value,$extra"
+            }
             else lines.add("$now,$kind,$value,$extra")
             file.writeText(lines.joinToString("\n", postfix = "\n"))
         }

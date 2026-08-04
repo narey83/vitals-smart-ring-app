@@ -62,8 +62,10 @@ fun VitalPage(
     day: VitalDay,
     dayOffset: Int,
     busy: Boolean,
+    streaming: Boolean = false,
     onDay: (Int) -> Unit,
-    onMeasure: () -> Unit
+    onMeasure: () -> Unit,
+    onStream: (() -> Unit)? = null
 ) {
     Column(
         Modifier
@@ -145,6 +147,26 @@ fun VitalPage(
                 ),
                 modifier = Modifier.fillMaxWidth().height(56.dp)
             ) { Text(if (busy) "Measuring…" else "Measure now", fontSize = 16.sp) }
+
+            // Continuous streaming, for a walk or a workout: readings keep arriving until it is
+            // turned off, rather than one measurement at a time.
+            onStream?.let { toggle ->
+                Spacer(Modifier.height(10.dp))
+                Button(
+                    onClick = toggle,
+                    shape = CircleShape,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (streaming) day.accent.copy(alpha = 0.22f) else Color.Transparent,
+                        contentColor = day.accent
+                    ),
+                    modifier = Modifier.fillMaxWidth().height(52.dp)
+                ) {
+                    Text(
+                        if (streaming) "Stop continuous tracking" else "Track continuously",
+                        fontSize = 15.sp
+                    )
+                }
+            }
         }
 
         if (day.entries.isNotEmpty()) {
