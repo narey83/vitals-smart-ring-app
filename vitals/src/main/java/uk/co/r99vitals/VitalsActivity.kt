@@ -10,6 +10,9 @@ import android.bluetooth.BluetoothGattCharacteristic
 import android.bluetooth.BluetoothGattDescriptor
 import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothProfile
+import android.bluetooth.le.ScanCallback
+import android.bluetooth.le.ScanResult
+import android.bluetooth.le.ScanSettings
 import android.bluetooth.BluetoothStatusCodes
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -47,7 +50,14 @@ class VitalsActivity : AppCompatActivity() {
     private lateinit var pressureButton: MaterialButton
     private lateinit var historyButton: MaterialButton
     private lateinit var intervalButton: MaterialButton
-    private var interval = 5
+    private var interval = 15   // minutes; 0 means off
+    private val saved by lazy { getSharedPreferences("ring", MODE_PRIVATE) }
+    private var ringAddress: String?
+        get() = saved.getString("address", null)
+        set(value) { saved.edit().putString("address", value).apply() }
+    private var scanning = false
+    private val found = linkedMapOf<String, ScanResult>()
+    private var retryDelay = 0L
     private lateinit var heartTrend: TextView
     private lateinit var heartChart: TrendView
     private lateinit var history: History
@@ -109,12 +119,24 @@ class VitalsActivity : AppCompatActivity() {
         heartTrend = findViewById(R.id.heartTrend)
         heartChart = findViewById(R.id.heartChart)
         history = History(this)
+        interval = getSharedPreferences("ring", MODE_PRIVATE).getInt("interval", 15)
         applyInsets()
         heartButton.setOnClickListener { measure(Ring.HEART, "heart rate") }
         oxygenButton.setOnClickListener { measure(Ring.OXYGEN, "blood oxygen") }
         pressureButton.setOnClickListener { measure(Ring.PRESSURE, "blood pressure") }
         historyButton.setOnClickListener { showHistory() }
+        linkState.setOnClickListener { if (command == null) askThenConnect() }
+        linkState.setOnLongClickListener {
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("Forget this ring?")
+                .setMessage("You will be asked to choose a ring again.")
+                .setPositiveButton("Forget") { _, _ -> ringAddress = null; command = null; pair() }
+                .setNegativeButton("Keep", null)
+                .show()
+            true
+        }
         intervalButton.setOnClickListener { chooseInterval() }
+        applyIntervalLabel()
         showTrend()
         if (BuildConfig.DEBUG) {
             ContextCompat.registerReceiver(
@@ -146,12 +168,69 @@ class VitalsActivity : AppCompatActivity() {
     private fun connect() {
         val bluetooth = adapter
         if (bluetooth == null || !bluetooth.isEnabled) { linkState.text = "Turn Bluetooth on"; return }
+        val address = ringAddress
+        if (address == null) { pair(); return }
         linkState.text = "Connecting to your ring"
         // A paired ring stops advertising, so it is reached by address rather than by scanning.
-        val device = runCatching { bluetooth.getRemoteDevice(RING_ADDRESS) }.getOrNull() ?: return
+        val device = runCatching { bluetooth.getRemoteDevice(address) }.getOrNull() ?: return
         gatt?.close()
         queue.clear(); running = false; step++
         gatt = device.connectGatt(this, false, callback, BluetoothDevice.TRANSPORT_LE)
+    }
+
+    /** First run: find a ring to remember. A ring already paired elsewhere will not appear. */
+    @SuppressLint("MissingPermission")
+    private fun pair() {
+        val scanner = adapter?.bluetoothLeScanner ?: return
+        if (scanning) return
+        scanning = true
+        found.clear()
+        linkState.text = "Looking for a ring"
+        scanner.startScan(null, ScanSettings.Builder()
+            .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build(), scanCallback)
+        handler.postDelayed({ finishPairing() }, 10_000)
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun finishPairing() {
+        if (!scanning) return
+        scanning = false
+        adapter?.bluetoothLeScanner?.stopScan(scanCallback)
+        // A ring already paired to the phone has stopped advertising and will never appear in
+        // a scan, so anything already bonded is offered alongside what was heard. Closest first
+        // among the rest: the ring you are wearing is the nearest one.
+        val bonded = adapter?.bondedDevices.orEmpty().map { it.address to (it.name ?: "Paired device") }
+        val heard = found.values.sortedByDescending { it.rssi }
+            .filterNot { result -> bonded.any { it.first == result.device.address } }
+            .map { it.device.address to "${it.device.name ?: it.scanRecord?.deviceName ?: "Unnamed"}  ·  ${it.rssi} dBm" }
+        val choices = bonded.map { it.first to "${it.second}  ·  already paired" } + heard
+        if (choices.isEmpty()) { linkState.text = "No ring found — tap to retry"; return }
+        val labels = choices.map { it.second }.toTypedArray()
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Which one is your ring?")
+            .setItems(labels) { _, which ->
+                ringAddress = choices[which].first
+                connect()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private val scanCallback = object : ScanCallback() {
+        override fun onScanResult(callbackType: Int, result: ScanResult) {
+            if (result.isConnectable) found[result.device.address] = result
+        }
+        override fun onScanFailed(errorCode: Int) {
+            scanning = false
+            linkState.text = "Scan failed — tap to retry"
+        }
+    }
+
+    /** The ring drops the link when it feels like it, so keep coming back, less eagerly each time. */
+    private fun scheduleReconnect() {
+        if (ringAddress == null) return
+        retryDelay = when (retryDelay) { 0L -> 3_000; 3_000L -> 10_000; 10_000L -> 30_000; else -> 60_000 }
+        handler.postDelayed({ if (command == null) connect() }, retryDelay)
     }
 
     private fun enqueue(work: () -> Boolean) {
@@ -205,25 +284,29 @@ class VitalsActivity : AppCompatActivity() {
      * which is what fills the chart overnight; the app only has to ask once.
      */
     private fun chooseInterval() {
-        val choices = intArrayOf(0, 5, 15, 30, 60)
-        val labels = arrayOf("Off", "Every 5 minutes", "Every 15 minutes", "Every 30 minutes", "Every hour")
+        val choices = intArrayOf(0, 15, 30, 60)
+        val labels = arrayOf("Off", "Every 15 minutes", "Every 30 minutes", "Every hour")
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Automatic readings")
             .setSingleChoiceItems(labels, choices.indexOf(interval).coerceAtLeast(0)) { dialog, which ->
                 dialog.dismiss()
                 interval = choices[which]
+                saved.edit().putInt("interval", interval).apply()
                 applyInterval()
             }
             .setNegativeButton("Cancel", null)
             .show()
     }
 
+    private fun applyIntervalLabel() {
+        intervalButton.text = if (interval == 0) "Automatic readings: off"
+            else "Automatic readings: every $interval min"
+    }
+
     private fun applyInterval() {
-        intervalButton.text = if (interval == 0) {
-            "Automatic readings: off"
-        } else "Automatic readings: every $interval min"
+        applyIntervalLabel()
         if (command == null) { linkState.text = "Not connected yet"; return }
-        Ring.automaticMonitoring(interval > 0, if (interval > 0) interval else 5)
+        Ring.automaticMonitoring(interval > 0, if (interval > 0) interval else 15)
             .forEach { frame -> enqueue { write(frame) } }
     }
 
@@ -265,11 +348,13 @@ class VitalsActivity : AppCompatActivity() {
         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, state: Int) {
             runOnUiThread {
                 if (state == BluetoothProfile.STATE_CONNECTED) {
+                    retryDelay = 0
                     linkState.text = "Reading your ring"
                     gatt.discoverServices()
                 } else {
                     command = null
-                    linkState.text = "Ring disconnected"
+                    linkState.text = "Reconnecting…"
+                    scheduleReconnect()
                 }
             }
         }
@@ -291,7 +376,7 @@ class VitalsActivity : AppCompatActivity() {
                 // The clock is deliberately left alone: writing it makes the ring abandon a
                 // running sleep session, which its own log reports as "exit sleep because time
                 // change". Sleep data matters more than a few seconds of drift.
-                Ring.automaticMonitoring(interval > 0, if (interval > 0) interval else 5)
+                Ring.automaticMonitoring(interval > 0, if (interval > 0) interval else 15)
                     .forEach { frame -> enqueue { write(frame) } }
                 enqueue { linkState.text = "Your ring"; false }
             }
@@ -363,6 +448,12 @@ class VitalsActivity : AppCompatActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        if (command == null && ringAddress != null) askThenConnect()
+        showTrend()
+    }
+
     @SuppressLint("MissingPermission")
     override fun onDestroy() {
         runCatching { unregisterReceiver(overAdb) }
@@ -372,8 +463,5 @@ class VitalsActivity : AppCompatActivity() {
         super.onDestroy()
     }
 
-    private companion object {
-        /** Until pairing is built, the ring this was developed against. */
-        const val RING_ADDRESS = "07:35:00:04:8D:43"
-    }
+
 }
