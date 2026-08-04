@@ -88,7 +88,10 @@ data class VitalsState(
     val trend: List<Int> = emptyList(),
     val trendCaption: String = "",
     val interval: Int = 15,
-    val streaming: Boolean = false
+    val streaming: Boolean = false,
+    val workout: String? = null,
+    val workoutSince: Long = 0L,
+    val workoutBeats: List<Int> = emptyList()
 )
 
 @Composable

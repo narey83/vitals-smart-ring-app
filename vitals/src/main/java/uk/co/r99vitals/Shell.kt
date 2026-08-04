@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Bloodtype
 import androidx.compose.material.icons.rounded.DirectionsWalk
+import androidx.compose.material.icons.rounded.FitnessCenter
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.MonitorHeart
@@ -26,7 +27,8 @@ enum class Tab(val label: String, val icon: ImageVector, val accent: Color) {
     Heart("Heart", Icons.Rounded.Favorite, Ink.heart),
     Oxygen("SpO₂", Icons.Rounded.Bloodtype, Ink.oxygen),
     Pressure("BP", Icons.Rounded.MonitorHeart, Ink.pressure),
-    Steps("Steps", Icons.Rounded.DirectionsWalk, Ink.motion)
+    Steps("Steps", Icons.Rounded.DirectionsWalk, Ink.motion),
+    Workout("Workout", Icons.Rounded.FitnessCenter, Ink.motion)
 }
 
 /**
@@ -44,7 +46,8 @@ fun Shell(
     onInterval: () -> Unit,
     onExport: () -> Unit,
     onLink: () -> Unit,
-    onStream: () -> Unit,
+    onStartWorkout: (String) -> Unit,
+    onStopWorkout: () -> Unit,
     dayFor: (Tab) -> VitalDay
 ) {
     Scaffold(
@@ -74,6 +77,7 @@ fun Shell(
         Column(Modifier.fillMaxSize().padding(padding)) {
             when (tab) {
                 Tab.Today -> VitalsScreen(state, onMeasure, onInterval, onExport, onLink)
+                Tab.Workout -> WorkoutPage(state, onStartWorkout, onStopWorkout)
                 else -> VitalPage(
                     day = dayFor(tab),
                     dayOffset = dayOffset,

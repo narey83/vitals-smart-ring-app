@@ -84,6 +84,8 @@ class VitalsActivity : AppCompatActivity() {
                     "heart" -> measure(Ring.HEART, "heart rate")
                     "oxygen" -> measure(Ring.OXYGEN, "blood oxygen")
                     "pressure" -> measure(Ring.PRESSURE, "blood pressure")
+                    "workout" -> startWorkout("Walk")
+                    "stopworkout" -> stopWorkout()
                 }
             }
         }
@@ -117,7 +119,8 @@ class VitalsActivity : AppCompatActivity() {
                 onInterval = { chooseInterval() },
                 onExport = { showHistory() },
                 onLink = { if (command == null) askThenConnect() },
-                onStream = { toggleStreaming() },
+                onStartWorkout = { startWorkout(it) },
+                onStopWorkout = { stopWorkout() },
                 dayFor = { pageFor(it) }
             )
         }
@@ -253,16 +256,44 @@ class VitalsActivity : AppCompatActivity() {
      * so readings are kept every fifteen seconds rather than collapsed to one per measurement:
      * during exercise the shape of the climb is the point.
      */
-    private fun toggleStreaming() {
+    /**
+     * A workout runs the sensor for as long as it lasts. The ring ends a measurement after about
+     * half a minute, so the session keeps starting another, and every reading is kept rather
+     * than collapsed: during exercise the shape of the climb is the point.
+     */
+    private fun startWorkout(sport: String) {
         if (command == null) { ui = ui.copy(link = "Not connected yet"); connect(); return }
-        val on = !ui.streaming
-        ui = ui.copy(streaming = on)
-        // AppControlReal only opens the tap; the sensor itself is run by a measurement, which
-        // the ring ends after about half a minute. Continuous therefore means starting another
-        // one each time the last finishes.
-        enqueue { write(Ring.streamLive(on)) }
-        if (on) enqueue { write(Ring.startMeasuring(Ring.HEART)) }
-        else enqueue { write(Ring.stopMeasuring()) }
+        ui = ui.copy(
+            workout = sport, workoutSince = System.currentTimeMillis(),
+            workoutBeats = emptyList(), streaming = true
+        )
+        enqueue { write(Ring.streamLive(true)) }
+        enqueue { write(Ring.startMeasuring(Ring.HEART)) }
+        keepMeasuring()
+    }
+
+    private fun stopWorkout() {
+        ui = ui.copy(workout = null, streaming = false)
+        handler.removeCallbacks(keepGoing)
+        enqueue { write(Ring.streamLive(false)) }
+        enqueue { write(Ring.stopMeasuring()) }
+        showTrend()
+    }
+
+    /**
+     * The ring stops measuring on its own, and the completion event does not always arrive, so
+     * the session restarts it on a timer rather than trusting the event.
+     */
+    private val keepGoing = Runnable {
+        if (ui.workout != null && command != null) {
+            enqueue { write(Ring.startMeasuring(Ring.HEART)) }
+            keepMeasuring()
+        }
+    }
+
+    private fun keepMeasuring() {
+        handler.removeCallbacks(keepGoing)
+        handler.postDelayed(keepGoing, 35_000)
     }
 
     private fun setButtonsEnabled(enabled: Boolean) { /* driven by ui.measuring */ }
@@ -469,7 +500,8 @@ class VitalsActivity : AppCompatActivity() {
         when (val reading = Ring.read(value)) {
             is Ring.Reading.Heart -> {
                 ui = ui.copy(heart = reading.bpm)
-                history.record("heart", reading.bpm, burst = if (ui.streaming) 15_000L else 90_000L)
+                history.record("heart", reading.bpm, burst = if (ui.workout != null) 10_000L else 90_000L)
+                if (ui.workout != null) ui = ui.copy(workoutBeats = ui.workoutBeats + reading.bpm)
                 showTrend()
             }
             is Ring.Reading.Oxygen -> {
@@ -485,10 +517,7 @@ class VitalsActivity : AppCompatActivity() {
                 setButtonsEnabled(true)
                 ui = ui.copy(measuring = null)
                 showTrend()
-                // Keep the sensor going while continuous tracking is on.
-                if (ui.streaming) handler.postDelayed({
-                    if (ui.streaming) enqueue { write(Ring.startMeasuring(Ring.HEART)) }
-                }, 2_000)
+                if (ui.workout != null) keepMeasuring()
             }
             else -> Unit
         }
