@@ -336,7 +336,10 @@ replies `FC`, not implemented.
 ## Refusal codes and required arguments
 
 A one-byte payload is the ring saying no. `FC` means the firmware does not implement that
-command; `FE` means it rejected the request, typically for a missing argument.
+command; `FE` means it rejected the request, typically for a missing argument; `FB` came back
+from `OpenFactory` (`08 09`) and appears to mean the mode is locked. `01` is a refusal too,
+where `00` is success — the SDK documents exactly that pair for `settingRestoreFactory`, and it
+is easy to misread as data.
 
 Thirteen commands carry a fixed literal argument in the SDK, sent as ASCII:
 
@@ -357,7 +360,23 @@ without it answers `FC` with it, so those really are absent from this firmware r
 merely mis-called. `GetDeviceName` still answers `FE` even given `"GP"`.
 
 `settingRestoreFactory` needing `"RSYS"` is a deliberate interlock — a factory wipe cannot be
-sent by accident.
+sent by accident. **Verified end to end.** Without it the ring answers `01`, a refusal, to an
+empty payload and to every guessed argument; with it:
+
+```
+--> 01 0E 0A 00 52 53 59 53 1B 83
+<-- 01 0E 07 00 00                      success, then the link drops as the ring reboots
+```
+
+Its own log then reads `win_factory_reset 0003`, followed by entries dated `2020-01-01
+00:00:00` — the RTC returns to the factory epoch, so the clock must be set again afterwards.
+The bond survives; the ring reconnects on its own.
+
+**Read the SDK before guessing a payload.** Every argument above comes from the vendor's
+`YCBTClient`, where each call is one line naming the command number and the exact bytes —
+`settingRestoreFactory` is `sendSingleData2Device(270, new byte[]{82, 83, 89, 83})`, and 270 is
+`0x010E`. Decompiled copies are on GitHub (`auroraphtgrp01/ble-sleeping`), or `jadx` the vendor
+APK. Guessing costs hours and teaches nothing; the table is right there.
 
 ## Not yet decoded
 

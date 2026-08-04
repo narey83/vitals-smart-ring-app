@@ -7,6 +7,20 @@ YCBT SDK, so this is the vendor's own list rather than anything guessed.
 Send as `group`, `command`, then payload; this app adds the length and CRC.
 See [PROTOCOL.md](PROTOCOL.md) for the frame format.
 
+**This table is names only — it does not give payloads, and several commands refuse to work
+without exactly the right one.** The payloads are in the vendor's `YCBTClient`, one line per
+command giving the number and the bytes:
+
+```java
+settingRestoreFactory → sendSingleData2Device(270, new byte[]{82, 83, 89, 83})  // 0x010E, "RSYS"
+settingHeartMonitor   → sendSingleData2Device(268, new byte[]{on, minutes})     // 0x010C
+settingAutomaticMeasurementTime → sendSingleData2Device(320, new byte[]{a,b,c}) // 0x0140
+```
+
+Decompiled copies are on GitHub (`auroraphtgrp01/ble-sleeping`), or run `jadx` over the vendor
+APK. Look a command up there before sending it — guessing arguments wastes hours and the ring
+answers refusals that read like data.
+
 Groups: 01 settings, 02 queries, 03 app->ring actions, 04 ring->app events,
 05 stored history, 06 ring->app live data, 07 raw collection, 09 watch faces,
 0A firmware OTA, 0E factory/diagnostics.
