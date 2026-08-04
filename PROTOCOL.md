@@ -292,6 +292,15 @@ reading:
 |---|---|---|
 | 23:57:11 | 23:58–23:59 | 23:57:11 |
 | 00:01:49 | 00:03:34 | 00:01:49 |
+| — | 00:09:52 | 00:01:49 |
+
+The last two are the decisive pair: two measurements six minutes apart, one timestamp between
+them. The clock is not merely wrong, it is stopped.
+
+The ring's own log can be read back with `GetDeviceLog` (`02 08`) and is the only way to see
+what the ring believes the time is — its entries are stamped from the same RTC, so a write
+shows up there immediately (`23:01:49 exit on time change: 0`) and nothing appears afterwards
+however much happens. There is no `GetTime` anywhere in the 329-command table.
 
 So 13:58:37 was not when the ring stopped measuring — it was the last time anything set its
 clock, and every reading since inherited it. On a ring in this state the stored timestamps
