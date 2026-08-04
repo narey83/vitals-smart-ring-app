@@ -49,6 +49,12 @@ What you leave installed. It assumes the protocol is known and gets on with reco
 
 - **Today**, then a tab each for heart rate, SpO₂, blood pressure, steps and workouts;
 - each vital tab carries its own chart, statistics and day-by-day history;
+- steps are drawn as 24 hourly bars against a clock, and listed hour by hour underneath, each
+  hour opening to show the quarter hours inside it;
+- a settings page for who is wearing the ring — name, sex, age, height and weight, which the
+  ring itself uses to work out distance and calories — plus the step goal and reading interval;
+- metric or imperial, though the ring is always told metric;
+- light and dark, following the system;
 - a foreground service keeps the Bluetooth link open so readings arrive while the app is closed
   — the ring measures on its own schedule and pushes results, so the work is staying connected,
   not polling;

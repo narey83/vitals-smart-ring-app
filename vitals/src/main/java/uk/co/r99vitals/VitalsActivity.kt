@@ -1,6 +1,7 @@
 package uk.co.r99vitals
 
 import android.Manifest
+import androidx.activity.compose.BackHandler
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
@@ -56,6 +57,8 @@ class VitalsActivity : AppCompatActivity() {
     private lateinit var workouts: Workouts
 
     private var interval = 15   // minutes; 0 means off
+    private var settingsOpen by mutableStateOf(false)
+    private var profile by mutableStateOf(Profile())
     private val saved by lazy { getSharedPreferences("ring", MODE_PRIVATE) }
     private var ringAddress: String?
         get() = saved.getString("address", null)
@@ -109,51 +112,64 @@ class VitalsActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         history = History(this)
         workouts = Workouts(this)
-        interval = getSharedPreferences("ring", MODE_PRIVATE).getInt("interval", 15)
-        ui = ui.copy(stepGoal = getSharedPreferences("ring", MODE_PRIVATE).getInt("goal", 10_000))
+        interval = saved.getInt("interval", 15)
+        profile = Profile.read(saved)
+        ui = ui.copy(interval = interval, stepGoal = saved.getInt("goal", 10_000), metric = profile.metric)
         setContent {
             VitalsSheet(
                 sheet = sheet,
                 state = ui,
                 report = report,
-                onInterval = { minutes ->
-                    interval = minutes
-                    saved.edit().putInt("interval", interval).apply()
-                    applyInterval()
-                    sheet = Sheet.None
-                },
-                onGoal = { goal ->
-                    saved.edit().putInt("goal", goal).apply()
-                    ui = ui.copy(stepGoal = goal)
-                    if (command != null) enqueue { write(Ring.setStepGoal(goal)) }
-                    sheet = Sheet.None
-                },
                 onShare = { shareReadings(); sheet = Sheet.None },
                 onHealth = { sendToHealthConnect() },
                 healthLabel = healthLabel,
                 onDismiss = { sheet = Sheet.None }
             )
-            Shell(
-                tab = tab,
-                onTab = { tab = it; dayOffset = 0 },
-                state = ui,
-                dayOffset = dayOffset,
-                onDay = { dayOffset = it.coerceAtMost(0) },
-                onMeasure = { type ->
-                    measure(type, when (type) {
-                        Ring.HEART -> "heart rate"
-                        Ring.OXYGEN -> "blood oxygen"
-                        else -> "blood pressure"
-                    })
-                },
-                onInterval = { sheet = Sheet.Interval },
-                onExport = { report = history.report(); sheet = Sheet.Export },
-                onGoal = { sheet = Sheet.Goal },
-                onLink = { if (command == null) askThenConnect() },
-                onStartWorkout = { startWorkout(it) },
-                onStopWorkout = { stopWorkout() },
-                dayFor = { pageFor(it) }
-            )
+            BackHandler(settingsOpen) { closeSettings() }
+            if (settingsOpen) {
+                SettingsPage(
+                    profile = profile,
+                    state = ui,
+                    firmware = ui.firmware,
+                    ringAddress = ringAddress,
+                    // Typing writes to the phone on every keystroke, which is cheap. The ring is
+                    // only told once, on the way out, rather than a frame per character.
+                    onProfile = { profile = it; it.write(saved); ui = ui.copy(metric = it.metric) },
+                    onGoal = { goal ->
+                        ui = ui.copy(stepGoal = goal)
+                        saved.edit().putInt("goal", goal).apply()
+                    },
+                    onInterval = { minutes ->
+                        interval = minutes
+                        saved.edit().putInt("interval", minutes).apply()
+                        ui = ui.copy(interval = minutes)
+                        applyInterval()
+                    },
+                    onRepair = { forgetRing() },
+                    onExport = { report = history.report(); sheet = Sheet.Export },
+                    onBack = { closeSettings() }
+                )
+            } else {
+                Shell(
+                    tab = tab,
+                    onTab = { tab = it; dayOffset = 0 },
+                    state = ui,
+                    dayOffset = dayOffset,
+                    onDay = { dayOffset = it.coerceAtMost(0) },
+                    onMeasure = { type ->
+                        measure(type, when (type) {
+                            Ring.HEART -> "heart rate"
+                            Ring.OXYGEN -> "blood oxygen"
+                            else -> "blood pressure"
+                        })
+                    },
+                    onSettings = { settingsOpen = true },
+                    onLink = { if (command == null) askThenConnect() },
+                    onStartWorkout = { startWorkout(it) },
+                    onStopWorkout = { stopWorkout() },
+                    dayFor = { pageFor(it) }
+                )
+            }
         }
         showTrend()
         ui = ui.copy(pastWorkouts = workouts.all())
@@ -348,54 +364,40 @@ class VitalsActivity : AppCompatActivity() {
 
     private fun setButtonsEnabled(enabled: Boolean) { /* driven by ui.measuring */ }
 
-    /**
-     * How often the ring measures on its own. The ring does this whether or not the app is open,
-     * which is what fills the chart overnight; the app only has to ask once.
-     */
-    /** The goal is set on the ring as well as in the app, so both agree about the day. */
-    private fun chooseGoal() {
-        val choices = intArrayOf(5_000, 7_500, 10_000, 12_500, 15_000, 20_000)
-        val labels = choices.map { "%,d steps".format(it) }.toTypedArray()
-        androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle("Daily step goal")
-            .setSingleChoiceItems(labels, choices.indexOf(ui.stepGoal).coerceAtLeast(0)) { dialog, which ->
-                dialog.dismiss()
-                val goal = choices[which]
-                saved.edit().putInt("goal", goal).apply()
-                ui = ui.copy(stepGoal = goal)
-                if (command != null) enqueue { write(Ring.setStepGoal(goal)) }
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
-    }
-
-    private fun chooseInterval() {
-        val choices = intArrayOf(0, 15, 30, 60)
-        val labels = arrayOf("Off", "Every 15 minutes", "Every 30 minutes", "Every hour")
-        androidx.appcompat.app.AlertDialog.Builder(this)
-            .setTitle("Automatic readings")
-            .setSingleChoiceItems(labels, choices.indexOf(interval).coerceAtLeast(0)) { dialog, which ->
-                dialog.dismiss()
-                interval = choices[which]
-                saved.edit().putInt("interval", interval).apply()
-                applyInterval()
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
-    }
-
-    private fun applyIntervalLabel() {
-        ui = ui.copy(interval = interval)
-    }
-
     private fun applyInterval() {
-        applyIntervalLabel()
+        ui = ui.copy(interval = interval)
         if (command == null) { ui = ui.copy(link = "Not connected yet"); return }
         Ring.automaticMonitoring(interval > 0, if (interval > 0) interval else 15)
             .forEach { frame -> enqueue { write(frame) } }
     }
 
+    /**
+     * Leaving settings is when the ring is told, so a name typed one letter at a time does not
+     * become a frame per letter. Both writes are harmless to repeat.
+     */
+    private fun closeSettings() {
+        settingsOpen = false
+        if (command == null) return
+        enqueue { write(Ring.setStepGoal(ui.stepGoal)) }
+        enqueue {
+            write(Ring.setUserInfo(profile.male, profile.age, profile.heightCm, profile.weightKg))
+        }
+    }
+
+    /** Readings already recorded stay put; this forgets the ring, not the history. */
+    @SuppressLint("MissingPermission")
+    private fun forgetRing() {
+        runCatching { gatt?.close() }
+        gatt = null
+        command = null
+        ringAddress = null
+        ui = ui.copy(link = "Looking for your ring", connected = false, battery = null, firmware = null)
+        settingsOpen = false
+        askThenConnect()
+    }
+
     /** One vital, one day, assembled from what has been written down. */
+    @androidx.compose.runtime.Composable
     private fun pageFor(which: Tab): VitalDay {
         val start = java.util.Calendar.getInstance().apply {
             add(java.util.Calendar.DAY_OF_YEAR, dayOffset)
@@ -425,23 +427,16 @@ class VitalsActivity : AppCompatActivity() {
                 note = "Estimated from the pulse waveform, not measured with a cuff."
             )
             Tab.Steps -> {
-                // The ring reports a running total, so the interesting figure is how many were
-                // taken in each hour: the difference between one hour's peak and the last.
-                val byHour = IntArray(24)
-                entries.forEach {
-                    val hour = java.util.Calendar.getInstance().apply { time = it.at }
-                        .get(java.util.Calendar.HOUR_OF_DAY)
-                    byHour[hour] = maxOf(byHour[hour], it.value)
-                }
-                var carried = 0
-                val hourly = byHour.map { peak ->
-                    if (peak == 0) 0 else (peak - carried).coerceAtLeast(0).also { carried = peak }
-                }
+                // The ring reports a running total, so both the bars and the rows below them are
+                // differences between totals. Steps works that out once, for each quarter hour,
+                // and the hours are the sums of those.
+                val hours = Steps.hours(entries)
                 VitalDay(
                     "Movement", "steps", Ink.motion,
                     Icons.Rounded.DirectionsWalk,
-                    readings.maxOrNull()?.let { "%,d".format(it) }, hourly, entries,
-                    canMeasure = false, asBars = true
+                    Steps.total(entries).takeIf { it > 0 }?.let { "%,d".format(it) },
+                    hours.map { it.steps }, entries,
+                    canMeasure = false, asBars = true, hours = hours
                 )
             }
             else -> VitalDay(
@@ -635,7 +630,8 @@ class VitalsActivity : AppCompatActivity() {
                 history.record("pressure", reading.systolic, reading.diastolic)
             }
             is Ring.Reading.Power -> ui = ui.copy(
-                link = "Your ring", battery = reading.percent, charging = reading.charging
+                link = "Your ring", battery = reading.percent, charging = reading.charging,
+                firmware = reading.firmware
             )
             is Ring.Reading.Finished -> {
                 setButtonsEnabled(true)

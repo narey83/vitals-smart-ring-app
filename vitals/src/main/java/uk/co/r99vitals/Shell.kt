@@ -22,14 +22,24 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.sp
 
-enum class Tab(val label: String, val icon: ImageVector, val accent: Color) {
-    Today("Today", Icons.Rounded.GridView, Ink.text),
-    Heart("Heart", Icons.Rounded.Favorite, Ink.heart),
-    Oxygen("SpO₂", Icons.Rounded.Bloodtype, Ink.oxygen),
-    Pressure("BP", Icons.Rounded.MonitorHeart, Ink.pressure),
-    Steps("Steps", Icons.Rounded.DirectionsWalk, Ink.motion),
-    Workout("Workout", Icons.Rounded.FitnessCenter, Ink.motion)
+enum class Tab(val label: String, val icon: ImageVector) {
+    Today("Today", Icons.Rounded.GridView),
+    Heart("Heart", Icons.Rounded.Favorite),
+    Oxygen("SpO₂", Icons.Rounded.Bloodtype),
+    Pressure("BP", Icons.Rounded.MonitorHeart),
+    Steps("Steps", Icons.Rounded.DirectionsWalk),
+    Workout("Workout", Icons.Rounded.FitnessCenter)
 }
+
+/** A tab's colour in the theme that is on now. Today has no vital of its own, so it takes ink. */
+val Tab.accent: Color
+    @Composable get() = when (this) {
+        Tab.Today -> Ink.text
+        Tab.Heart -> Ink.heart
+        Tab.Oxygen -> Ink.oxygen
+        Tab.Pressure -> Ink.pressure
+        Tab.Steps, Tab.Workout -> Ink.motion
+    }
 
 /**
  * The tab shell. Today is a glance across everything; the rest are one vital each, with their
@@ -43,19 +53,18 @@ fun Shell(
     dayOffset: Int,
     onDay: (Int) -> Unit,
     onMeasure: (Int) -> Unit,
-    onInterval: () -> Unit,
-    onExport: () -> Unit,
-    onGoal: () -> Unit,
+    onSettings: () -> Unit,
     onLink: () -> Unit,
     onStartWorkout: (String) -> Unit,
     onStopWorkout: () -> Unit,
-    dayFor: (Tab) -> VitalDay
+    dayFor: @Composable (Tab) -> VitalDay
 ) {
     Scaffold(
         containerColor = Ink.canvas,
         bottomBar = {
             NavigationBar(containerColor = Ink.card) {
                 Tab.entries.forEach { entry ->
+                    val accent = entry.accent
                     NavigationBarItem(
                         selected = tab == entry,
                         onClick = { onTab(entry) },
@@ -63,8 +72,8 @@ fun Shell(
                         label = { Text(entry.label, fontSize = 11.sp) },
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = Ink.canvas,
-                            selectedTextColor = entry.accent,
-                            indicatorColor = entry.accent,
+                            selectedTextColor = accent,
+                            indicatorColor = accent,
                             unselectedIconColor = Ink.muted,
                             unselectedTextColor = Ink.muted
                         )
@@ -77,7 +86,7 @@ fun Shell(
         // windowInsetsPadding on top counted the status bar twice and left a dead band.
         Column(Modifier.fillMaxSize().padding(padding)) {
             when (tab) {
-                Tab.Today -> VitalsScreen(state, onMeasure, onInterval, onExport, onGoal, onLink)
+                Tab.Today -> VitalsScreen(state, onMeasure, onSettings, onLink)
                 Tab.Workout -> WorkoutPage(state, onStartWorkout, onStopWorkout)
                 else -> VitalPage(
                     day = dayFor(tab),

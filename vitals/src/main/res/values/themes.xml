@@ -1,11 +1,17 @@
 <resources>
-    <style name="Theme.Vitals" parent="Theme.Material3.Dark.NoActionBar">
+    <!--
+        DayNight, so the app follows the system. The Compose palette in Ink switches with it;
+        this file only has to get the system bars right, since those are drawn by the platform
+        rather than by us.
+    -->
+    <style name="Theme.Vitals" parent="Theme.Material3.DayNight.NoActionBar">
         <!-- Transparent, so the Compose background reaches the edges. Painting these with a
              resource colour left a visible band wherever it differed by a shade. -->
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowDrawsSystemBarBackgrounds">true</item>
-        <item name="android:windowLightStatusBar">false</item>
+        <!-- Light background, so the status bar icons have to be dark to be seen. -->
+        <item name="android:windowLightStatusBar">true</item>
         <item name="colorPrimary">@color/heart</item>
     </style>
 </resources>

@@ -77,15 +77,29 @@ object Ring {
         )
     )
 
-    /** The ring stamps stored records with its own clock, so it is worth keeping accurate. */
-    fun setClock(year: Int, month: Int, day: Int, hour: Int, minute: Int, second: Int) =
-        frame(
-            0x01, 0x00,
-            byteArrayOf(
-                year.toByte(), (year shr 8).toByte(),
-                month.toByte(), day.toByte(), hour.toByte(), minute.toByte(), second.toByte(), 0x00
-            )
+    /**
+     * settingUserInfo. The ring uses height and weight to turn steps into distance and calories,
+     * so these change the numbers it reports rather than merely being stored.
+     *
+     * **The field order is inferred, not verified.** The vendor SDK sends four bytes and names
+     * them nowhere; this is the conventional order for rings in this class. The frame length and
+     * CRC are computed either way, so the worst case is the ring rejecting it with `FE` rather
+     * than the connection dropping. If distance starts reading oddly, this is the thing to
+     * re-capture — see PROTOCOL.md.
+     */
+    fun setUserInfo(male: Boolean, age: Int, heightCm: Int, weightKg: Int) = frame(
+        0x01, 0x03,
+        byteArrayOf(
+            if (male) 0x01 else 0x00,
+            age.coerceIn(1, 120).toByte(),
+            heightCm.coerceIn(50, 250).toByte(),
+            weightKg.coerceIn(20, 200).toByte()
         )
+    )
+
+    // No setClock here on purpose. Writing the ring's clock erases its stored records, and the
+    // ring sets its own at midnight, so a vitals app can only lose data by sending it. The
+    // command itself is documented in PROTOCOL.md and exposed, marked risky, by the debugger.
 
     sealed interface Reading {
         data class Heart(val bpm: Int) : Reading

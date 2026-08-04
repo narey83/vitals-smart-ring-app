@@ -30,7 +30,7 @@ val COMMAND_GROUPS = mapOf(
 )
 
 val ALL_COMMANDS = listOf(
-    RingCommand(0x01, 0x00, "SettingTime", false),
+    RingCommand(0x01, 0x00, "SettingTime", true),   // writing the clock wipes stored records
     RingCommand(0x01, 0x01, "SettingAlarm", false),
     RingCommand(0x01, 0x02, "SettingGoal", false),
     RingCommand(0x01, 0x03, "SettingUserInfo", false),

@@ -10,6 +10,7 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -65,16 +66,61 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 
-/** The palette, kept here so the screen reads as one piece rather than chasing resources. */
+/**
+ * The palette, in both of its moods.
+ *
+ * Every colour is read through a composable getter, so the whole app follows the system theme
+ * without a single call site changing: `Ink.text` means "the text colour right now".
+ *
+ * The accents are not the same values in both. A colour with enough punch against near-black is
+ * washed out to nothing against white — the dark green in particular fails contrast badly as
+ * small text — so each accent has a darker sibling for light mode rather than being reused.
+ */
+private data class Palette(
+    val canvas: Color,
+    val card: Color,
+    val text: Color,
+    val muted: Color,
+    val heart: Color,
+    val oxygen: Color,
+    val pressure: Color,
+    val motion: Color
+)
+
+private val darkInk = Palette(
+    canvas = Color(0xFF07090C),
+    card = Color(0xFF12161C),
+    text = Color(0xFFF4F7FA),
+    muted = Color(0xFF7D8794),
+    heart = Color(0xFFFF3D71),
+    oxygen = Color(0xFF00D1FF),
+    pressure = Color(0xFFB57BFF),
+    motion = Color(0xFF2DE59B)
+)
+
+private val lightInk = Palette(
+    canvas = Color(0xFFF2F5F9),
+    card = Color(0xFFFFFFFF),
+    text = Color(0xFF0B0F14),
+    muted = Color(0xFF5A6472),
+    heart = Color(0xFFD11E4E),
+    oxygen = Color(0xFF00718F),
+    pressure = Color(0xFF6D3BC7),
+    motion = Color(0xFF067A4E)
+)
+
 object Ink {
-    val canvas = Color(0xFF07090C)
-    val card = Color(0xFF12161C)
-    val text = Color(0xFFF4F7FA)
-    val muted = Color(0xFF7D8794)
-    val heart = Color(0xFFFF3D71)
-    val oxygen = Color(0xFF00D1FF)
-    val pressure = Color(0xFFB57BFF)
-    val motion = Color(0xFF2DE59B)
+    private val now: Palette
+        @Composable get() = if (isSystemInDarkTheme()) darkInk else lightInk
+
+    val canvas: Color @Composable get() = now.canvas
+    val card: Color @Composable get() = now.card
+    val text: Color @Composable get() = now.text
+    val muted: Color @Composable get() = now.muted
+    val heart: Color @Composable get() = now.heart
+    val oxygen: Color @Composable get() = now.oxygen
+    val pressure: Color @Composable get() = now.pressure
+    val motion: Color @Composable get() = now.motion
 }
 
 data class VitalsState(
@@ -98,16 +144,16 @@ data class VitalsState(
     val workoutSince: Long = 0L,
     val workoutBeats: List<Int> = emptyList(),
     val pastWorkouts: List<Workouts.Session> = emptyList(),
-    val stepGoal: Int = 10_000
+    val stepGoal: Int = 10_000,
+    val firmware: String? = null,
+    val metric: Boolean = true
 )
 
 @Composable
 fun VitalsScreen(
     state: VitalsState,
     onMeasure: (Int) -> Unit,
-    onInterval: () -> Unit,
-    onHistory: () -> Unit,
-    onGoal: () -> Unit,
+    onSettings: () -> Unit,
     onLink: () -> Unit
 ) {
     Column(
@@ -145,11 +191,13 @@ fun VitalsScreen(
             Pill("BP", Ink.pressure, state.measuring == null, Modifier.weight(1f), Icons.Rounded.MonitorHeart) { onMeasure(Ring.PRESSURE) }
         }
         Spacer(Modifier.height(10.dp))
-        Quiet(if (state.interval == 0) "Automatic readings off" else "Automatic readings every ${state.interval} min", onInterval)
-        Spacer(Modifier.height(8.dp))
-        Quiet("Daily step goal: %,d".format(state.stepGoal), onGoal)
-        Spacer(Modifier.height(8.dp))
-        Quiet("Export readings", onHistory)
+        // One way in rather than three: the settings page holds the interval, the goal and
+        // the export together, so Today can stay a glance instead of a control panel.
+        Quiet(
+            if (state.interval == 0) "Settings · automatic readings off"
+            else "Settings · reading every ${state.interval} min",
+            onSettings
+        )
         Spacer(Modifier.height(20.dp))
         Text(
             "Readings stay on this phone. This app has no internet permission, so it cannot " +
@@ -391,7 +439,7 @@ private fun MovementCard(state: VitalsState) {
             )
             Text(
                 if (state.steps == null) "steps today"
-                else "steps today · ${state.distance} m · ${state.calories} kcal",
+                else "steps today · ${Units.distance(state.distance, state.metric)} · ${state.calories} kcal",
                 color = Ink.muted, fontSize = 13.sp
             )
             state.steps?.let { walked ->

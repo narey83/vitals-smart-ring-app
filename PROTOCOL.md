@@ -56,7 +56,7 @@ Written to `be940001`. Payload excludes the header and CRC, which are computed.
 
 | Group/cmd | Payload | Meaning | Status |
 |---|---|---|---|
-| `01 00` | `YY YY MM DD HH MM SS 00` | set clock, year uint16 LE | verified by matching wall clock |
+| `01 00` | `YY YY MM DD HH MM SS 00` | set clock, year uint16 LE | verified by matching wall clock — **destructive, see below** |
 | `03 2F` | `01 <type>` | start measurement: type `00` heart rate, `01` blood pressure, `02` blood oxygen | **all three verified** |
 | `03 2F` | `00 00` | stop measurement | inferred |
 | `02 00` | `47 43` (`"GC"`) | `GetDeviceInfo`, 30-byte reply | captured, not decoded |
@@ -75,6 +75,17 @@ on this ring. The `64` byte in `GetPowerStatistics` is something else.
 
 Without `settingHeartMonitor` the ring measures only when asked, which is why its history reads
 back empty.
+
+### Setting the clock erases stored records
+
+`SettingTime` (`01 00`) is destructive. Writing the clock clears the ring's stored history —
+this is not a side effect of a bad frame but what the command does, and it is consistent with
+`steps-gs_clear_sport_data` appearing in the firmware log at the moment the day rolls over.
+
+The ring sets its own clock at midnight in the wearer's timezone, so there is nothing to gain
+by sending it: the only reachable outcome is losing a day. Vitals therefore does not implement
+the command at all, and the debugger marks it `risky` so it prompts before sending, like a
+factory reset. If you need it during a capture, expect the history to be gone afterwards.
 | `05 02`/`04`/`06`/`1A` | none | stored history: sport, sleep, heart, blood oxygen | verified as reachable; all returned zero records |
 
 The two literal payloads `"GC"` and `"GF"` are copied from the vendor app. Queries the ring does

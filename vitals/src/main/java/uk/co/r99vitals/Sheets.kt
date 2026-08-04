@@ -32,7 +32,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /** Which sheet is open, if any. */
-enum class Sheet { None, Interval, Goal, Export }
+enum class Sheet { None, Export }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -40,8 +40,6 @@ fun VitalsSheet(
     sheet: Sheet,
     state: VitalsState,
     report: String,
-    onInterval: (Int) -> Unit,
-    onGoal: (Int) -> Unit,
     onShare: () -> Unit,
     onHealth: () -> Unit,
     healthLabel: String,
@@ -63,21 +61,6 @@ fun VitalsSheet(
     ) {
         Column(Modifier.padding(horizontal = 24.dp).padding(bottom = 36.dp)) {
             when (sheet) {
-                Sheet.Interval -> {
-                    Title("Automatic readings")
-                    Note("The ring measures on its own at this interval, whether or not the app is open.")
-                    listOf(0 to "Off", 15 to "Every 15 minutes", 30 to "Every 30 minutes", 60 to "Every hour")
-                        .forEach { (minutes, label) ->
-                            Choice(label, state.interval == minutes, Ink.motion) { onInterval(minutes) }
-                        }
-                }
-                Sheet.Goal -> {
-                    Title("Daily step goal")
-                    Note("Set on the ring as well as here, so both agree about the day.")
-                    listOf(5_000, 7_500, 10_000, 12_500, 15_000, 20_000).forEach { goal ->
-                        Choice("%,d steps".format(goal), state.stepGoal == goal, Ink.motion) { onGoal(goal) }
-                    }
-                }
                 Sheet.Export -> {
                     Title("Your readings")
                     Note("Kept on this phone. Sharing is the only way any of it leaves.")

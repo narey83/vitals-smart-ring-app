@@ -1,6 +1,8 @@
 package uk.co.r99vitals
 
 import androidx.compose.foundation.background
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,6 +21,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ChevronLeft
 import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -26,9 +29,14 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -51,7 +59,9 @@ data class VitalDay(
     val note: String? = null,
     val canMeasure: Boolean = true,
     /** Steps accumulate, so they read as hourly bars rather than a climbing line. */
-    val asBars: Boolean = false
+    val asBars: Boolean = false,
+    /** Steps only: the day cut into hours, each holding its own quarter hours. */
+    val hours: List<Steps.Hour> = emptyList()
 )
 
 private val dayLabel = SimpleDateFormat("EEEE d MMMM", Locale.UK)
@@ -105,8 +115,12 @@ fun VitalPage(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(Modifier.padding(vertical = 20.dp, horizontal = 16.dp)) {
-                    if (day.asBars) BarChart(day.readings, day.accent, Modifier.fillMaxWidth().height(150.dp))
-                    else TrendChart(day.readings, day.accent, Modifier.fillMaxWidth().height(150.dp))
+                    if (day.asBars) {
+                        BarChart(day.readings, day.accent, Modifier.fillMaxWidth().height(150.dp))
+                        HourAxis()
+                    } else {
+                        TrendChart(day.readings, day.accent, Modifier.fillMaxWidth().height(150.dp))
+                    }
                     Spacer(Modifier.height(14.dp))
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         if (day.asBars) {
@@ -169,7 +183,19 @@ fun VitalPage(
             }
         }
 
-        if (day.entries.isNotEmpty()) {
+        if (day.hours.isNotEmpty()) {
+            Spacer(Modifier.height(26.dp))
+            Text(
+                "BY THE HOUR", color = Ink.muted, fontSize = 11.sp,
+                fontWeight = FontWeight.Bold, letterSpacing = 1.6.sp
+            )
+            Spacer(Modifier.height(4.dp))
+            // An hour the ring never reported on is not the same as an hour spent still, so
+            // hours with no readings at all are left out rather than shown as zero.
+            day.hours.filter { it.slots.isNotEmpty() }.asReversed().forEach { hour ->
+                HourRow(hour, day.accent)
+            }
+        } else if (day.entries.isNotEmpty()) {
             Spacer(Modifier.height(26.dp))
             Text(
                 "READINGS", color = Ink.muted, fontSize = 11.sp,
@@ -190,6 +216,74 @@ fun VitalPage(
                     )
                 }
             }
+        }
+    }
+}
+
+/** Every sixth hour, so the bars above can be read against a time of day. */
+@Composable
+private fun HourAxis() {
+    Spacer(Modifier.height(6.dp))
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        listOf("00", "06", "12", "18", "23").forEach {
+            Text(it, color = Ink.muted, fontSize = 10.sp)
+        }
+    }
+}
+
+/**
+ * One hour, which opens to show the quarter hours that made it up.
+ *
+ * The hour is the figure worth reading, so a day is a short list of hours rather than a wall of
+ * ninety-six rows. The quarters answer "when in that hour", which is a question you only
+ * sometimes have, so they stay folded away until asked for.
+ */
+@Composable
+private fun HourRow(hour: Steps.Hour, accent: Color) {
+    var open by remember { mutableStateOf(false) }
+    val turn by animateFloatAsState(if (open) 180f else 0f, label = "chevron")
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clickableNoRippleShared { open = !open }
+            .animateContentSize()
+            .padding(top = 14.dp)
+    ) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Rounded.ExpandMore, if (open) "Collapse" else "Expand",
+                    tint = Ink.muted,
+                    modifier = Modifier.size(16.dp).rotate(turn)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text("%02d:00".format(hour.hour), color = Ink.text, fontSize = 15.sp)
+            }
+            Text(
+                if (hour.steps > 0) "%,d".format(hour.steps) else "—",
+                color = if (hour.steps > 0) accent else Ink.muted,
+                fontSize = 15.sp,
+                fontWeight = if (hour.steps > 0) FontWeight.Medium else FontWeight.Normal
+            )
+        }
+        if (open) {
+            hour.slots.forEach { slot ->
+                Row(
+                    Modifier.fillMaxWidth().padding(start = 24.dp, top = 7.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text("%02d:%02d".format(slot.hour, slot.minute), color = Ink.muted, fontSize = 13.sp)
+                    Text(
+                        if (slot.steps > 0) "%,d".format(slot.steps) else "0",
+                        color = Ink.muted, fontSize = 13.sp
+                    )
+                }
+            }
+            Spacer(Modifier.height(4.dp))
         }
     }
 }
