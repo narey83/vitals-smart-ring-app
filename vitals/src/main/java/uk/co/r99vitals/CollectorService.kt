@@ -40,6 +40,9 @@ class CollectorService : Service() {
     private var calories = 0
     private var latest = "Waiting for the first reading"
 
+    /** The last heart rate written down, so a value merely being repeated is not a measurement. */
+    private var lastHeart = 0
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
@@ -172,10 +175,17 @@ class CollectorService : Service() {
             return
         }
         // Where the ring's own periodic sampling lands: it reports automatic heart readings on
-        // the standard SIG characteristic, not as an 06 01 frame. Dropping these was why the
-        // fifteen minute checks never appeared in the app.
+        // the standard SIG characteristic, not as an 06 01 frame.
+        //
+        // Only a changed value counts. The ring re-notifies this characteristic on its ~90 s
+        // housekeeping tick whether or not it has measured, holding the last number it took, so
+        // writing down every push records one stale reading a minute rather than a measurement.
+        // ponytail: a fresh measurement landing on exactly the previous bpm is indistinguishable
+        // from the held value and is lost. If that matters, the wear status frame (06 13) would
+        // say whether the ring is measuring at all.
         if (characteristic.uuid == Ring.HEART_RATE) {
-            Ring.readStandardHeartRate(value)?.let {
+            Ring.readStandardHeartRate(value)?.takeIf { it != lastHeart }?.let {
+                lastHeart = it
                 history.record("heart", it)
                 latest = "$it bpm"
                 refresh()

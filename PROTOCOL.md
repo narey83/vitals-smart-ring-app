@@ -112,16 +112,22 @@ two values it is sure of and leaves the rest visible as hex.
 Blood pressure from an optical ring is estimated from the pulse waveform rather than measured.
 Treat it as a trend, not a reading, and never as a medical device.
 
-**Automatic sampling reports on `2a37` alone — verified.** The periodic heart readings that
-`settingHeartMonitor` (`01 0C`) turns on arrive as bare two-byte SIG frames such as `04 52`
-(flags `04`, 82 bpm) and never as `06 01`. The `06 nn` frames above belong to a measurement the
-app started; a client that listens only for those sees nothing at all between taps, however
-faithfully the ring is sampling. Anything collecting in the background has to subscribe to
-`2a37` and write down what arrives there.
+### Automatic sampling has never been observed — open
 
-Automatic blood oxygen and pressure remain unaccounted for: neither `06 02`/`06 03` nor any
-other recognisable frame turns up at the interval. They may be reaching the ring's stored
-history instead, which is still undecoded.
+With `settingHeartMonitor` (`01 0C`) set to fifteen minutes, nothing recognisable arrives at
+that interval. Over six hours connected, the only frames pushed unasked were the `fea1` activity
+counter and `2a37`. No `06 01`, `06 02` or `06 03` appeared outside a measurement the app itself
+started, and the ring's own history is still undecoded, so where the readings go — if they are
+taken at all — is unknown.
+
+`2a37` in particular is a trap. It re-notifies on the ring's ~90 s housekeeping tick whether or
+not anything was measured, repeating the last number it holds: 82 bpm arrived unchanged
+eighteen times in twenty-five minutes as `04 52`. A collector that writes down every push
+therefore fills the day with one stale reading a minute and looks, at a glance, exactly like
+working automatic sampling. Only a *changed* value on `2a37` is evidence of a measurement.
+
+Worth ruling out before decoding anything further: whether the ring samples at all when it is
+not being worn. `Real_WearingStatus` (`06 13`) would say.
 
 ## Reading a heart rate — verified end to end
 
