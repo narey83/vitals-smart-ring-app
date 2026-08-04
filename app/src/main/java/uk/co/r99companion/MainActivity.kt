@@ -40,6 +40,7 @@ import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Date
 import java.util.Locale
+import java.util.TimeZone
 import java.util.UUID
 
 class MainActivity : AppCompatActivity() {
@@ -792,8 +793,16 @@ class MainActivity : AppCompatActivity() {
     }
 
     /** The ring keeps its own clock, and its history is stamped with it. */
+    /**
+     * The ring keeps UTC, so UTC is what it is given.
+     *
+     * Its own log prints 13:58:37 for records that read back as 14:58:37, and the stored
+     * timestamps are seconds counted from 2000 UTC. Sending local time therefore puts every
+     * reading an hour into the future for half the year — which is not obviously wrong at a
+     * glance, and was only caught by measuring at a known moment and reading the record back.
+     */
     private fun setRingClock() {
-        val now = Calendar.getInstance()
+        val now = Calendar.getInstance(TimeZone.getTimeZone("UTC"))
         val year = now.get(Calendar.YEAR)
         send(byteArrayOf(
             0x01, 0x00,

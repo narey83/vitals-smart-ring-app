@@ -77,16 +77,17 @@ on this ring. The `64` byte in `GetPowerStatistics` is something else.
 Without `settingHeartMonitor` the ring measures only when asked, which is why its history reads
 back empty.
 
-### Setting the clock erases stored records
+### Setting the clock clears the step count, not the readings
 
-`SettingTime` (`01 00`) is destructive. Writing the clock clears the ring's stored history —
-this is not a side effect of a bad frame but what the command does, and it is consistent with
-`steps-gs_clear_sport_data` appearing in the firmware log at the moment the day rolls over.
+`SettingTime` (`01 00`) zeroes the day's steps. It leaves the stored readings alone — measured
+either side of a write, and set out under "Setting the clock does not erase the readings"
+below. This section previously said it wiped the history; that was wrong, and it is why Vitals
+does not implement the command.
 
-The ring sets its own clock at midnight in the wearer's timezone, so there is nothing to gain
-by sending it: the only reachable outcome is losing a day. Vitals therefore does not implement
-the command at all, and the debugger marks it `risky` so it prompts before sending, like a
-factory reset. If you need it during a capture, expect the history to be gone afterwards.
+The ring is supposed to set its own clock at midnight. On this one it does not — see "The clock
+does not tick" — so writing it is the only way to get a usable timestamp, at the cost of a step
+count the ring clears at midnight anyway. The debugger still marks it `risky` so it prompts
+before sending.
 | `05 02`/`04`/`06`/`1A` | none | stored history: sport, sleep, heart, blood oxygen | verified as reachable; all returned zero records |
 
 The two literal payloads `"GC"` and `"GF"` are copied from the vendor app. Queries the ring does
@@ -283,10 +284,42 @@ Which means:
   measuring at teatime.
 - Nothing can be trusted about *when* a stored reading was taken once the clock has stopped.
 
-The log shows the ring struggling with time on its own: `missing_midnight_tick!`, and `exit
-sleep because time change` five times over one night. `SettingTime` (`01 00`) would fix the
-clock and is the one command that erases the store — see above — so it trades the ring's
-existing records for correctly stamped future ones.
+**The clock does not tick. It holds whatever was last written to it.** Setting it and then
+measuring at a known moment shows the record carrying the time of the *write*, not of the
+reading:
+
+| clock written | measurement taken | record stamped |
+|---|---|---|
+| 23:57:11 | 23:58–23:59 | 23:57:11 |
+| 00:01:49 | 00:03:34 | 00:01:49 |
+
+So 13:58:37 was not when the ring stopped measuring — it was the last time anything set its
+clock, and every reading since inherited it. On a ring in this state the stored timestamps
+carry no information at all beyond "after the last clock write", and readings that pile onto
+one second may be a full day of automatic sampling rather than a single burst.
+
+The log shows the ring struggling with time by itself too: `missing_midnight_tick!`, and `exit
+sleep because time change` five times over one night.
+
+### Setting the clock does not erase the readings — verified
+
+PROTOCOL used to state that `SettingTime` (`01 00`) clears the stored history, and Vitals
+refuses to implement the command on that basis. Measured before and after a clock write:
+
+| | before | after |
+|---|---|---|
+| steps | 1837 | **0** |
+| stored heart records | 26 | **26** |
+
+It clears the step counter — which the ring zeroes at midnight anyway — and leaves the reading
+store untouched. The earlier claim conflated the two, on the evidence of
+`steps-gs_clear_sport_data` in the firmware log, which is about steps and says nothing about
+readings.
+
+**Send UTC, not local time.** The ring keeps UTC: its log prints `13:58:37` for records that
+read back as `14:58:37`. Writing local time puts every subsequent reading an hour into the
+future for half the year, which looks plausible enough to miss — it was caught only by
+measuring at a known moment and reading the record back.
 
 `GetSensorSamplingInfo` (`02 15`), which would say what schedule the ring thinks it is on,
 replies `FC`, not implemented.
