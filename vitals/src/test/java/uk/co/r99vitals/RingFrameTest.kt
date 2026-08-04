@@ -63,4 +63,37 @@ class RingFrameTest {
         assertEquals(listOf("0C", "26", "1C"), frames.map { "%02X".format(it[1]) })
         assertEquals(listOf("01", "00", "00"), frames.map { "%02X".format(it[4]) })
     }
+
+    @Test fun `asking for stored heart rates is the frame the ring answered`() {
+        assertEquals("05 06 06 00 83 20", Ring.storedHeart().hex())
+    }
+
+    /**
+     * Timestamps are little endian seconds counted from 2000, not from the epoch: a record read
+     * as epoch seconds would land thirty years early and never appear on the day it belongs to.
+     */
+    @Test fun `a stored record decodes to the moment it was taken`() {
+        val frame = Ring.frame(
+            0x05, 0x15,
+            byteArrayOf(0x04, 0x03, 0x02, 0x01, 0x00, 0x52)
+        )
+        assertEquals(listOf(963_593_860_000L to 82), Ring.readStoredHeart(frame))
+    }
+
+    /** The ring's store is fixed size, so unused slots come back as zero rather than absent. */
+    @Test fun `empty slots in the ring's store are not readings`() {
+        val frame = Ring.frame(
+            0x05, 0x15,
+            byteArrayOf(
+                0x04, 0x03, 0x02, 0x01, 0x00, 0x52,
+                0x05, 0x03, 0x02, 0x01, 0x00, 0x00
+            )
+        )
+        assertEquals(listOf(963_593_860_000L to 82), Ring.readStoredHeart(frame))
+    }
+
+    /** Live readings share the group. Decoding one as history would date it to the year 2000. */
+    @Test fun `a live heart frame is not mistaken for stored history`() {
+        assertEquals(emptyList<Pair<Long, Int>>(), Ring.readStoredHeart(Ring.frame(0x06, 0x01, byteArrayOf(0x52))))
+    }
 }

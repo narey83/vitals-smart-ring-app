@@ -68,8 +68,7 @@ class History(private val file: File) {
         synchronized(writing) {
             runCatching {
                 val now = System.currentTimeMillis()
-                val lines = if (file.exists()) file.readLines().filter { it.isNotBlank() }.toMutableList()
-                    else mutableListOf()
+                val lines = read()
                 // Search back for the last entry of this kind, not merely the last line: the ring
                 // interleaves activity frames between readings, so two heart readings are never
                 // adjacent and comparing against the previous line would never match.
@@ -86,15 +85,58 @@ class History(private val file: File) {
                     lines[previous] = "$began,$kind,$value,$extra,${if (asked) 1 else 0}"
                 }
                 else lines.add("$now,$kind,$value,$extra,${if (manual) 1 else 0}")
-                // Written beside the real file and moved into place, so that being killed
-                // partway through leaves the old readings rather than half of the new ones.
-                val pending = File(file.parentFile, file.name + ".writing")
-                pending.writeText(lines.joinToString("\n", postfix = "\n"))
-                if (!pending.renameTo(file)) {
-                    file.writeText(pending.readText())
-                    pending.delete()
-                }
+                save(lines)
             }
+        }
+    }
+
+    /**
+     * Readings the ring took while nothing was listening, stamped when they happened rather than
+     * when they were read.
+     *
+     * The ring only hands these over when asked, and it is asked on every connection, so the
+     * same records come back again and again. Anything already written within a burst of that
+     * moment is therefore left alone: a backfill that ran twice must not double the day.
+     */
+    fun backfill(kind: String, readings: List<Pair<Long, Int>>) {
+        if (readings.isEmpty()) return
+        synchronized(writing) {
+            runCatching {
+                val lines = read()
+                val known = lines.mapNotNull { line ->
+                    val parts = line.split(",")
+                    if (parts.getOrNull(1) == kind) parts[0].toLongOrNull() else null
+                }.toMutableList()
+                var added = false
+                readings.forEach { (at, value) ->
+                    if (known.none { kotlin.math.abs(it - at) < BURST }) {
+                        lines.add("$at,$kind,$value,0,0")
+                        known.add(at)
+                        added = true
+                    }
+                }
+                if (!added) return
+                // Rows arrive out of order, and everything downstream reads the file as a day in
+                // sequence: the charts plot it as given and latest() takes the last line.
+                lines.sortBy { it.substringBefore(",").toLongOrNull() ?: 0L }
+                save(lines)
+            }
+        }
+    }
+
+    private fun read(): MutableList<String> =
+        if (file.exists()) file.readLines().filter { it.isNotBlank() }.toMutableList() else mutableListOf()
+
+    /**
+     * Written beside the real file and moved into place, so that being killed partway through
+     * leaves the old readings rather than half of the new ones.
+     */
+    private fun save(lines: List<String>) {
+        val pending = File(file.parentFile, file.name + ".writing")
+        pending.writeText(lines.joinToString("\n", postfix = "\n"))
+        if (!pending.renameTo(file)) {
+            file.writeText(pending.readText())
+            pending.delete()
         }
     }
 

@@ -40,6 +40,9 @@ class CollectorService : Service() {
     private var calories = 0
     private var latest = "Waiting for the first reading"
 
+    /** The last heart rate written down, so a value merely being repeated is not a measurement. */
+    private var lastHeart = 0
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
@@ -171,6 +174,24 @@ class CollectorService : Service() {
             }
             return
         }
+        // Where the ring's own periodic sampling lands: it reports automatic heart readings on
+        // the standard SIG characteristic, not as an 06 01 frame.
+        //
+        // Only a changed value counts. The ring re-notifies this characteristic on its ~90 s
+        // housekeeping tick whether or not it has measured, holding the last number it took, so
+        // writing down every push records one stale reading a minute rather than a measurement.
+        // ponytail: a fresh measurement landing on exactly the previous bpm is indistinguishable
+        // from the held value and is lost. If that matters, the wear status frame (06 13) would
+        // say whether the ring is measuring at all.
+        if (characteristic.uuid == Ring.HEART_RATE) {
+            Ring.readStandardHeartRate(value)?.takeIf { it != lastHeart }?.let {
+                lastHeart = it
+                history.record("heart", it)
+                latest = "$it bpm"
+                refresh()
+            }
+            return
+        }
         when (val reading = Ring.read(value)) {
             is Ring.Reading.Heart -> {
                 history.record("heart", reading.bpm)
@@ -187,7 +208,13 @@ class CollectorService : Service() {
                 latest = "${reading.systolic}/${reading.diastolic}"
                 refresh()
             }
-            else -> Unit
+            // ponytail: heart arrives on the SIG characteristic above, but automatic blood
+            // oxygen and pressure still show up nowhere. Log what else the ring pushes while
+            // unattended; drop this once those two are identified as well. Frames this app
+            // knows but does not collect, such as the battery reply, are not the mystery.
+            else -> if (BuildConfig.DEBUG && reading == null) {
+                android.util.Log.d("r99", "unrecognised push ${value.joinToString("") { "%02X".format(it) }}")
+            }
         }
     }
 

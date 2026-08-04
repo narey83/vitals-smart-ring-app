@@ -153,6 +153,39 @@ object Ring {
         }
     }
 
+    /**
+     * Asks for the heart rates the ring took on its own schedule.
+     *
+     * This is the only way to see them. The ring does not push an automatic reading when it
+     * takes one — it writes it to its own store and says nothing — so a client that merely
+     * listens sees a day of taps and nothing between them. The reply carries a count, then the
+     * records themselves arrive as `05 15` pushes.
+     */
+    fun storedHeart() = frame(0x05, 0x06)
+
+    /**
+     * A stored-heart push: six bytes per record, four of timestamp then the reading.
+     *
+     * The ring counts seconds from 2000 rather than from the epoch. Records often share a
+     * timestamp — a run of them will read as one instant — so these are worth no more than the
+     * hour they fall in; the burst window in [History] collapses each run to a single row.
+     */
+    fun readStoredHeart(value: ByteArray): List<Pair<Long, Int>> {
+        if (value.size < 6) return emptyList()
+        if ((value[0].toInt() and 0xFF) != 0x05 || (value[1].toInt() and 0xFF) != 0x15) return emptyList()
+        return value.copyOfRange(4, value.size - 2).toList().chunked(6)
+            .filter { it.size == 6 }
+            .mapNotNull { record ->
+                var seconds = 0L
+                for (i in 3 downTo 0) seconds = (seconds shl 8) or (record[i].toLong() and 0xFF)
+                val bpm = record[5].toInt() and 0xFF
+                // A zero reading is an empty slot in the ring's store, not a heart that stopped.
+                if (bpm == 0) null else EPOCH_2000 + seconds * 1000L to bpm
+            }
+    }
+
+    private const val EPOCH_2000 = 946_684_800_000L
+
     /** The activity characteristic is a bare push with no frame around it. */
     fun readActivity(value: ByteArray): Reading.Motion? {
         if (value.size < 9) return null
