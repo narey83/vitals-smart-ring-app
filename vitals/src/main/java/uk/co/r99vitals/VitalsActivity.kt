@@ -299,6 +299,17 @@ class VitalsActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * Battery and charging state only arrive when asked, so ask every couple of minutes. On the
+     * charger the level climbs and the state flips, and neither shows if nothing enquires.
+     */
+    private val askBattery = object : Runnable {
+        override fun run() {
+            if (command != null) enqueue { write(Ring.deviceInfo()) }
+            handler.postDelayed(this, 120_000)
+        }
+    }
+
     private fun keepMeasuring() {
         handler.removeCallbacks(keepGoing)
         handler.postDelayed(keepGoing, 35_000)
@@ -478,6 +489,8 @@ class VitalsActivity : AppCompatActivity() {
                 Ring.automaticMonitoring(interval > 0, if (interval > 0) interval else 15)
                     .forEach { frame -> enqueue { write(frame) } }
                 enqueue { ui = ui.copy(link = "Your ring"); false }
+                handler.removeCallbacks(askBattery)
+                handler.postDelayed(askBattery, 120_000)
             }
         }
 
@@ -537,7 +550,9 @@ class VitalsActivity : AppCompatActivity() {
                 ui = ui.copy(systolic = reading.systolic, diastolic = reading.diastolic)
                 history.record("pressure", reading.systolic, reading.diastolic)
             }
-            is Ring.Reading.Power -> ui = ui.copy(link = "Your ring", battery = reading.percent)
+            is Ring.Reading.Power -> ui = ui.copy(
+                link = "Your ring", battery = reading.percent, charging = reading.charging
+            )
             is Ring.Reading.Finished -> {
                 setButtonsEnabled(true)
                 ui = ui.copy(measuring = null)

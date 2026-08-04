@@ -32,6 +32,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Bloodtype
 import androidx.compose.material.icons.rounded.Battery1Bar
+import androidx.compose.material.icons.rounded.BatteryChargingFull
 import androidx.compose.material.icons.rounded.Battery3Bar
 import androidx.compose.material.icons.rounded.Battery5Bar
 import androidx.compose.material.icons.rounded.BatteryFull
@@ -80,6 +81,7 @@ data class VitalsState(
     val link: String = "Looking for your ring",
     val connected: Boolean = false,
     val battery: Int? = null,
+    val charging: Boolean = false,
     val heart: Int? = null,
     val oxygen: Int? = null,
     val systolic: Int? = null,
@@ -180,20 +182,30 @@ private fun Header(state: VitalsState, onLink: () -> Unit) {
             )
             state.battery?.let { level ->
                 Spacer(Modifier.width(12.dp))
-                // The icon carries the state at a glance; the number is for when you care.
+                // Charging is worth showing plainly: it is the one battery state you act on.
+                val tone = when {
+                    state.charging -> Ink.motion
+                    level > 20 -> Ink.muted
+                    else -> Ink.heart
+                }
                 Icon(
                     when {
+                        state.charging -> Icons.Rounded.BatteryChargingFull
                         level > 80 -> Icons.Rounded.BatteryFull
                         level > 50 -> Icons.Rounded.Battery5Bar
                         level > 20 -> Icons.Rounded.Battery3Bar
                         else -> Icons.Rounded.Battery1Bar
                     },
-                    contentDescription = "Ring battery",
-                    tint = if (level > 20) Ink.muted else Ink.heart,
+                    contentDescription = if (state.charging) "Ring charging" else "Ring battery",
+                    tint = tone,
                     modifier = Modifier.size(17.dp)
                 )
                 Spacer(Modifier.width(4.dp))
-                Text("$level%", color = if (level > 20) Ink.muted else Ink.heart, fontSize = 15.sp)
+                Text("$level%", color = tone, fontSize = 15.sp)
+                if (state.charging) {
+                    Spacer(Modifier.width(6.dp))
+                    Text("charging", color = Ink.motion, fontSize = 13.sp)
+                }
             }
         }
     }
