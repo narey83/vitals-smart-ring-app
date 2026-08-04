@@ -49,6 +49,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var pressureButton: MaterialButton
     private lateinit var readAllButton: MaterialButton
     private lateinit var deviceLogButton: MaterialButton
+    private lateinit var capabilityButton: MaterialButton
     private lateinit var firmwareButton: MaterialButton
     private lateinit var browseButton: MaterialButton
     private lateinit var expandButton: MaterialButton
@@ -152,6 +153,10 @@ class MainActivity : AppCompatActivity() {
         firmwareButton = findViewById(R.id.firmwareButton)
         firmwareButton.setOnClickListener {
             send(byteArrayOf(0x02, 0x00, 0x47, 0x43), "firmware and hardware info")
+        }
+        capabilityButton = findViewById(R.id.capabilityButton)
+        capabilityButton.setOnClickListener {
+            send(byteArrayOf(0x02, 0x01, 0x47, 0x46), "what this ring supports")
         }
         deviceLogButton = findViewById(R.id.deviceLogButton)
         deviceLogButton.setOnClickListener { send(byteArrayOf(0x02, 0x08), "device log request") }
