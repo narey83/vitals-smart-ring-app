@@ -46,6 +46,8 @@ class VitalsActivity : AppCompatActivity() {
     private var ui by mutableStateOf(VitalsState())
     private var tab by mutableStateOf(Tab.Today)
     private var dayOffset by mutableStateOf(0)
+    private var sheet by mutableStateOf(Sheet.None)
+    private var report by mutableStateOf("")
     private lateinit var history: History
     private lateinit var workouts: Workouts
 
@@ -106,6 +108,25 @@ class VitalsActivity : AppCompatActivity() {
         interval = getSharedPreferences("ring", MODE_PRIVATE).getInt("interval", 15)
         ui = ui.copy(stepGoal = getSharedPreferences("ring", MODE_PRIVATE).getInt("goal", 10_000))
         setContent {
+            VitalsSheet(
+                sheet = sheet,
+                state = ui,
+                report = report,
+                onInterval = { minutes ->
+                    interval = minutes
+                    saved.edit().putInt("interval", interval).apply()
+                    applyInterval()
+                    sheet = Sheet.None
+                },
+                onGoal = { goal ->
+                    saved.edit().putInt("goal", goal).apply()
+                    ui = ui.copy(stepGoal = goal)
+                    if (command != null) enqueue { write(Ring.setStepGoal(goal)) }
+                    sheet = Sheet.None
+                },
+                onShare = { shareReadings(); sheet = Sheet.None },
+                onDismiss = { sheet = Sheet.None }
+            )
             Shell(
                 tab = tab,
                 onTab = { tab = it; dayOffset = 0 },
@@ -119,9 +140,9 @@ class VitalsActivity : AppCompatActivity() {
                         else -> "blood pressure"
                     })
                 },
-                onInterval = { chooseInterval() },
-                onExport = { showHistory() },
-                onGoal = { chooseGoal() },
+                onInterval = { sheet = Sheet.Interval },
+                onExport = { report = history.report(); sheet = Sheet.Export },
+                onGoal = { sheet = Sheet.Goal },
                 onLink = { if (command == null) askThenConnect() },
                 onStartWorkout = { startWorkout(it) },
                 onStopWorkout = { stopWorkout() },
@@ -429,6 +450,18 @@ class VitalsActivity : AppCompatActivity() {
         )
     }
 
+    private fun shareReadings() {
+        startActivity(
+            Intent.createChooser(
+                Intent(Intent.ACTION_SEND).apply {
+                    type = "text/csv"
+                    putExtra(Intent.EXTRA_SUBJECT, "Vitals readings")
+                    putExtra(Intent.EXTRA_TEXT, history.asCsv())
+                }, "Export readings"
+            )
+        )
+    }
+
     private fun showHistory() {
         val view = TextView(this).apply {
             text = history.report()
@@ -463,7 +496,11 @@ class VitalsActivity : AppCompatActivity() {
                     gatt.discoverServices()
                 } else {
                     command = null
-                    ui = ui.copy(link = "Reconnecting…", connected = false)
+                    handler.removeCallbacks(askBattery)
+                    // Charging is a live state. With no link there is nothing to base it on, so
+                    // it is dropped rather than left showing whatever was true when the ring
+                    // last spoke, which may have been hours ago.
+                    ui = ui.copy(link = "Reconnecting…", connected = false, charging = false)
                     scheduleReconnect()
                 }
             }
@@ -490,7 +527,7 @@ class VitalsActivity : AppCompatActivity() {
                     .forEach { frame -> enqueue { write(frame) } }
                 enqueue { ui = ui.copy(link = "Your ring"); false }
                 handler.removeCallbacks(askBattery)
-                handler.postDelayed(askBattery, 120_000)
+                handler.post(askBattery)
             }
         }
 
