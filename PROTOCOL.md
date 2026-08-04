@@ -65,6 +65,7 @@ Written to `be940001`. Payload excludes the header and CRC, which are computed.
 | `02 25` | none | `GetPowerStatistics`, 38-byte reply | captured, not decoded |
 | `01 0C` | `<on> <minutes>` | `settingHeartMonitor` — periodic heart rate | **verified**, accepted |
 | `01 26` | `<on> <minutes>` | `settingBloodOxygenModeMonitor` — periodic SpO2 | **verified**, accepted |
+| `01 1C` | `<on> <minutes>` | `settingBloodPressureMonitor` — periodic BP | from the SDK, payload assumed to match the two above, untested |
 | `03 0E` | `<on>` | `AppControlTakePhoto` — arm the shutter gesture | **verified** |
 | `01 02` | `<type> <goal uint32 LE> <2 more>` | `settingGoal` | from the SDK, untested |
 | `01 03` | 4 bytes | `settingUserInfo` | from the SDK, untested |

@@ -63,6 +63,7 @@ class VitalsActivity : AppCompatActivity() {
     private lateinit var workouts: Workouts
 
     private var interval = 15   // minutes; 0 means off
+    private var monitors = Ring.Monitors()
     private var settingsOpen by mutableStateOf(false)
     private var nightMode by mutableStateOf(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
     private var profile by mutableStateOf(Profile())
@@ -130,8 +131,18 @@ class VitalsActivity : AppCompatActivity() {
         // Changing it recreates the activity, so remember which page was open across that.
         settingsOpen = savedInstanceState?.getBoolean("settings") == true
         interval = saved.getInt("interval", 15)
+        monitors = Ring.Monitors(
+            heart = saved.getBoolean("monitorHeart", true),
+            oxygen = saved.getBoolean("monitorOxygen", true),
+            pressure = saved.getBoolean("monitorPressure", false)
+        )
         profile = Profile.read(saved)
-        ui = ui.copy(interval = interval, stepGoal = saved.getInt("goal", 10_000), metric = profile.metric)
+        ui = ui.copy(
+            interval = interval,
+            stepGoal = saved.getInt("goal", 10_000),
+            metric = profile.metric,
+            monitors = monitors
+        )
         setContent {
             VitalsSheet(
                 sheet = sheet,
@@ -166,6 +177,16 @@ class VitalsActivity : AppCompatActivity() {
                         interval = minutes
                         saved.edit().putInt("interval", minutes).apply()
                         ui = ui.copy(interval = minutes)
+                        applyInterval()
+                    },
+                    onMonitors = { chosen ->
+                        monitors = chosen
+                        saved.edit()
+                            .putBoolean("monitorHeart", chosen.heart)
+                            .putBoolean("monitorOxygen", chosen.oxygen)
+                            .putBoolean("monitorPressure", chosen.pressure)
+                            .apply()
+                        ui = ui.copy(monitors = chosen)
                         applyInterval()
                     },
                     onRepair = { forgetRing() },
@@ -393,10 +414,14 @@ class VitalsActivity : AppCompatActivity() {
 
     private fun setButtonsEnabled(enabled: Boolean) { /* driven by ui.measuring */ }
 
+    /** An interval of Off means nothing is monitored, whatever the individual switches say. */
+    private fun chosenMonitors(): Ring.Monitors =
+        if (interval > 0) monitors else Ring.Monitors(heart = false, oxygen = false, pressure = false)
+
     private fun applyInterval() {
         ui = ui.copy(interval = interval)
         if (command == null) { ui = ui.copy(link = "Not connected yet"); return }
-        Ring.automaticMonitoring(interval > 0, if (interval > 0) interval else 15)
+        Ring.automaticMonitoring(chosenMonitors(), if (interval > 0) interval else 15)
             .forEach { frame -> enqueue { write(frame) } }
     }
 
@@ -650,7 +675,7 @@ class VitalsActivity : AppCompatActivity() {
                 // The clock is deliberately left alone: writing it makes the ring abandon a
                 // running sleep session, which its own log reports as "exit sleep because time
                 // change". Sleep data matters more than a few seconds of drift.
-                Ring.automaticMonitoring(interval > 0, if (interval > 0) interval else 15)
+                Ring.automaticMonitoring(chosenMonitors(), if (interval > 0) interval else 15)
                     .forEach { frame -> enqueue { write(frame) } }
                 enqueue { ui = ui.copy(link = "Your ring"); false }
                 handler.removeCallbacks(askBattery)

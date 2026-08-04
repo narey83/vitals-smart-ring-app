@@ -58,12 +58,37 @@ object Ring {
     /** Reads firmware and battery. The literal "GC" is required; the ring refuses without it. */
     fun deviceInfo() = frame(0x02, 0x00, byteArrayOf(0x47, 0x43))
 
-    /** Turns on the ring's own periodic sampling, so it gathers without being asked. */
-    fun automaticMonitoring(on: Boolean, minutes: Int = 5): List<ByteArray> {
-        val flag = if (on) 0x01.toByte() else 0x00.toByte()
+    /**
+     * Which measurements the ring takes on its own.
+     *
+     * Each has its own command, so they are genuinely independent: turning blood oxygen off
+     * leaves heart rate sampling untouched rather than silencing everything.
+     */
+    data class Monitors(
+        val heart: Boolean = true,
+        val oxygen: Boolean = true,
+        /** Off by default — see [automaticMonitoring] for why. */
+        val pressure: Boolean = false
+    )
+
+    /**
+     * Turns on the ring's own periodic sampling, so it gathers without being asked.
+     *
+     * Every monitor is addressed on every call, including the ones being turned off: the ring
+     * keeps this setting itself, so a monitor that is simply not mentioned stays however it was
+     * last left, which is how a switch turned off in the app comes back on by itself.
+     *
+     * `01 0C` and `01 26` are verified against hardware. **`01 1C` is not** — blood pressure
+     * monitoring comes from the vendor SDK's command table, and its payload is assumed to match
+     * the other two rather than having been captured. It is off by default for that reason. The
+     * frame is well formed either way, so the ring rejecting it costs nothing.
+     */
+    fun automaticMonitoring(monitors: Monitors, minutes: Int = 5): List<ByteArray> {
+        fun flag(on: Boolean) = if (on) 0x01.toByte() else 0x00.toByte()
         return listOf(
-            frame(0x01, 0x0C, byteArrayOf(flag, minutes.toByte())),
-            frame(0x01, 0x26, byteArrayOf(flag, minutes.toByte()))
+            frame(0x01, 0x0C, byteArrayOf(flag(monitors.heart), minutes.toByte())),
+            frame(0x01, 0x26, byteArrayOf(flag(monitors.oxygen), minutes.toByte())),
+            frame(0x01, 0x1C, byteArrayOf(flag(monitors.pressure), minutes.toByte()))
         )
     }
 

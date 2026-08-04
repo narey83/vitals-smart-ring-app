@@ -24,36 +24,43 @@ class RingFrameTest {
         assertEquals("05 06 06 00 83 20", Ring.frame(0x05, 0x06).hex())
     }
 
-    @Test fun `automatic monitoring turns on both heart and blood oxygen`() {
-        val frames = Ring.automaticMonitoring(true, 15).map { it.hex() }
+    @Test fun `automatic monitoring addresses every monitor`() {
+        val frames = Ring.automaticMonitoring(Ring.Monitors(), 15).map { it.hex() }
         assertEquals(
-            listOf("01 0C 08 00 01 0F 86 87", "01 26 08 00 01 0F 9C C9"),
+            listOf(
+                "01 0C 08 00 01 0F 86 87",   // heart rate, on
+                "01 26 08 00 01 0F 9C C9",   // blood oxygen, on
+                "01 1C 08 00 00 0F ED B0"    // blood pressure, off by default
+            ),
             frames
         )
     }
 
     @Test fun `each interval the app offers is sent as its own minute count`() {
-        assertEquals("01 0C 08 00 01 0F 86 87", Ring.automaticMonitoring(true, 15)[0].hex())
-        assertEquals("01 0C 08 00 01 1E 96 85", Ring.automaticMonitoring(true, 30)[0].hex())
+        val on = Ring.Monitors()
+        assertEquals("01 0C 08 00 01 0F 86 87", Ring.automaticMonitoring(on, 15)[0].hex())
+        assertEquals("01 0C 08 00 01 1E 96 85", Ring.automaticMonitoring(on, 30)[0].hex())
         // An hour is where a signed byte would go wrong if minutes were ever widened.
-        assertEquals("01 0C 08 00 01 3C B6 81", Ring.automaticMonitoring(true, 60)[0].hex())
+        assertEquals("01 0C 08 00 01 3C B6 81", Ring.automaticMonitoring(on, 60)[0].hex())
     }
 
-    @Test fun `turning it off clears the flag on both monitors`() {
-        val frames = Ring.automaticMonitoring(false, 15).map { it.hex() }
+    @Test fun `turning it off clears the flag on every monitor`() {
+        val off = Ring.Monitors(heart = false, oxygen = false, pressure = false)
         assertEquals(
-            listOf("01 0C 08 00 00 0F B7 B4", "01 26 08 00 00 0F AD FA"),
-            frames
+            listOf("00", "00", "00"),
+            Ring.automaticMonitoring(off, 15).map { "%02X".format(it[4]) }
         )
     }
 
     /**
-     * Documents a gap rather than a guarantee: blood pressure has its own monitor command
-     * (`01 1C`, settingBloodPressureMonitor) and nothing sends it, so the interval never fills
-     * the pressure chart. Change this test when that changes.
+     * A monitor that is switched off still gets a frame. The ring keeps this setting itself, so
+     * one that simply went unmentioned would stay however it was last left — which is how a
+     * switch turned off in the app comes back on by itself.
      */
-    @Test fun `blood pressure is not part of automatic monitoring`() {
-        val commands = Ring.automaticMonitoring(true, 15).map { "%02X".format(it[1]) }
-        assertEquals(listOf("0C", "26"), commands)
+    @Test fun `every monitor is addressed whichever way it is set`() {
+        val one = Ring.Monitors(heart = true, oxygen = false, pressure = false)
+        val frames = Ring.automaticMonitoring(one, 15)
+        assertEquals(listOf("0C", "26", "1C"), frames.map { "%02X".format(it[1]) })
+        assertEquals(listOf("01", "00", "00"), frames.map { "%02X".format(it[4]) })
     }
 }

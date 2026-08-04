@@ -88,6 +88,7 @@ fun SettingsPage(
     onNightMode: (Int) -> Unit,
     onGoal: (Int) -> Unit,
     onInterval: (Int) -> Unit,
+    onMonitors: (Ring.Monitors) -> Unit,
     onRepair: () -> Unit,
     onExport: () -> Unit,
     onBack: () -> Unit
@@ -174,6 +175,25 @@ fun SettingsPage(
                 }
         }
         Note("How often the ring measures on its own, whether or not this app is open.")
+
+        Panel {
+            Pick("Heart rate", state.monitors.heart) {
+                onMonitors(state.monitors.copy(heart = !state.monitors.heart))
+            }
+            Divider()
+            Pick("Blood oxygen", state.monitors.oxygen) {
+                onMonitors(state.monitors.copy(oxygen = !state.monitors.oxygen))
+            }
+            Divider()
+            Pick("Blood pressure", state.monitors.pressure) {
+                onMonitors(state.monitors.copy(pressure = !state.monitors.pressure))
+            }
+        }
+        Note(
+            "Which of them it takes at that interval. Blood pressure comes from the vendor's " +
+                "command table and has never been confirmed on this ring — turn it on and see " +
+                "whether readings actually arrive."
+        )
 
         // Deliberately no "set the ring's clock" action here. Writing the clock wipes the
         // ring's stored records, and the ring sets its own clock at midnight anyway, so the

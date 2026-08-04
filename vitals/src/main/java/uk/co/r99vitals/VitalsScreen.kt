@@ -146,7 +146,8 @@ data class VitalsState(
     val pastWorkouts: List<Workouts.Session> = emptyList(),
     val stepGoal: Int = 10_000,
     val firmware: String? = null,
-    val metric: Boolean = true
+    val metric: Boolean = true,
+    val monitors: Ring.Monitors = Ring.Monitors()
 )
 
 @Composable
