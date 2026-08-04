@@ -48,6 +48,11 @@ class CollectorService : Service() {
     override fun onCreate() {
         super.onCreate()
         history = History(this)
+        // Carried over from what is already written down rather than starting at nothing. The
+        // ring re-notifies the reading it holds as soon as anything connects, so a service that
+        // began each time not knowing the last value wrote that stale number down once per
+        // start — a phantom reading every time the app was opened.
+        lastHeart = history.latest("heart")?.value ?: 0
         startForeground(NOTIFICATION, notification())
         connect()
     }

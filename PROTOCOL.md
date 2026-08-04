@@ -253,9 +253,35 @@ Answering all 70 readable commands, 40 reply `FC` (not implemented). `GetDeviceM
 
 Turning on `settingHeartMonitor` took `Health_HistoryHeart` from one record to four, and a day
 of it took the same query to twenty-five. That store is the only place the automatic readings
-exist — see "Automatic readings are stored, never pushed" above. Records commonly share a
-timestamp, twenty of them in one case, so a run of them is worth the hour it falls in and not
-the minute.
+exist — see "Automatic readings are stored, never pushed" above.
+
+### One record per sample, one timestamp per session — verified
+
+A run of records sharing a timestamp is not a decoding mistake. Byte 4 of a heart record is
+`00` in every one of them, so there is no hidden index or offset: the ring stamps every sample
+of a measurement with the second that measurement began, and a measurement streams samples for
+about thirty seconds. Twenty-five records read back as four sessions:
+
+```
+80 E5 03 32 00 54    00:49:20  84 bpm   ┐
+80 E5 03 32 00 63    00:49:20  99 bpm   ├ one session, five samples
+80 E5 03 32 00 51    00:49:20  81 bpm   ┘
+FF 09 04 32 00 53    03:25:03  83 bpm
+57 AB 04 32 00 4F    14:53:27  79 bpm
+8D AC 04 32 00 54    14:58:37  84 bpm   ┐ one session, eighteen samples
+…                                       ┘
+```
+
+A client should therefore collapse each run to one reading rather than plotting eighteen points
+on one minute.
+
+**Four sessions is a whole day**, which is the open question. `settingHeartMonitor` is set to
+fifteen minutes and acknowledged with `00`, but the store gained nothing between 15:00 and
+midnight with the ring worn throughout. The two overnight sessions and none during the day hint
+that this firmware samples while it believes the wearer is asleep and otherwise leaves the
+sensor alone. `GetSensorSamplingInfo` (`02 15`) would settle what the ring thinks its schedule
+is, but it replies `FC`, not implemented. Capturing what the vendor app sends at setup is the
+next thing to try.
 
 ## Refusal codes and required arguments
 
