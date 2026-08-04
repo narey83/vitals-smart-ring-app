@@ -53,6 +53,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -227,7 +229,7 @@ private fun HeartCard(state: VitalsState) {
                 // Full bleed to the card edges: a plot inset on both sides reads as a thumbnail.
                 TrendChart(
                     state.trend, Ink.heart,
-                    Modifier.fillMaxWidth().height(120.dp).padding(horizontal = 0.dp)
+                    Modifier.fillMaxWidth().height(120.dp), showScale = false
                 )
             }
             if (state.trendCaption.isNotEmpty()) {
@@ -260,28 +262,59 @@ fun BarChart(values: List<Int>, accent: Color, modifier: Modifier) {
 }
 
 @Composable
-fun TrendChart(values: List<Int>, accent: Color, modifier: Modifier) {
+fun TrendChart(
+    values: List<Int>,
+    accent: Color,
+    modifier: Modifier,
+    /** Drawn only where there is room; the small card on Today has none. */
+    showScale: Boolean = true
+) {
     val grow by animateFloatAsState(1f, tween(700), label = "grow")
     Canvas(modifier) {
         val raw = if (values.size > 90) values.takeLast(90) else values
+        if (raw.size < 2) return@Canvas
         // Heart rate arrives as whole numbers, so a calm stretch is a staircase of one-beat
-        // steps. A short running mean turns that back into the curve it actually represents.
+        // steps. A short running mean turns that back into the curve it represents.
         val points = raw.indices.map { i ->
             val from = (i - 2).coerceAtLeast(0)
             val to = (i + 2).coerceAtMost(raw.lastIndex)
             raw.subList(from, to + 1).average().toFloat()
         }
-        val low = points.min()
-        // A steady run should read as steady, not be amplified into noise.
-        val span = (points.max() - low).coerceAtLeast(6f)
-        val inset = 10f
-        val usable = size.height - inset * 2
-        val stepX = size.width / (points.size - 1)
-        fun px(i: Int) = i * stepX
-        fun py(v: Float) = inset + usable - ((v - low) / span) * usable * grow
 
-        // Quadratic segments through the midpoints: the standard way to draw a sparkline that
-        // curves rather than corners.
+        // A domain drawn from the data alone puts the lowest reading on the floor, which hides
+        // where the values actually sit. Pad it out to round numbers so the line floats inside
+        // a range you can read.
+        val seen = points.min() to points.max()
+        val margin = ((seen.second - seen.first) * 0.35f).coerceAtLeast(4f)
+        val low = kotlin.math.floor((seen.first - margin) / 5f) * 5f
+        val high = kotlin.math.ceil((seen.second + margin) / 5f) * 5f
+        val span = (high - low).coerceAtLeast(10f)
+
+        val gutter = if (showScale) 74f else 0f
+        val plot = size.width - gutter
+        val stepX = plot / (points.size - 1)
+        fun px(i: Int) = i * stepX
+        fun py(v: Float) = size.height - ((v - low) / span) * size.height * grow
+
+        if (showScale) {
+            val label = android.graphics.Paint().apply {
+                color = accent.copy(alpha = 0.55f).toArgb()
+                textSize = 26f
+                isAntiAlias = true
+            }
+            // Three lines is enough to read a range without becoming graph paper.
+            listOf(high, (high + low) / 2f, low).forEach { mark ->
+                val y = py(mark)
+                drawLine(
+                    accent.copy(alpha = 0.13f),
+                    Offset(0f, y), Offset(plot, y), strokeWidth = 2f
+                )
+                drawContext.canvas.nativeCanvas.drawText(
+                    mark.toInt().toString(), plot + 14f, y + 9f, label
+                )
+            }
+        }
+
         val line = Path().apply {
             moveTo(px(0), py(points[0]))
             for (i in 0 until points.size - 1) {
@@ -297,10 +330,7 @@ fun TrendChart(values: List<Int>, accent: Color, modifier: Modifier) {
             lineTo(px(0), size.height)
             close()
         }
-        drawPath(
-            area,
-            Brush.verticalGradient(listOf(accent.copy(alpha = 0.30f), accent.copy(alpha = 0f)))
-        )
+        drawPath(area, Brush.verticalGradient(listOf(accent.copy(alpha = 0.28f), accent.copy(alpha = 0f))))
         drawPath(line, accent, style = Stroke(width = 6f, cap = StrokeCap.Round, join = StrokeJoin.Round))
         drawCircle(accent, radius = 8f, center = Offset(px(points.size - 1), py(points.last())))
     }
