@@ -73,8 +73,12 @@ class History(private val file: File) {
                 // interleaves activity frames between readings, so two heart readings are never
                 // adjacent and comparing against the previous line would never match.
                 val previous = lines.indexOfLast { it.split(",").getOrNull(1) == kind }
-                val within = previous >= 0 &&
-                    now - (lines[previous].split(",")[0].toLongOrNull() ?: 0L) < burst
+                // A row dated in the future is never the burst this reading belongs to. The ring
+                // stamps its stored records from a clock that can be stopped or plainly wrong,
+                // and one backfilled row an hour ahead would otherwise swallow every reading
+                // taken until the clock caught up, each one replacing the last.
+                val since = now - (lines.getOrNull(previous)?.split(",")?.get(0)?.toLongOrNull() ?: 0L)
+                val within = previous >= 0 && since in 0 until burst
                 // Keep the burst's original timestamp when replacing. Updating it to now would slide
                 // the window forward with every reading, so a continuous stream would collapse into a
                 // single row that is rewritten for ever and never allowed to start a new one.

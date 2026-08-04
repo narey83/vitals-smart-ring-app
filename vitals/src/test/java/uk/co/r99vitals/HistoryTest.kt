@@ -93,6 +93,32 @@ class HistoryTest {
         assertEquals(times.sorted(), times)
     }
 
+    /**
+     * A measurement streams a reading a second for about half a minute. What is wanted is the
+     * one number the measurement settled on, not thirty rows across one minute of the chart.
+     */
+    @Test fun `a whole measurement is one reading`() {
+        val history = history()
+        listOf(93, 93, 92, 93, 94, 95, 94, 92, 91, 90, 91).forEach { history.record("heart", it) }
+        val entries = history.all()
+        assertEquals(1, entries.size)
+        assertEquals(91, entries.single().value)
+    }
+
+    /**
+     * The ring's clock can be stopped or wrong, so a backfilled record can be dated ahead of
+     * now. Such a row must not swallow the readings that follow it.
+     */
+    @Test fun `a reading dated in the future does not absorb later ones`() {
+        val history = history()
+        val anHourAway = System.currentTimeMillis() + 60 * 60 * 1000
+        history.backfill("heart", listOf(Triple(anHourAway, 89, 0)))
+        history.record("heart", 91)
+        val entries = history.all()
+        assertEquals(2, entries.size)
+        assertEquals(listOf(89, 91), entries.map { it.value }.sorted())
+    }
+
     /** Blood pressure is two numbers. A backfill that kept only the systolic would lose half. */
     @Test fun `a backfilled blood pressure keeps both halves`() {
         val history = history()
