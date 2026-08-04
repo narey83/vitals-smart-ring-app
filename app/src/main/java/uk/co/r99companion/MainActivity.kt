@@ -48,6 +48,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var oxygenButton: MaterialButton
     private lateinit var pressureButton: MaterialButton
     private lateinit var readAllButton: MaterialButton
+    private lateinit var deviceLogButton: MaterialButton
     private lateinit var commandInput: EditText
     private lateinit var frameCheck: CheckBox
     private lateinit var monitorButton: MaterialButton
@@ -118,6 +119,8 @@ class MainActivity : AppCompatActivity() {
         oxygenButton = findViewById(R.id.oxygenButton)
         readAllButton = findViewById(R.id.readAllButton)
         readAllButton.setOnClickListener { readEverything() }
+        deviceLogButton = findViewById(R.id.deviceLogButton)
+        deviceLogButton.setOnClickListener { send(byteArrayOf(0x02, 0x08), "device log request") }
         pressureButton = findViewById(R.id.pressureButton)
         monitorButton = findViewById(R.id.monitorButton)
         photoButton = findViewById(R.id.photoButton)
@@ -567,6 +570,14 @@ class MainActivity : AppCompatActivity() {
             // The ring is not a Bluetooth keyboard: this reaches whichever app holds the
             // connection, so no other camera app can ever see it.
             group == 0x04 && command == 0x03 -> "shutter pressed on the ring"
+            // The firmware's own debug log, sent as plain ASCII a few entries at a time.
+            group == 0x02 && command == 0x08 ->
+                payload.map { it.toInt() and 0xFF }
+                    .filter { it in 32..126 }
+                    .map { it.toChar() }
+                    .joinToString("")
+                    .trim()
+                    .ifEmpty { null }
             else -> null
         }
     }
@@ -645,16 +656,74 @@ class MainActivity : AppCompatActivity() {
     private val readOnlyQueries = listOf(
         Triple(0x02, 0x00, byteArrayOf(0x47, 0x43)) to "GetDeviceInfo",
         Triple(0x02, 0x01, byteArrayOf(0x47, 0x46)) to "GetDeviceSupportFunction",
+        Triple(0x02, 0x02, byteArrayOf()) to "GetDeviceMac",
+        Triple(0x02, 0x03, byteArrayOf()) to "GetDeviceName",
+        Triple(0x02, 0x07, byteArrayOf()) to "GetDeviceUserConfig",
+        Triple(0x02, 0x08, byteArrayOf()) to "GetDeviceLog",
+        Triple(0x02, 0x09, byteArrayOf()) to "GetThemeInfo",
+        Triple(0x02, 0x0A, byteArrayOf()) to "GetElectrodeLocation",
+        Triple(0x02, 0x0B, byteArrayOf()) to "GetDeviceScreenInfo",
         Triple(0x02, 0x0C, byteArrayOf()) to "GetNowStep",
+        Triple(0x02, 0x0D, byteArrayOf()) to "GetHistoryOutline",
+        Triple(0x02, 0x0E, byteArrayOf()) to "GetRealTemp",
+        Triple(0x02, 0x0F, byteArrayOf()) to "GetScreenInfo",
+        Triple(0x02, 0x10, byteArrayOf()) to "GetHeavenEarthAndFiveElement",
         Triple(0x02, 0x11, byteArrayOf()) to "GetRealBloodOxygen",
+        Triple(0x02, 0x12, byteArrayOf()) to "GetCurrentAmbientLightIntensity",
+        Triple(0x02, 0x13, byteArrayOf()) to "GetCurrentAmbientTempAndHumidity",
+        Triple(0x02, 0x14, byteArrayOf()) to "GetScheduleInfo",
+        Triple(0x02, 0x15, byteArrayOf()) to "GetSensorSamplingInfo",
+        Triple(0x02, 0x16, byteArrayOf()) to "GetCurrentSystemWorkingMode",
+        Triple(0x02, 0x17, byteArrayOf()) to "GetInsuranceRelatedInfo",
+        Triple(0x02, 0x18, byteArrayOf()) to "GetUploadConfigurationInfoOfReminder",
+        Triple(0x02, 0x19, byteArrayOf()) to "GetStatusOfManualMode",
+        Triple(0x02, 0x1A, byteArrayOf()) to "GetEventReminderInfo",
+        Triple(0x02, 0x1B, byteArrayOf()) to "GetChipScheme",
+        Triple(0x02, 0x1F, byteArrayOf()) to "GetDeviceRemindInfo",
+        Triple(0x02, 0x20, byteArrayOf()) to "GetAllRealDataFromDevice",
+        Triple(0x02, 0x21, byteArrayOf()) to "GetLaserTreatmentParams",
+        Triple(0x02, 0x22, byteArrayOf()) to "GetALiIOTActivationState",
+        Triple(0x02, 0x23, byteArrayOf()) to "GetScreenParameters",
+        Triple(0x02, 0x24, byteArrayOf()) to "GetCardInfo",
         Triple(0x02, 0x25, byteArrayOf()) to "GetPowerStatistics",
         Triple(0x02, 0x26, byteArrayOf()) to "GetSleepStatus",
+        Triple(0x02, 0x27, byteArrayOf()) to "GetEcgMode",
         Triple(0x02, 0x28, byteArrayOf()) to "GetMeasurementFunction",
+        Triple(0x02, 0x29, byteArrayOf()) to "GetAlgorithmicLicense",
+        Triple(0x02, 0x2A, byteArrayOf()) to "GetTerminalConf",
+        Triple(0x02, 0x2B, byteArrayOf()) to "GetSunGoldConf",
+        Triple(0x02, 0x2F, byteArrayOf()) to "GetRingProductionTestHostConfig",
+        Triple(0x02, 0x30, byteArrayOf()) to "GetIdentificationCode",
+        Triple(0x02, 0x31, byteArrayOf()) to "GetBloodPressureCalibrationValue",
         Triple(0x02, 0x32, byteArrayOf()) to "GetRingSizeAndColor",
+        Triple(0x02, 0x33, byteArrayOf()) to "GetVibrationSettings",
         Triple(0x05, 0x02, byteArrayOf()) to "Health_HistorySport",
         Triple(0x05, 0x04, byteArrayOf()) to "Health_HistorySleep",
         Triple(0x05, 0x06, byteArrayOf()) to "Health_HistoryHeart",
+        Triple(0x05, 0x08, byteArrayOf()) to "Health_HistoryBlood",
+        Triple(0x05, 0x09, byteArrayOf()) to "Health_HistoryAll",
         Triple(0x05, 0x1A, byteArrayOf()) to "Health_HistoryBloodOxygen",
+        Triple(0x05, 0x1C, byteArrayOf()) to "Health_HistoryTempAndHumidity",
+        Triple(0x05, 0x1E, byteArrayOf()) to "Health_HistoryTemp",
+        Triple(0x05, 0x20, byteArrayOf()) to "Health_HistoryAmbientLight",
+        Triple(0x05, 0x29, byteArrayOf()) to "Health_HistoryFall",
+        Triple(0x05, 0x2B, byteArrayOf()) to "Health_HistoryHealthMonitoring",
+        Triple(0x05, 0x2D, byteArrayOf()) to "Health_HistorySportMode",
+        Triple(0x05, 0x2F, byteArrayOf()) to "Health_HistoryComprehensiveMeasureData",
+        Triple(0x05, 0x31, byteArrayOf()) to "health_BackgroundReminderRecord",
+        Triple(0x05, 0x33, byteArrayOf()) to "Health_History_Body_Data",
+        Triple(0x05, 0x35, byteArrayOf()) to "Health_LocationData",
+        Triple(0x05, 0x37, byteArrayOf()) to "Health_SedentaryRecords",
+        Triple(0x05, 0x38, byteArrayOf()) to "Health_History_Sedentary_Data",
+        Triple(0x05, 0x39, byteArrayOf()) to "Health_JiuleComprehensive",
+        Triple(0x05, 0x3B, byteArrayOf()) to "Health_HistoryWarning",
+        Triple(0x05, 0x66, byteArrayOf()) to "Health_HistoryWearingStatus",
+        Triple(0x05, 0x73, byteArrayOf()) to "Health_HistoryRespiratoryTraining",
+        Triple(0x05, 0x76, byteArrayOf()) to "Health_HistoryPowerOnOff",
+        Triple(0x05, 0x80, byteArrayOf()) to "Health_HistoryBlock",
+        Triple(0x07, 0x00, byteArrayOf()) to "Collect_QueryNum",
+        Triple(0x07, 0x05, byteArrayOf()) to "Collect_File_Count",
+        Triple(0x07, 0x06, byteArrayOf()) to "Collect_File_List",
     )
 
     private fun readEverything() {

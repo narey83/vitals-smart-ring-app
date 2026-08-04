@@ -170,6 +170,28 @@ there is data the ring follows up by pushing `Health_HistoryBlock` (`05 80`) unp
 app and the vendor's. The ring reports `Sleep` as a supported feature, so this is an empty
 store rather than an unsupported query: nothing had been recorded yet.
 
+## The ring's internal log — verified
+
+`GetDeviceLog` (`02 08`) streams the firmware's own debug log as plain ASCII, several entries
+per frame. Nothing in the vendor app surfaces this. It gives up:
+
+- the firmware version, `V2.32`, stamped on every line;
+- **full sleep staging** — `LIGHT->DEEP`, `DEEP->REM`, `REM->LIGHT`, `LIGHT->WAKE`, with the
+  duration of each stage;
+- the on-device filesystem, `fatfs_record_history,total=28,cur=27` — the ring runs FatFS and
+  keeps a rolling record store;
+- housekeeping: `Delete BP Record`, `Delete Sport Record`, and `steps-gs_clear_sport_data`
+  zeroing the step count at midnight.
+
+That explains the empty history. The ring computes sleep staging perfectly well; it simply
+rotates records away. `Health_HistorySleep` returning zero is a store that has been cleared,
+not a missing feature.
+
+Answering all 70 readable commands, 40 reply `FC` (not implemented). `GetDeviceMac` and
+`GetDeviceName` reply `FE`, a different code, so they likely want an argument.
+
+Turning on `settingHeartMonitor` took `Health_HistoryHeart` from one record to four.
+
 ## Not yet decoded
 
 - **The `05 80` block payload.** Shape is `01 00 06 00` then two varying bytes (`03 E8` here,

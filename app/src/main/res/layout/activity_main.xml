@@ -183,6 +183,14 @@
             android:text="Set the ring's clock to this phone" />
 
         <com.google.android.material.button.MaterialButton
+            android:id="@+id/deviceLogButton"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="Read the ring's own internal log" />
+
+        <com.google.android.material.button.MaterialButton
             android:id="@+id/readAllButton"
             style="@style/Widget.Material3.Button.OutlinedButton"
             android:layout_width="match_parent"
