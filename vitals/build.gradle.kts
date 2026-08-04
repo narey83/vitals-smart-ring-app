@@ -51,4 +51,8 @@ dependencies {
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.activity:activity-compose:1.9.3")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
+
+    // Local, on-device only: Health Connect is IPC, not a network service, so the app keeps
+    // its guarantee of having no INTERNET permission.
+    implementation("androidx.health.connect:connect-client:1.1.0-alpha07")
 }

@@ -43,6 +43,8 @@ fun VitalsSheet(
     onInterval: (Int) -> Unit,
     onGoal: (Int) -> Unit,
     onShare: () -> Unit,
+    onHealth: () -> Unit,
+    healthLabel: String,
     onDismiss: () -> Unit
 ) {
     if (sheet == Sheet.None) return
@@ -88,6 +90,7 @@ fun VitalsSheet(
                     )
                     Spacer(Modifier.height(18.dp))
                     Choice("Export as a spreadsheet", false, Ink.oxygen) { onShare() }
+                    Choice(healthLabel, false, Ink.motion) { onHealth() }
                 }
                 Sheet.None -> Unit
             }

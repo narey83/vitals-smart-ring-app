@@ -36,6 +36,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 import java.util.Calendar
 
 /**
@@ -48,6 +50,8 @@ class VitalsActivity : AppCompatActivity() {
     private var dayOffset by mutableStateOf(0)
     private var sheet by mutableStateOf(Sheet.None)
     private var report by mutableStateOf("")
+    private var healthLabel by mutableStateOf("Add to Health Connect")
+    private val health by lazy { HealthExport(this) }
     private lateinit var history: History
     private lateinit var workouts: Workouts
 
@@ -125,6 +129,8 @@ class VitalsActivity : AppCompatActivity() {
                     sheet = Sheet.None
                 },
                 onShare = { shareReadings(); sheet = Sheet.None },
+                onHealth = { sendToHealthConnect() },
+                healthLabel = healthLabel,
                 onDismiss = { sheet = Sheet.None }
             )
             Shell(
@@ -324,10 +330,14 @@ class VitalsActivity : AppCompatActivity() {
      * Battery and charging state only arrive when asked, so ask every couple of minutes. On the
      * charger the level climbs and the state flips, and neither shows if nothing enquires.
      */
+    private var watching = false
+
     private val askBattery = object : Runnable {
         override fun run() {
             if (command != null) enqueue { write(Ring.deviceInfo()) }
-            handler.postDelayed(this, 120_000)
+            // Often while the screen is being looked at, rarely otherwise. The ring never
+            // announces going on or off charge, so the only way to notice is to keep asking.
+            handler.postDelayed(this, if (watching) 20_000 else 180_000)
         }
     }
 
@@ -448,6 +458,43 @@ class VitalsActivity : AppCompatActivity() {
             trend = history.all().filter { it.kind == "heart" && it.at.time >= since }.map { it.value },
             trendCaption = "Last 24 hours · " + history.summary("heart", since)
         )
+    }
+
+    /**
+     * Hands the readings to Health Connect so other apps on this phone can use them. On-device
+     * only: nothing leaves the phone, and this app still has no INTERNET permission.
+     */
+    private val healthPermission = registerForActivityResult(
+        androidx.health.connect.client.PermissionController.createRequestPermissionResultContract()
+    ) { granted ->
+        if (granted.containsAll(health.permissions)) writeToHealthConnect()
+        else healthLabel = "Health Connect permission refused"
+    }
+
+    private fun sendToHealthConnect() {
+        if (!health.available) {
+            healthLabel = "Health Connect is not set up on this phone"
+            return
+        }
+        healthLabel = "Checking Health Connect…"
+        lifecycleScope.launch {
+            if (health.granted()) writeToHealthConnect()
+            else healthPermission.launch(health.permissions)
+        }
+    }
+
+    private fun writeToHealthConnect() {
+        healthLabel = "Sending…"
+        lifecycleScope.launch {
+            val outcome = runCatching {
+                val entries = history.all()
+                health.send(entries) + health.sendSteps(entries)
+            }
+            healthLabel = outcome.fold(
+                onSuccess = { if (it == 0) "Nothing to send yet" else "Sent $it records to Health Connect" },
+                onFailure = { "Health Connect refused: ${it.message ?: "unknown"}" }
+            )
+        }
     }
 
     private fun shareReadings() {
@@ -602,10 +649,18 @@ class VitalsActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        watching = true
+        handler.removeCallbacks(askBattery)
+        handler.post(askBattery)
         // Collection continues with the app closed; starting it here is idempotent.
         if (ringAddress != null) CollectorService.start(this)
         if (command == null && ringAddress != null) askThenConnect()
         showTrend()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        watching = false
     }
 
     @SuppressLint("MissingPermission")
