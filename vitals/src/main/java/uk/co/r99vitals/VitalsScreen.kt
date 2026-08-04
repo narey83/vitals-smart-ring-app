@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -93,7 +94,9 @@ data class VitalsState(
     val streaming: Boolean = false,
     val workout: String? = null,
     val workoutSince: Long = 0L,
-    val workoutBeats: List<Int> = emptyList()
+    val workoutBeats: List<Int> = emptyList(),
+    val pastWorkouts: List<Workouts.Session> = emptyList(),
+    val stepGoal: Int = 10_000
 )
 
 @Composable
@@ -102,6 +105,7 @@ fun VitalsScreen(
     onMeasure: (Int) -> Unit,
     onInterval: () -> Unit,
     onHistory: () -> Unit,
+    onGoal: () -> Unit,
     onLink: () -> Unit
 ) {
     Column(
@@ -140,6 +144,8 @@ fun VitalsScreen(
         }
         Spacer(Modifier.height(10.dp))
         Quiet(if (state.interval == 0) "Automatic readings off" else "Automatic readings every ${state.interval} min", onInterval)
+        Spacer(Modifier.height(8.dp))
+        Quiet("Daily step goal: %,d".format(state.stepGoal), onGoal)
         Spacer(Modifier.height(8.dp))
         Quiet("Export readings", onHistory)
         Spacer(Modifier.height(20.dp))
@@ -376,6 +382,32 @@ private fun MovementCard(state: VitalsState) {
                 else "steps today · ${state.distance} m · ${state.calories} kcal",
                 color = Ink.muted, fontSize = 13.sp
             )
+            state.steps?.let { walked ->
+                Spacer(Modifier.height(12.dp))
+                val share = (walked.toFloat() / state.stepGoal).coerceIn(0f, 1f)
+                val filled by animateFloatAsState(share, tween(700), label = "goal")
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(6.dp)
+                        .clip(CircleShape)
+                        .background(Ink.motion.copy(alpha = 0.18f))
+                ) {
+                    Box(
+                        Modifier
+                            .fillMaxHeight()
+                            .fillMaxWidth(filled)
+                            .clip(CircleShape)
+                            .background(Ink.motion)
+                    )
+                }
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    if (walked >= state.stepGoal) "Goal reached"
+                    else "%,d to go of %,d".format(state.stepGoal - walked, state.stepGoal),
+                    color = Ink.muted, fontSize = 12.sp
+                )
+            }
         }
     }
 }

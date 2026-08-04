@@ -47,6 +47,7 @@ class VitalsActivity : AppCompatActivity() {
     private var tab by mutableStateOf(Tab.Today)
     private var dayOffset by mutableStateOf(0)
     private lateinit var history: History
+    private lateinit var workouts: Workouts
 
     private var interval = 15   // minutes; 0 means off
     private val saved by lazy { getSharedPreferences("ring", MODE_PRIVATE) }
@@ -101,7 +102,9 @@ class VitalsActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         history = History(this)
+        workouts = Workouts(this)
         interval = getSharedPreferences("ring", MODE_PRIVATE).getInt("interval", 15)
+        ui = ui.copy(stepGoal = getSharedPreferences("ring", MODE_PRIVATE).getInt("goal", 10_000))
         setContent {
             Shell(
                 tab = tab,
@@ -118,6 +121,7 @@ class VitalsActivity : AppCompatActivity() {
                 },
                 onInterval = { chooseInterval() },
                 onExport = { showHistory() },
+                onGoal = { chooseGoal() },
                 onLink = { if (command == null) askThenConnect() },
                 onStartWorkout = { startWorkout(it) },
                 onStopWorkout = { stopWorkout() },
@@ -125,6 +129,7 @@ class VitalsActivity : AppCompatActivity() {
             )
         }
         showTrend()
+        ui = ui.copy(pastWorkouts = workouts.all())
         if (BuildConfig.DEBUG) {
             ContextCompat.registerReceiver(
                 this, overAdb, IntentFilter("uk.co.r99vitals.RUN"), ContextCompat.RECEIVER_EXPORTED
@@ -273,7 +278,10 @@ class VitalsActivity : AppCompatActivity() {
     }
 
     private fun stopWorkout() {
-        ui = ui.copy(workout = null, streaming = false)
+        // Keep the session whole: its sport, its length and its curve, none of which survive
+        // being folded into the day's readings.
+        ui.workout?.let { workouts.save(it, ui.workoutSince, ui.workoutBeats) }
+        ui = ui.copy(workout = null, streaming = false, pastWorkouts = workouts.all())
         handler.removeCallbacks(keepGoing)
         enqueue { write(Ring.streamLive(false)) }
         enqueue { write(Ring.stopMeasuring()) }
@@ -302,6 +310,23 @@ class VitalsActivity : AppCompatActivity() {
      * How often the ring measures on its own. The ring does this whether or not the app is open,
      * which is what fills the chart overnight; the app only has to ask once.
      */
+    /** The goal is set on the ring as well as in the app, so both agree about the day. */
+    private fun chooseGoal() {
+        val choices = intArrayOf(5_000, 7_500, 10_000, 12_500, 15_000, 20_000)
+        val labels = choices.map { "%,d steps".format(it) }.toTypedArray()
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Daily step goal")
+            .setSingleChoiceItems(labels, choices.indexOf(ui.stepGoal).coerceAtLeast(0)) { dialog, which ->
+                dialog.dismiss()
+                val goal = choices[which]
+                saved.edit().putInt("goal", goal).apply()
+                ui = ui.copy(stepGoal = goal)
+                if (command != null) enqueue { write(Ring.setStepGoal(goal)) }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
     private fun chooseInterval() {
         val choices = intArrayOf(0, 15, 30, 60)
         val labels = arrayOf("Off", "Every 15 minutes", "Every 30 minutes", "Every hour")

@@ -71,6 +71,19 @@ fun WorkoutPage(state: VitalsState, onStart: (String) -> Unit, onStop: () -> Uni
                 SportRow(name, icon) { onStart(name) }
                 Spacer(Modifier.height(10.dp))
             }
+
+            if (state.pastWorkouts.isNotEmpty()) {
+                Spacer(Modifier.height(22.dp))
+                Text(
+                    "EARLIER", color = Ink.muted, fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold, letterSpacing = 1.6.sp
+                )
+                Spacer(Modifier.height(12.dp))
+                state.pastWorkouts.asReversed().take(25).forEach { session ->
+                    PastSession(session)
+                    Spacer(Modifier.height(10.dp))
+                }
+            }
         } else {
             val minutes = ((System.currentTimeMillis() - state.workoutSince) / 60000).toInt()
             Spacer(Modifier.height(10.dp))
@@ -123,6 +136,34 @@ fun WorkoutPage(state: VitalsState, onStart: (String) -> Unit, onStop: () -> Uni
         }
     }
 }
+
+/** A finished session, with the curve it recorded rather than only its numbers. */
+@Composable
+private fun PastSession(session: Workouts.Session) {
+    Card(
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = Ink.card),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(Modifier.padding(18.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(session.sport, color = Ink.text, fontSize = 17.sp)
+                Text(sessionStamp.format(session.at), color = Ink.muted, fontSize = 13.sp)
+            }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "${session.minutes} min · average ${session.average} · peak ${session.high}",
+                color = Ink.muted, fontSize = 13.sp
+            )
+            if (session.beats.size > 1) {
+                Spacer(Modifier.height(12.dp))
+                TrendChart(session.beats, Ink.motion, Modifier.fillMaxWidth().height(72.dp), showScale = false)
+            }
+        }
+    }
+}
+
+private val sessionStamp = java.text.SimpleDateFormat("d MMM, HH:mm", java.util.Locale.UK)
 
 @Composable
 private fun SportRow(name: String, icon: ImageVector, onClick: () -> Unit) {

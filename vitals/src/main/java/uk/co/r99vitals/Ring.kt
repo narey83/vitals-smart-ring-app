@@ -67,6 +67,16 @@ object Ring {
         )
     }
 
+    /** settingGoal: a type byte, the goal as uint32 little endian, then two trailing bytes. */
+    fun setStepGoal(steps: Int) = frame(
+        0x01, 0x02,
+        byteArrayOf(
+            0x00,
+            steps.toByte(), (steps shr 8).toByte(), (steps shr 16).toByte(), (steps shr 24).toByte(),
+            0x00, 0x00
+        )
+    )
+
     /** The ring stamps stored records with its own clock, so it is worth keeping accurate. */
     fun setClock(year: Int, month: Int, day: Int, hour: Int, minute: Int, second: Int) =
         frame(

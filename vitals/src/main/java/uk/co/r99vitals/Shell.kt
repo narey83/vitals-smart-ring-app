@@ -45,6 +45,7 @@ fun Shell(
     onMeasure: (Int) -> Unit,
     onInterval: () -> Unit,
     onExport: () -> Unit,
+    onGoal: () -> Unit,
     onLink: () -> Unit,
     onStartWorkout: (String) -> Unit,
     onStopWorkout: () -> Unit,
@@ -76,7 +77,7 @@ fun Shell(
         // windowInsetsPadding on top counted the status bar twice and left a dead band.
         Column(Modifier.fillMaxSize().padding(padding)) {
             when (tab) {
-                Tab.Today -> VitalsScreen(state, onMeasure, onInterval, onExport, onLink)
+                Tab.Today -> VitalsScreen(state, onMeasure, onInterval, onExport, onGoal, onLink)
                 Tab.Workout -> WorkoutPage(state, onStartWorkout, onStopWorkout)
                 else -> VitalPage(
                     day = dayFor(tab),
