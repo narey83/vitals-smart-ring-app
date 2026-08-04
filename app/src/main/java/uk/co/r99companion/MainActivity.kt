@@ -484,6 +484,37 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun readable(bytes: List<Byte>) =
+        bytes.map { it.toInt() and 0xFF }.filter { it in 32..126 }.map { it.toChar() }.joinToString("").trim()
+
+    private val deviceLog = StringBuilder()
+
+    /**
+     * The device log arrives as a run of frames rather than one reply: byte 0 of each payload is
+     * 0x01 to open, 0x02 to continue and 0xFF to close. Showing the first frame on its own gives
+     * only the chunk marker, so the run is gathered and shown once it ends.
+     */
+    private fun collectDeviceLog(value: ByteArray): Boolean {
+        if (value.size < 6) return false
+        if ((value[0].toInt() and 0xFF) != 0x02 || (value[1].toInt() and 0xFF) != 0x08) return false
+        val payload = value.copyOfRange(4, value.size - 2)
+        if (payload.isEmpty()) return true
+        val marker = payload[0].toInt() and 0xFF
+        if (marker == 0x01) deviceLog.setLength(0)
+        readable(payload.drop(1)).let { if (it.isNotEmpty()) deviceLog.append(it).append("\n") }
+        if (marker == 0xFF || marker == 0x01 && payload.size <= 2) {
+            if (deviceLog.isNotEmpty()) {
+                AlertDialog.Builder(this)
+                    .setTitle("The ring's internal log")
+                    .setMessage(deviceLog.toString())
+                    .setPositiveButton("Close", null)
+                    .show()
+            }
+            awaiting = null
+        }
+        return true
+    }
+
     private fun logNotification(characteristic: BluetoothGattCharacteristic, value: ByteArray) {
         val reading = if (characteristic.uuid == HEART_RATE) decodeHeartRate(value) else decodeFrame(value)
         val label = shortUuid(characteristic.uuid)
@@ -499,6 +530,7 @@ class MainActivity : AppCompatActivity() {
         val routine = label == "fea1" || label == "2a37"
         record(fileText, screenText, routine)
         updateReadings(characteristic, value)
+        if (collectDeviceLog(value)) return
         val expected = awaiting
         if (expected != null && value.size >= 6 &&
             (value[0].toInt() and 0xFF) == expected.first &&
@@ -670,14 +702,8 @@ class MainActivity : AppCompatActivity() {
                 "this firmware does not implement that command"
             payload.size == 1 && payload[0] == 0xFE.toByte() ->
                 "the ring rejected that — it wants an argument"
-            // The firmware's own debug log, sent as plain ASCII a few entries at a time.
-            group == 0x02 && command == 0x08 ->
-                payload.map { it.toInt() and 0xFF }
-                    .filter { it in 32..126 }
-                    .map { it.toChar() }
-                    .joinToString("")
-                    .trim()
-                    .ifEmpty { null }
+            // The firmware's own debug log. Byte 0 is a chunk marker, not text.
+            group == 0x02 && command == 0x08 -> readable(payload.drop(1)).ifEmpty { null }
             else -> null
         }
     }
