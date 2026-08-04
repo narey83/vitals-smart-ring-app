@@ -141,7 +141,8 @@ class VitalsActivity : AppCompatActivity() {
             interval = interval,
             stepGoal = saved.getInt("goal", 10_000),
             metric = profile.metric,
-            monitors = monitors
+            monitors = monitors,
+            celebrate = birthdayGreeting()
         )
         setContent {
             VitalsSheet(
@@ -163,7 +164,11 @@ class VitalsActivity : AppCompatActivity() {
                     // Typing writes to the phone on every keystroke, which is cheap. The ring is
                     // only told once, on the way out, rather than a frame per character.
                     nightMode = nightMode,
-                    onProfile = { profile = it; it.write(saved); ui = ui.copy(metric = it.metric) },
+                    onProfile = {
+                        profile = it
+                        it.write(saved)
+                        ui = ui.copy(metric = it.metric, celebrate = birthdayGreeting())
+                    },
                     onNightMode = { mode ->
                         nightMode = mode
                         saved.edit().putInt("night", mode).apply()
@@ -467,12 +472,15 @@ class VitalsActivity : AppCompatActivity() {
         }
         val entries = history.all().filter { it.kind == kind && it.at.time in start until end }
         val readings = entries.map { it.value }
+        // Where in the day each reading happened, as a fraction, so the chart can place it.
+        val positions = entries.map { ((it.at.time - start).toFloat() / (24 * 60 * 60 * 1000)) }
         val last = entries.lastOrNull()
         return when (which) {
             Tab.Oxygen -> VitalDay(
                 "Blood oxygen", "%", Ink.oxygen,
                 Icons.Rounded.Bloodtype,
                 last?.value?.toString(), readings, entries,
+                positions = positions,
                 hours = hourly(
                     entries,
                     summary = { "${it.map { r -> r.value }.average().roundToInt()}%" }
@@ -483,6 +491,7 @@ class VitalsActivity : AppCompatActivity() {
                 Icons.Rounded.MonitorHeart,
                 last?.let { "${it.value}/${it.extra}" }, readings, entries,
                 note = "Estimated from the pulse waveform, not measured with a cuff.",
+                positions = positions,
                 hours = hourly(
                     entries,
                     summary = { hour ->
@@ -525,6 +534,7 @@ class VitalsActivity : AppCompatActivity() {
                 "Heart rate", "bpm", Ink.heart,
                 Icons.Rounded.Favorite,
                 last?.value?.toString(), readings, entries,
+                positions = positions,
                 hours = hourly(
                     entries,
                     summary = { "${it.map { r -> r.value }.average().roundToInt()}" }
@@ -568,6 +578,14 @@ class VitalsActivity : AppCompatActivity() {
         val low = values.min()
         val high = values.max()
         return if (low == high) null else "$low–$high"
+    }
+
+    /** Worded here so the screen only has to decide whether to show it. */
+    private fun birthdayGreeting(): String? {
+        if (!profile.birthdayToday) return null
+        val who = profile.name.trim().takeIf { it.isNotEmpty() }
+        val greeting = if (who != null) "Happy birthday, $who!" else "Happy birthday!"
+        return "$greeting You are ${profile.age} today."
     }
 
     private fun showTrend() {

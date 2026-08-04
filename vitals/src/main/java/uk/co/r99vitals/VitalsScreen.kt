@@ -40,6 +40,7 @@ import androidx.compose.material.icons.rounded.BatteryFull
 import androidx.compose.material.icons.rounded.DirectionsWalk
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.MonitorHeart
+import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -147,7 +148,9 @@ data class VitalsState(
     val stepGoal: Int = 10_000,
     val firmware: String? = null,
     val metric: Boolean = true,
-    val monitors: Ring.Monitors = Ring.Monitors()
+    val monitors: Ring.Monitors = Ring.Monitors(),
+    /** Set only on the wearer's birthday, and already worded. */
+    val celebrate: String? = null
 )
 
 @Composable
@@ -165,7 +168,11 @@ fun VitalsScreen(
             .padding(horizontal = 20.dp)
             .padding(top = 12.dp, bottom = 32.dp)
     ) {
-        Header(state, onLink)
+        Header(state, onLink, onSettings)
+        state.celebrate?.let {
+            Spacer(Modifier.height(18.dp))
+            BirthdayCard(it)
+        }
         Spacer(Modifier.height(22.dp))
         HeartCard(state)
         Spacer(Modifier.height(12.dp))
@@ -192,12 +199,12 @@ fun VitalsScreen(
             Pill("BP", Ink.pressure, state.measuring == null, Modifier.weight(1f), Icons.Rounded.MonitorHeart) { onMeasure(Ring.PRESSURE) }
         }
         Spacer(Modifier.height(10.dp))
-        // One way in rather than three: the settings page holds the interval, the goal and
-        // the export together, so Today can stay a glance instead of a control panel.
-        Quiet(
-            if (state.interval == 0) "Settings · automatic readings off"
-            else "Settings · reading every ${state.interval} min",
-            onSettings
+        // Settings is the gear in the header now. What is worth saying here is only what the
+        // ring is currently doing, which is a fact rather than a button.
+        Text(
+            if (state.interval == 0) "Automatic readings are off"
+            else "Measuring on its own every ${state.interval} min",
+            color = Ink.muted, fontSize = 13.sp
         )
         Spacer(Modifier.height(20.dp))
         Text(
@@ -209,9 +216,25 @@ fun VitalsScreen(
 }
 
 @Composable
-private fun Header(state: VitalsState, onLink: () -> Unit) {
+private fun Header(state: VitalsState, onLink: () -> Unit, onSettings: () -> Unit) {
     Column {
-        Text("TODAY", color = Ink.muted, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 2.sp)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "TODAY", color = Ink.muted, fontSize = 12.sp,
+                fontWeight = FontWeight.Bold, letterSpacing = 2.sp,
+                modifier = Modifier.weight(1f)
+            )
+            Box(
+                Modifier.size(38.dp).clip(CircleShape).background(Ink.card)
+                    .clickableNoRipple(onSettings),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    Icons.Rounded.Settings, "Settings",
+                    tint = Ink.text, modifier = Modifier.size(20.dp)
+                )
+            }
+        }
         Spacer(Modifier.height(6.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             // A quiet dot beats a sentence about connection state.
@@ -256,6 +279,26 @@ private fun Header(state: VitalsState, onLink: () -> Unit) {
                     Text("charging", color = Ink.motion, fontSize = 13.sp)
                 }
             }
+        }
+    }
+}
+
+/** Once a year, and gone the next day. Worth a moment rather than a whole feature. */
+@Composable
+private fun BirthdayCard(message: String) {
+    val rise by animateFloatAsState(1f, tween(700), label = "birthday")
+    Card(
+        shape = RoundedCornerShape(26.dp),
+        colors = CardDefaults.cardColors(containerColor = Ink.motion.copy(alpha = 0.16f)),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(20.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("🎉", fontSize = (30 * rise).sp)
+            Spacer(Modifier.width(14.dp))
+            Text(message, color = Ink.text, fontSize = 17.sp, lineHeight = 23.sp)
         }
     }
 }
@@ -307,6 +350,9 @@ private fun HeartCard(state: VitalsState) {
     }
 }
 
+/** Room on the right for the scale labels, shared with whatever draws an axis underneath. */
+val SCALE_GUTTER = 26.dp
+
 /** A trend drawn as a shape, because at this size the shape is the information. */
 @Composable
 fun BarChart(values: List<Int>, accent: Color, modifier: Modifier) {
@@ -334,7 +380,15 @@ fun TrendChart(
     accent: Color,
     modifier: Modifier,
     /** Drawn only where there is room; the small card on Today has none. */
-    showScale: Boolean = true
+    showScale: Boolean = true,
+    /**
+     * Where each reading sits in the day, from 0 at midnight to 1 at the end of it.
+     *
+     * Without these the readings are spaced evenly, which draws eight readings taken between
+     * three and six o'clock as though they were spread across the whole day. Given them, the
+     * line sits under the hours it actually happened in.
+     */
+    positions: List<Float> = emptyList()
 ) {
     val grow by animateFloatAsState(1f, tween(700), label = "grow")
     Canvas(modifier) {
@@ -357,10 +411,13 @@ fun TrendChart(
         val high = kotlin.math.ceil((seen.second + margin) / 5f) * 5f
         val span = (high - low).coerceAtLeast(10f)
 
-        val gutter = if (showScale) 74f else 0f
+        val gutter = if (showScale) SCALE_GUTTER.toPx() else 0f
         val plot = size.width - gutter
         val stepX = plot / (points.size - 1)
-        fun px(i: Int) = i * stepX
+        // Sliced the same way the values were, so a reading keeps its own time.
+        val when_ = if (values.size > 90) positions.takeLast(90) else positions
+        val timed = when_.size == raw.size
+        fun px(i: Int) = if (timed) when_[i] * plot else i * stepX
         fun py(v: Float) = size.height - ((v - low) / span) * size.height * grow
 
         if (showScale) {

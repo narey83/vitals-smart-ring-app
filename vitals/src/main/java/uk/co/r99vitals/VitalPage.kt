@@ -41,6 +41,7 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.text.SimpleDateFormat
@@ -61,6 +62,8 @@ data class VitalDay(
     val canMeasure: Boolean = true,
     /** Steps accumulate, so they read as hourly bars rather than a climbing line. */
     val asBars: Boolean = false,
+    /** Where each reading sits in the day, 0 to 1, so the line can be drawn against a clock. */
+    val positions: List<Float> = emptyList(),
     /** The day cut into hours, each opening to show what it was made of. */
     val hours: List<HourGroup> = emptyList()
 )
@@ -143,7 +146,13 @@ fun VitalPage(
                         BarChart(day.readings, day.accent, Modifier.fillMaxWidth().height(150.dp))
                         HourAxis()
                     } else {
-                        TrendChart(day.readings, day.accent, Modifier.fillMaxWidth().height(150.dp))
+                        TrendChart(
+                            day.readings, day.accent,
+                            Modifier.fillMaxWidth().height(150.dp),
+                            positions = day.positions
+                        )
+                        // Only honest when the line is drawn against time rather than evenly.
+                        if (day.positions.size == day.readings.size) HourAxis(SCALE_GUTTER)
                     }
                     Spacer(Modifier.height(14.dp))
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -224,9 +233,12 @@ fun VitalPage(
 
 /** Every sixth hour, so the bars above can be read against a time of day. */
 @Composable
-private fun HourAxis() {
+private fun HourAxis(endInset: Dp = 0.dp) {
     Spacer(Modifier.height(6.dp))
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+    Row(
+        Modifier.fillMaxWidth().padding(end = endInset),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
         listOf("00", "06", "12", "18", "23").forEach {
             Text(it, color = Ink.muted, fontSize = 10.sp)
         }

@@ -1,22 +1,29 @@
 package uk.co.r99vitals
 
 import android.content.SharedPreferences
+import android.os.Build
+import android.widget.NumberPicker
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBack
@@ -24,20 +31,35 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
 
 /**
  * Who is wearing the ring, and what they want from it.
@@ -50,7 +72,15 @@ import androidx.compose.ui.unit.sp
 data class Profile(
     val name: String = "",
     val male: Boolean = true,
-    val age: Int = 30,
+    /**
+     * The day itself, as an epoch day, or 0 when it has never been set.
+     *
+     * A birthday is a fact; an age is what that fact means today, and it changes without anyone
+     * editing it. Storing the age instead means it silently goes stale — which is why [storedAge]
+     * exists only to keep profiles that predate this field working, and is never written again.
+     */
+    val birthday: Long = 0L,
+    val storedAge: Int = 30,
     val heightCm: Int = 175,
     val weightKg: Int = 75,
     /** Which units to show. Height and weight are stored in metric either way. */
@@ -60,17 +90,32 @@ data class Profile(
         fun read(prefs: SharedPreferences) = Profile(
             name = prefs.getString("name", "") ?: "",
             male = prefs.getBoolean("male", true),
-            age = prefs.getInt("age", 30),
+            birthday = prefs.getLong("birthday", 0L),
+            storedAge = prefs.getInt("age", 30),
             heightCm = prefs.getInt("height", 175),
             weightKg = prefs.getInt("weight", 75),
             metric = prefs.getBoolean("metric", true)
         )
     }
 
+    /** The birthday as a date, or null when it has not been set. */
+    val born: java.time.LocalDate? get() = birthday.takeIf { it > 0 }?.let { java.time.LocalDate.ofEpochDay(it) }
+
+    /** Age today, worked out from the birthday, falling back to whatever was stored before. */
+    val age: Int
+        get() = born?.let { java.time.Period.between(it, java.time.LocalDate.now()).years } ?: storedAge
+
+    /** True on the day itself, which is a thing worth noticing. */
+    val birthdayToday: Boolean
+        get() = born?.let {
+            val today = java.time.LocalDate.now()
+            it.monthValue == today.monthValue && it.dayOfMonth == today.dayOfMonth
+        } ?: false
+
     fun write(prefs: SharedPreferences) = prefs.edit()
         .putString("name", name)
         .putBoolean("male", male)
-        .putInt("age", age)
+        .putLong("birthday", birthday)
         .putInt("height", heightCm)
         .putInt("weight", weightKg)
         .putBoolean("metric", metric)
@@ -96,6 +141,15 @@ fun SettingsPage(
     // A Scaffold for the same reason Shell has one: it is what keeps content clear of the status
     // and navigation bars. This page is shown instead of Shell rather than inside it, so without
     // its own it would draw underneath both.
+    var editing by remember { mutableStateOf(Editing.None) }
+    WheelSheet(
+        editing = editing,
+        profile = profile,
+        stepGoal = state.stepGoal,
+        onProfile = onProfile,
+        onGoal = onGoal,
+        onDismiss = { editing = Editing.None }
+    )
     Scaffold(containerColor = Ink.canvas) { insets ->
         Column(
             Modifier
@@ -119,40 +173,37 @@ fun SettingsPage(
 
         Section("YOU")
         Panel {
-            Field("Name", profile.name, KeyboardType.Text) { onProfile(profile.copy(name = it)) }
+            Field("Name", profile.name) { onProfile(profile.copy(name = it)) }
             Divider()
             // Two buttons rather than a dropdown: there are two values the ring accepts.
-            Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 14.dp)) {
-                Text("Sex", color = Ink.muted, fontSize = 15.sp, modifier = Modifier.weight(1f))
+            SettingRow("Sex") {
                 Toggle("Male", profile.male) { onProfile(profile.copy(male = true)) }
                 Spacer(Modifier.width(8.dp))
                 Toggle("Female", !profile.male) { onProfile(profile.copy(male = false)) }
             }
             Divider()
-            Number("Age", profile.age, "years") { onProfile(profile.copy(age = it)) }
+            Value(
+                "Birthday",
+                profile.born?.format(birthdayFormat) ?: "Not set"
+            ) { editing = Editing.Birthday }
             Divider()
-            Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 14.dp)) {
-                Text("Units", color = Ink.muted, fontSize = 15.sp, modifier = Modifier.weight(1f))
+            // Read only: it follows from the birthday rather than being another thing to keep true.
+            SettingRow("Age") {
+                Text("${profile.age} years", color = Ink.muted, fontSize = 16.sp)
+            }
+            Divider()
+            SettingRow("Units") {
                 Toggle("Metric", profile.metric) { onProfile(profile.copy(metric = true)) }
                 Spacer(Modifier.width(8.dp))
                 Toggle("Imperial", !profile.metric) { onProfile(profile.copy(metric = false)) }
             }
             Divider()
-            if (profile.metric) {
-                Number("Height", profile.heightCm, "cm") { onProfile(profile.copy(heightCm = it)) }
-            } else {
-                val (feet, inches) = Units.cmToFeetInches(profile.heightCm)
-                FeetInches(feet, inches) { f, i ->
-                    onProfile(profile.copy(heightCm = Units.feetInchesToCm(f, i)))
-                }
+            Value("Height", Units.height(profile.heightCm, profile.metric)) {
+                editing = Editing.Height
             }
             Divider()
-            if (profile.metric) {
-                Number("Weight", profile.weightKg, "kg") { onProfile(profile.copy(weightKg = it)) }
-            } else {
-                Number("Weight", Units.kgToLb(profile.weightKg), "lb") {
-                    onProfile(profile.copy(weightKg = Units.lbToKg(it)))
-                }
+            Value("Weight", Units.weight(profile.weightKg, profile.metric)) {
+                editing = Editing.Weight
             }
         }
         Note(
@@ -162,7 +213,7 @@ fun SettingsPage(
 
         Section("GOALS")
         Panel {
-            Number("Daily steps", state.stepGoal, "steps") { onGoal(it) }
+            Value("Daily steps", "%,d".format(state.stepGoal)) { editing = Editing.Goal }
         }
         Note("Set on the ring as well as here, so both agree about the day.")
 
@@ -266,83 +317,248 @@ private fun Note(text: String) {
 }
 
 @Composable
-private fun Field(label: String, value: String, type: KeyboardType, onChange: (String) -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(label, color = Ink.muted, fontSize = 15.sp, modifier = Modifier.weight(1f))
-        OutlinedTextField(
+private fun Field(label: String, value: String, onChange: (String) -> Unit) {
+    // Tapping the label, or the gap after it, puts the cursor in the field. Aiming at the text
+    // itself is a smaller target than the row it sits in.
+    val focus = remember { FocusRequester() }
+    val focusManager = LocalFocusManager.current
+    SettingRow(label, onClick = { focus.requestFocus() }) {
+        BasicTextField(
             value = value,
             onValueChange = onChange,
             singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = type),
-            textStyle = androidx.compose.ui.text.TextStyle(color = Ink.text, fontSize = 16.sp),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = Ink.motion,
-                unfocusedBorderColor = Color.Transparent,
-                cursorColor = Ink.motion
-            ),
-            modifier = Modifier.width(170.dp)
+            textStyle = TextStyle(color = Ink.text, fontSize = 16.sp, textAlign = TextAlign.End),
+            cursorBrush = SolidColor(Ink.motion),
+            // Done finishes the edit and puts the cursor away; without it the field keeps focus
+            // and carries on blinking long after the name has been typed.
+            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+            keyboardActions = KeyboardActions(onDone = { focusManager.clearFocus() }),
+            modifier = Modifier.widthIn(min = 40.dp).focusRequester(focus),
+            decorationBox = { field ->
+                if (value.isEmpty()) {
+                    Text("Not set", color = Ink.muted, fontSize = 16.sp, textAlign = TextAlign.End)
+                }
+                field()
+            }
         )
     }
 }
 
-/** A number with its unit, kept as text while being typed so the field can be emptied. */
+/** Which value a wheel is currently being shown for, if any. */
+private enum class Editing { None, Birthday, Height, Weight, Goal }
+
+private val birthdayFormat = java.time.format.DateTimeFormatter.ofPattern("d MMMM yyyy")
+private val monthNames = listOf(
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
+)
+
+/**
+ * The shape every settings row takes.
+ *
+ * One height, one padding, one place the label sits and one the value does. Rows that each set
+ * their own spacing look approximately aligned, which reads worse than being plainly wrong.
+ */
 @Composable
-private fun Number(label: String, value: Int, unit: String, onChange: (Int) -> Unit) {
+private fun SettingRow(
+    label: String,
+    labelColour: Color = Ink.muted,
+    onClick: (() -> Unit)? = null,
+    content: @Composable RowScope.() -> Unit
+) {
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 6.dp),
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = 58.dp)
+            .then(if (onClick != null) Modifier.clickableNoRippleShared(onClick) else Modifier)
+            .padding(horizontal = 18.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(label, color = Ink.muted, fontSize = 15.sp, modifier = Modifier.weight(1f))
-        OutlinedTextField(
-            value = if (value == 0) "" else value.toString(),
-            // Ignore anything that is not a number rather than rejecting the whole edit, so a
-            // stray character cannot wedge the field.
-            onValueChange = { typed -> onChange(typed.filter { it.isDigit() }.take(6).toIntOrNull() ?: 0) },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            textStyle = androidx.compose.ui.text.TextStyle(color = Ink.text, fontSize = 16.sp),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = Ink.motion,
-                unfocusedBorderColor = Color.Transparent,
-                cursorColor = Ink.motion
-            ),
-            suffix = { Text(unit, color = Ink.muted, fontSize = 13.sp) },
-            modifier = Modifier.width(170.dp)
-        )
+        Text(label, color = labelColour, fontSize = 15.sp)
+        Row(verticalAlignment = Alignment.CenterVertically, content = content)
     }
 }
 
+/** A row that states its value and opens a wheel when tapped, anywhere along it. */
 @Composable
-private fun FeetInches(feet: Int, inches: Int, onChange: (Int, Int) -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text("Height", color = Ink.muted, fontSize = 15.sp, modifier = Modifier.weight(1f))
-        SmallNumber(feet, "ft") { onChange(it, inches) }
-        Spacer(Modifier.width(8.dp))
-        SmallNumber(inches.coerceIn(0, 11), "in") { onChange(feet, it.coerceIn(0, 11)) }
+private fun Value(label: String, value: String, onOpen: () -> Unit) {
+    SettingRow(label, onClick = onOpen) {
+        Text(value, color = Ink.text, fontSize = 16.sp)
     }
 }
 
+/**
+ * The wheel itself, in a sheet rather than in the row.
+ *
+ * A settings list is for seeing what everything is set to at a glance, which a column of
+ * wheels is not: they are tall, they compete for the same drag as the page, and they bury the
+ * value being read. Tapping a row brings the wheel up over it and it goes away again.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SmallNumber(value: Int, unit: String, onChange: (Int) -> Unit) {
-    OutlinedTextField(
-        value = if (value == 0 && unit == "ft") "" else value.toString(),
-        onValueChange = { typed -> onChange(typed.filter { it.isDigit() }.take(2).toIntOrNull() ?: 0) },
-        singleLine = true,
-        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-        textStyle = androidx.compose.ui.text.TextStyle(color = Ink.text, fontSize = 16.sp),
-        colors = OutlinedTextFieldDefaults.colors(
-            focusedBorderColor = Ink.motion,
-            unfocusedBorderColor = Color.Transparent,
-            cursorColor = Ink.motion
-        ),
-        suffix = { Text(unit, color = Ink.muted, fontSize = 13.sp) },
-        modifier = Modifier.width(105.dp)
+private fun WheelSheet(
+    editing: Editing,
+    profile: Profile,
+    stepGoal: Int,
+    onProfile: (Profile) -> Unit,
+    onGoal: (Int) -> Unit,
+    onDismiss: () -> Unit
+) {
+    if (editing == Editing.None) return
+
+    // Each wheel holds its own number while the sheet is open. Driving them all from one date
+    // meant setting the month rewrote the day and the year underneath the finger, which is the
+    // jumping: the wheels were latched together. They are assembled into a date on the way out.
+    val start = profile.born ?: java.time.LocalDate.now().minusYears(30)
+    var day by remember(editing) { mutableStateOf(start.dayOfMonth) }
+    var month by remember(editing) { mutableStateOf(start.monthValue) }
+    var year by remember(editing) { mutableStateOf(start.year) }
+
+    fun finish() {
+        if (editing == Editing.Birthday) {
+            // 31 February is reachable on unlatched wheels and is not a date, so the day is
+            // pulled back to the end of whatever month was chosen.
+            val length = java.time.YearMonth.of(year, month).lengthOfMonth()
+            val date = java.time.LocalDate.of(year, month, minOf(day, length))
+            onProfile(profile.copy(birthday = date.toEpochDay()))
+        }
+        onDismiss()
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = { finish() },
+        containerColor = Ink.card,
+        dragHandle = {
+            Box(Modifier.fillMaxWidth().padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
+                Box(
+                    Modifier.width(36.dp).height(4.dp).clip(CircleShape)
+                        .background(Ink.muted.copy(alpha = 0.4f))
+                )
+            }
+        }
+    ) {
+        Column(
+            Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 40.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                when (editing) {
+                    Editing.Birthday -> "Birthday"
+                    Editing.Height -> "Height"
+                    Editing.Weight -> "Weight"
+                    else -> "Daily step goal"
+                },
+                color = Ink.text, fontSize = 22.sp, fontWeight = FontWeight.Medium
+            )
+            Spacer(Modifier.height(18.dp))
+            when (editing) {
+                Editing.Birthday -> {
+                    Row(horizontalArrangement = Arrangement.Center) {
+                        // A full 1 to 31 whatever the month: a wheel that resizes under the
+                        // finger is the thing being complained about.
+                        Picker(day, 1..31, { "$it" }, Modifier.width(80.dp)) { day = it }
+                        Spacer(Modifier.width(8.dp))
+                        Picker(month, 1..12, { monthNames[it - 1] }, Modifier.width(100.dp)) { month = it }
+                        Spacer(Modifier.width(8.dp))
+                        Picker(year, 1920..java.time.LocalDate.now().year, { "$it" }, Modifier.width(100.dp)) {
+                            year = it
+                        }
+                    }
+                    Spacer(Modifier.height(14.dp))
+                    // Says what will actually be saved, including the day being pulled back.
+                    val length = java.time.YearMonth.of(year, month).lengthOfMonth()
+                    Text(
+                        java.time.LocalDate.of(year, month, minOf(day, length)).format(birthdayFormat),
+                        color = Ink.muted, fontSize = 14.sp
+                    )
+                }
+                Editing.Height -> if (profile.metric) {
+                    Picker(profile.heightCm, 120..220, { "$it cm" }, Modifier.width(160.dp)) {
+                        onProfile(profile.copy(heightCm = it))
+                    }
+                } else {
+                    // Feet and inches are two wheels, because they are two numbers.
+                    val (feet, inches) = Units.cmToFeetInches(profile.heightCm)
+                    Row(horizontalArrangement = Arrangement.Center) {
+                        Picker(feet, 3..7, { "$it ft" }, Modifier.width(120.dp)) {
+                            onProfile(profile.copy(heightCm = Units.feetInchesToCm(it, inches)))
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Picker(inches, 0..11, { "$it in" }, Modifier.width(120.dp)) {
+                            onProfile(profile.copy(heightCm = Units.feetInchesToCm(feet, it)))
+                        }
+                    }
+                }
+                Editing.Weight -> if (profile.metric) {
+                    Picker(profile.weightKg, 30..200, { "$it kg" }, Modifier.width(160.dp)) {
+                        onProfile(profile.copy(weightKg = it))
+                    }
+                } else {
+                    Picker(Units.kgToLb(profile.weightKg), 66..440, { "$it lb" }, Modifier.width(160.dp)) {
+                        onProfile(profile.copy(weightKg = Units.lbToKg(it)))
+                    }
+                }
+                // Whole hundreds: nobody sets a goal of 10,137.
+                else -> Picker(stepGoal, 1_000..30_000 step 500, { "%,d".format(it) }, Modifier.width(180.dp)) {
+                    onGoal(it)
+                }
+            }
+            Spacer(Modifier.height(24.dp))
+            Text(
+                "Done",
+                color = Ink.motion, fontSize = 17.sp,
+                modifier = Modifier.clip(CircleShape).clickableNoRippleShared { finish() }
+                    .padding(horizontal = 40.dp, vertical = 12.dp)
+            )
+        }
+    }
+}
+
+/**
+ * A scroll wheel, which is Android's own NumberPicker rather than something rebuilt in Compose.
+ *
+ * A wheel suits these values better than a keyboard: they sit in a known range, they are
+ * adjusted rather than composed, and there is no way to type a number the ring would reject.
+ * The platform already has one that scrolls and reads correctly, so it is used as it is.
+ */
+@Composable
+private fun Picker(
+    value: Int,
+    range: IntProgression,
+    format: (Int) -> String,
+    modifier: Modifier,
+    onChange: (Int) -> Unit
+) {
+    val choices = remember(range) { range.toList() }
+    val labels = remember(choices) { choices.map(format).toTypedArray() }
+    val ink = Ink.text.toArgb()
+    AndroidView(
+        modifier = modifier,
+        factory = { context ->
+            NumberPicker(context).apply {
+                // Order matters: the displayed labels are rejected until the range fits them.
+                minValue = 0
+                maxValue = choices.lastIndex
+                displayedValues = labels
+                wrapSelectorWheel = false
+                descendantFocusability = NumberPicker.FOCUS_BLOCK_DESCENDANTS
+                setOnValueChangedListener { _, _, index -> onChange(choices[index]) }
+            }
+        },
+        update = { picker ->
+            // The factory runs once, so a range that changed since then has to be applied here
+            // or the wheel keeps showing the old one.
+            if (picker.maxValue != choices.lastIndex) {
+                picker.displayedValues = null
+                picker.maxValue = choices.lastIndex
+                picker.displayedValues = labels
+            }
+            // The palette is ours rather than the platform's, so the wheel is told about it.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) picker.textColor = ink
+            // Nearest match, so a weight converted from pounds still lands on the wheel.
+            val index = choices.indexOfFirst { it >= value }.takeIf { it >= 0 } ?: choices.lastIndex
+            if (picker.value != index) picker.value = index
+        }
     )
 }
 
@@ -362,33 +578,17 @@ private fun Toggle(label: String, chosen: Boolean, onPick: () -> Unit) {
 
 @Composable
 private fun Pick(label: String, chosen: Boolean, onPick: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().clickableNoRippleShared(onPick)
-            .padding(horizontal = 18.dp, vertical = 15.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(label, color = if (chosen) Ink.motion else Ink.text, fontSize = 16.sp)
+    SettingRow(label, labelColour = if (chosen) Ink.motion else Ink.text, onClick = onPick) {
         if (chosen) Icon(Icons.Rounded.Check, null, tint = Ink.motion, modifier = Modifier.size(20.dp))
     }
 }
 
 @Composable
 private fun Action(label: String, onClick: () -> Unit) {
-    Text(
-        label, color = Ink.text, fontSize = 16.sp,
-        modifier = Modifier.fillMaxWidth().clickableNoRippleShared(onClick)
-            .padding(horizontal = 18.dp, vertical = 16.dp)
-    )
+    SettingRow(label, labelColour = Ink.text, onClick = onClick) {}
 }
 
 @Composable
 private fun Detail(label: String, value: String) {
-    Row(
-        Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 14.dp),
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Text(label, color = Ink.muted, fontSize = 15.sp)
-        Text(value, color = Ink.text, fontSize = 15.sp)
-    }
+    SettingRow(label) { Text(value, color = Ink.text, fontSize = 15.sp) }
 }
