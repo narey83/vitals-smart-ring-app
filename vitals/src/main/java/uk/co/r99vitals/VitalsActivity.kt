@@ -26,7 +26,11 @@ import android.os.Looper
 import android.view.View
 import android.widget.TextView
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.compose.setContent
 import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
@@ -38,18 +42,9 @@ import java.util.Calendar
  * is explored; this one shows readings and nothing else.
  */
 class VitalsActivity : AppCompatActivity() {
-    private lateinit var linkState: TextView
-    private lateinit var heartValue: TextView
-    private lateinit var heartCaption: TextView
-    private lateinit var oxygenValue: TextView
-    private lateinit var pressureValue: TextView
-    private lateinit var stepsValue: TextView
-    private lateinit var stepsCaption: TextView
-    private lateinit var heartButton: MaterialButton
-    private lateinit var oxygenButton: MaterialButton
-    private lateinit var pressureButton: MaterialButton
-    private lateinit var historyButton: MaterialButton
-    private lateinit var intervalButton: MaterialButton
+    private var ui by mutableStateOf(VitalsState())
+    private lateinit var history: History
+
     private var interval = 15   // minutes; 0 means off
     private val saved by lazy { getSharedPreferences("ring", MODE_PRIVATE) }
     private var ringAddress: String?
@@ -58,9 +53,6 @@ class VitalsActivity : AppCompatActivity() {
     private var scanning = false
     private val found = linkedMapOf<String, ScanResult>()
     private var retryDelay = 0L
-    private lateinit var heartTrend: TextView
-    private lateinit var heartChart: TrendView
-    private lateinit var history: History
 
     private val handler = Handler(Looper.getMainLooper())
     private var gatt: BluetoothGatt? = null
@@ -99,44 +91,27 @@ class VitalsActivity : AppCompatActivity() {
 
     private val permissions = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
-    ) { result -> if (result.values.all { it }) connect() else linkState.text = "Bluetooth access needed" }
+    ) { result -> if (result.values.all { it }) connect() else ui = ui.copy(link = "Bluetooth access needed") }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_vitals)
-        linkState = findViewById(R.id.linkState)
-        heartValue = findViewById(R.id.heartValue)
-        heartCaption = findViewById(R.id.heartCaption)
-        oxygenValue = findViewById(R.id.oxygenValue)
-        pressureValue = findViewById(R.id.pressureValue)
-        stepsValue = findViewById(R.id.stepsValue)
-        stepsCaption = findViewById(R.id.stepsCaption)
-        heartButton = findViewById(R.id.heartButton)
-        oxygenButton = findViewById(R.id.oxygenButton)
-        pressureButton = findViewById(R.id.pressureButton)
-        historyButton = findViewById(R.id.historyButton)
-        intervalButton = findViewById(R.id.intervalButton)
-        heartTrend = findViewById(R.id.heartTrend)
-        heartChart = findViewById(R.id.heartChart)
         history = History(this)
         interval = getSharedPreferences("ring", MODE_PRIVATE).getInt("interval", 15)
-        applyInsets()
-        heartButton.setOnClickListener { measure(Ring.HEART, "heart rate") }
-        oxygenButton.setOnClickListener { measure(Ring.OXYGEN, "blood oxygen") }
-        pressureButton.setOnClickListener { measure(Ring.PRESSURE, "blood pressure") }
-        historyButton.setOnClickListener { showHistory() }
-        linkState.setOnClickListener { if (command == null) askThenConnect() }
-        linkState.setOnLongClickListener {
-            androidx.appcompat.app.AlertDialog.Builder(this)
-                .setTitle("Forget this ring?")
-                .setMessage("You will be asked to choose a ring again.")
-                .setPositiveButton("Forget") { _, _ -> ringAddress = null; command = null; pair() }
-                .setNegativeButton("Keep", null)
-                .show()
-            true
+        setContent {
+            VitalsScreen(
+                state = ui,
+                onMeasure = { type ->
+                    measure(type, when (type) {
+                        Ring.HEART -> "heart rate"
+                        Ring.OXYGEN -> "blood oxygen"
+                        else -> "blood pressure"
+                    })
+                },
+                onInterval = { chooseInterval() },
+                onHistory = { showHistory() },
+                onLink = { if (command == null) askThenConnect() }
+            )
         }
-        intervalButton.setOnClickListener { chooseInterval() }
-        applyIntervalLabel()
         showTrend()
         if (BuildConfig.DEBUG) {
             ContextCompat.registerReceiver(
@@ -167,10 +142,10 @@ class VitalsActivity : AppCompatActivity() {
     @SuppressLint("MissingPermission")
     private fun connect() {
         val bluetooth = adapter
-        if (bluetooth == null || !bluetooth.isEnabled) { linkState.text = "Turn Bluetooth on"; return }
+        if (bluetooth == null || !bluetooth.isEnabled) { ui = ui.copy(link = "Turn Bluetooth on"); return }
         val address = ringAddress
         if (address == null) { pair(); return }
-        linkState.text = "Connecting to your ring"
+        ui = ui.copy(link = "Connecting to your ring")
         // A paired ring stops advertising, so it is reached by address rather than by scanning.
         val device = runCatching { bluetooth.getRemoteDevice(address) }.getOrNull() ?: return
         gatt?.close()
@@ -185,7 +160,7 @@ class VitalsActivity : AppCompatActivity() {
         if (scanning) return
         scanning = true
         found.clear()
-        linkState.text = "Looking for a ring"
+        ui = ui.copy(link = "Looking for a ring")
         scanner.startScan(null, ScanSettings.Builder()
             .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build(), scanCallback)
         handler.postDelayed({ finishPairing() }, 10_000)
@@ -204,7 +179,7 @@ class VitalsActivity : AppCompatActivity() {
             .filterNot { result -> bonded.any { it.first == result.device.address } }
             .map { it.device.address to "${it.device.name ?: it.scanRecord?.deviceName ?: "Unnamed"}  ·  ${it.rssi} dBm" }
         val choices = bonded.map { it.first to "${it.second}  ·  already paired" } + heard
-        if (choices.isEmpty()) { linkState.text = "No ring found — tap to retry"; return }
+        if (choices.isEmpty()) { ui = ui.copy(link = "No ring found — tap to retry"); return }
         val labels = choices.map { it.second }.toTypedArray()
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Which one is your ring?")
@@ -223,7 +198,7 @@ class VitalsActivity : AppCompatActivity() {
         }
         override fun onScanFailed(errorCode: Int) {
             scanning = false
-            linkState.text = "Scan failed — tap to retry"
+            ui = ui.copy(link = "Scan failed — tap to retry")
         }
     }
 
@@ -268,17 +243,13 @@ class VitalsActivity : AppCompatActivity() {
 
     /** Each vital is measured on its own, taking around half a minute. */
     private fun measure(type: Int, label: String) {
-        if (command == null) { linkState.text = "Not connected yet"; connect(); return }
-        heartCaption.text = "Measuring $label — keep still"
+        if (command == null) { ui = ui.copy(link = "Not connected yet"); connect(); return }
+        ui = ui.copy(measuring = "Measuring $label — keep still")
         setButtonsEnabled(false)
         enqueue { write(Ring.startMeasuring(type)) }
     }
 
-    private fun setButtonsEnabled(enabled: Boolean) {
-        heartButton.isEnabled = enabled
-        oxygenButton.isEnabled = enabled
-        pressureButton.isEnabled = enabled
-    }
+    private fun setButtonsEnabled(enabled: Boolean) { /* driven by ui.measuring */ }
 
     /**
      * How often the ring measures on its own. The ring does this whether or not the app is open,
@@ -300,23 +271,21 @@ class VitalsActivity : AppCompatActivity() {
     }
 
     private fun applyIntervalLabel() {
-        intervalButton.text = if (interval == 0) "Automatic readings: off"
-            else "Automatic readings: every $interval min"
+        ui = ui.copy(interval = interval)
     }
 
     private fun applyInterval() {
         applyIntervalLabel()
-        if (command == null) { linkState.text = "Not connected yet"; return }
+        if (command == null) { ui = ui.copy(link = "Not connected yet"); return }
         Ring.automaticMonitoring(interval > 0, if (interval > 0) interval else 15)
             .forEach { frame -> enqueue { write(frame) } }
     }
 
     private fun showTrend() {
         val since = System.currentTimeMillis() - 24 * 60 * 60 * 1000
-        heartTrend.text = "Last 24 hours · " + history.summary("heart", since)
-        heartChart.show(
-            history.all().filter { it.kind == "heart" && it.at.time >= since }.map { it.value },
-            ContextCompat.getColor(this, R.color.heart)
+        ui = ui.copy(
+            trend = history.all().filter { it.kind == "heart" && it.at.time >= since }.map { it.value },
+            trendCaption = "Last 24 hours · " + history.summary("heart", since)
         )
     }
 
@@ -350,11 +319,11 @@ class VitalsActivity : AppCompatActivity() {
             runOnUiThread {
                 if (state == BluetoothProfile.STATE_CONNECTED) {
                     retryDelay = 0
-                    linkState.text = "Reading your ring"
+                    ui = ui.copy(link = "Reading your ring", connected = true)
                     gatt.discoverServices()
                 } else {
                     command = null
-                    linkState.text = "Reconnecting…"
+                    ui = ui.copy(link = "Reconnecting…", connected = false)
                     scheduleReconnect()
                 }
             }
@@ -363,7 +332,7 @@ class VitalsActivity : AppCompatActivity() {
         @SuppressLint("MissingPermission")
         override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
             runOnUiThread {
-                if (status != BluetoothGatt.GATT_SUCCESS) { linkState.text = "Could not read the ring"; return@runOnUiThread }
+                if (status != BluetoothGatt.GATT_SUCCESS) { ui = ui.copy(link = "Could not read the ring"); return@runOnUiThread }
                 gatt.services.forEach { service ->
                     service.characteristics.forEach { characteristic ->
                         if (characteristic.uuid == Ring.COMMAND_CHANNEL) command = characteristic
@@ -379,7 +348,7 @@ class VitalsActivity : AppCompatActivity() {
                 // change". Sleep data matters more than a few seconds of drift.
                 Ring.automaticMonitoring(interval > 0, if (interval > 0) interval else 15)
                     .forEach { frame -> enqueue { write(frame) } }
-                enqueue { linkState.text = "Your ring"; false }
+                enqueue { ui = ui.copy(link = "Your ring"); false }
             }
         }
 
@@ -416,33 +385,32 @@ class VitalsActivity : AppCompatActivity() {
     private fun show(characteristic: BluetoothGattCharacteristic, value: ByteArray) {
         if (characteristic.uuid == Ring.ACTIVITY) {
             Ring.readActivity(value)?.let {
-                stepsValue.text = "%,d".format(it.steps)
-                stepsCaption.text = "steps today · ${it.distance} m · ${it.calories} kcal"
+                ui = ui.copy(steps = it.steps, distance = it.distance, calories = it.calories)
             }
             return
         }
         if (characteristic.uuid == Ring.HEART_RATE) {
-            Ring.readStandardHeartRate(value)?.let { heartValue.text = it.toString() }
+            Ring.readStandardHeartRate(value)?.let { ui = ui.copy(heart = it) }
             return
         }
         when (val reading = Ring.read(value)) {
             is Ring.Reading.Heart -> {
-                heartValue.text = reading.bpm.toString()
+                ui = ui.copy(heart = reading.bpm)
                 history.record("heart", reading.bpm)
                 showTrend()
             }
             is Ring.Reading.Oxygen -> {
-                oxygenValue.text = "${reading.percent}%"
+                ui = ui.copy(oxygen = reading.percent)
                 history.record("oxygen", reading.percent)
             }
             is Ring.Reading.Pressure -> {
-                pressureValue.text = "${reading.systolic}/${reading.diastolic}"
+                ui = ui.copy(systolic = reading.systolic, diastolic = reading.diastolic)
                 history.record("pressure", reading.systolic, reading.diastolic)
             }
-            is Ring.Reading.Power -> linkState.text = "Your ring · ${reading.percent}%"
+            is Ring.Reading.Power -> ui = ui.copy(link = "Your ring", battery = reading.percent)
             is Ring.Reading.Finished -> {
                 setButtonsEnabled(true)
-                heartCaption.text = "Measured just now"
+                ui = ui.copy(measuring = null)
                 showTrend()
             }
             else -> Unit

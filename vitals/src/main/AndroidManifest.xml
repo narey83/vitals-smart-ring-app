@@ -6,7 +6,8 @@
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="true" />
 
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_HEALTH" />
+    <!-- connectedDevice, not health: the work is holding a Bluetooth link open. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />
@@ -32,6 +33,6 @@
         <service
             android:name=".CollectorService"
             android:exported="false"
-            android:foregroundServiceType="health" />
+            android:foregroundServiceType="connectedDevice" />
     </application>
 </manifest>
