@@ -103,6 +103,7 @@ The full 329-command table, lifted from the vendor SDK, is in [COMMANDS.md](COMM
 | `06 02` | `<percent>` | live blood oxygen, one byte | **verified** — 93–99% observed |
 | `06 03` | `<systolic> <diastolic> …` | live blood pressure | **verified** — 115/75, 116/76 observed |
 | `04 0E` | `<type> 01` | measurement complete, `type` as above; app acknowledges with `04 0E` + `00` | **verified** |
+| `05 15` | six bytes a record: seconds-from-2000 uint32 LE, a spare byte, then bpm | stored heart rates, following a `05 06` query | **verified** — 25 records read back, including two taken overnight |
 | `05 80` | varies | history block push | captured, not decoded |
 
 `06 03` carries a third byte tracking close to the systolic value (`4B`, `4C`, `4E`) and then
@@ -112,22 +113,32 @@ two values it is sure of and leaves the rest visible as hex.
 Blood pressure from an optical ring is estimated from the pulse waveform rather than measured.
 Treat it as a trend, not a reading, and never as a medical device.
 
-### Automatic sampling has never been observed — open
+### Automatic readings are stored, never pushed — verified
 
-With `settingHeartMonitor` (`01 0C`) set to fifteen minutes, nothing recognisable arrives at
-that interval. Over six hours connected, the only frames pushed unasked were the `fea1` activity
-counter and `2a37`. No `06 01`, `06 02` or `06 03` appeared outside a measurement the app itself
-started, and the ring's own history is still undecoded, so where the readings go — if they are
-taken at all — is unknown.
+**The ring says nothing when it measures on its own.** With `settingHeartMonitor` (`01 0C`) set
+to fifteen minutes, six hours of listening produced no `06 01` outside a measurement the app
+itself started: an app that only subscribes sees a day of taps and nothing between them, however
+faithfully the ring is sampling. The readings are all there, in the ring's own store, and only
+come out when asked for with `05 06`:
 
-`2a37` in particular is a trap. It re-notifies on the ring's ~90 s housekeeping tick whether or
-not anything was measured, repeating the last number it holds: 82 bpm arrived unchanged
-eighteen times in twenty-five minutes as `04 52`. A collector that writes down every push
-therefore fills the day with one stale reading a minute and looks, at a glance, exactly like
-working automatic sampling. Only a *changed* value on `2a37` is evidence of a measurement.
+```
+SEND Health_HistoryHeart -> be940001: 05 06 06 00 83 20
+  25 records stored              <- the 05 06 reply, a uint16 count
+  2026-08-04 00:49:20  99 bpm    <- then the records, as 05 15 pushes
+  2026-08-04 03:25:03  83 bpm
+```
 
-Worth ruling out before decoding anything further: whether the ring samples at all when it is
-not being worn. `Real_WearingStatus` (`06 13`) would say.
+Nobody taps a ring at 03:25. Anything wanting the automatic readings has to ask for them; there
+is nothing to wait for.
+
+`2a37` is a trap on the way to finding this out. It re-notifies on the ring's ~90 s housekeeping
+tick whether or not anything was measured, repeating the last number it holds: 82 bpm arrived
+unchanged eighteen times in twenty-five minutes as `04 52`. Writing down every push fills the
+day with one stale reading a minute and looks, at a glance, exactly like working automatic
+sampling. Only a *changed* value there is evidence of a measurement.
+
+Automatic blood oxygen and pressure are presumably stored the same way, under `05 1A` and
+`05 08`, but their record layouts have not been read back yet.
 
 ## Reading a heart rate — verified end to end
 
@@ -219,7 +230,11 @@ not a missing feature.
 Answering all 70 readable commands, 40 reply `FC` (not implemented). `GetDeviceMac` and
 `GetDeviceName` reply `FE`, a different code, so they likely want an argument.
 
-Turning on `settingHeartMonitor` took `Health_HistoryHeart` from one record to four.
+Turning on `settingHeartMonitor` took `Health_HistoryHeart` from one record to four, and a day
+of it took the same query to twenty-five. That store is the only place the automatic readings
+exist — see "Automatic readings are stored, never pushed" above. Records commonly share a
+timestamp, twenty of them in one case, so a run of them is worth the hour it falls in and not
+the minute.
 
 ## Refusal codes and required arguments
 

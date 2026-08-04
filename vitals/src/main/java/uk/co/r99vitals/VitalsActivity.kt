@@ -703,6 +703,9 @@ class VitalsActivity : AppCompatActivity() {
                     }
                 }
                 enqueue { write(Ring.deviceInfo()) }
+                // The readings taken while nothing was listening. The ring keeps them to itself
+                // until asked, so every connection asks; History drops the ones already held.
+                enqueue { write(Ring.storedHeart()) }
                 // The clock is deliberately left alone: writing it makes the ring abandon a
                 // running sleep session, which its own log reports as "exit sleep because time
                 // change". Sleep data matters more than a few seconds of drift.
@@ -753,6 +756,10 @@ class VitalsActivity : AppCompatActivity() {
         }
         if (characteristic.uuid == Ring.HEART_RATE) {
             Ring.readStandardHeartRate(value)?.let { ui = ui.copy(heart = it) }
+            return
+        }
+        Ring.readStoredHeart(value).takeIf { it.isNotEmpty() }?.let {
+            history.backfill("heart", it)
             return
         }
         when (val reading = Ring.read(value)) {

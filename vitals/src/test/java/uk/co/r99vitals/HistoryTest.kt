@@ -70,4 +70,26 @@ class HistoryTest {
         assertEquals(74, entries.first().value)
         assertTrue("the tap was forgotten as the reading settled", entries.first().manual)
     }
+
+    /**
+     * The ring hands over its whole store on every connection, so the same records arrive again
+     * and again. Backfilling twice must leave one day, not two.
+     */
+    @Test fun `the same stored records are only written down once`() {
+        val history = history()
+        val readings = listOf(1_700_000_000_000L to 71, 1_700_000_900_000L to 68)
+        history.backfill("heart", readings)
+        history.backfill("heart", readings)
+        assertEquals(2, history.all().size)
+        assertEquals(listOf(71, 68), history.all().map { it.value })
+    }
+
+    /** Backfilled readings are dated when they were taken, so they arrive out of order. */
+    @Test fun `a backfill leaves the day in order`() {
+        val history = history()
+        history.record("heart", 80)
+        history.backfill("heart", listOf(1_700_000_000_000L to 71))
+        val times = history.all().map { it.at.time }
+        assertEquals(times.sorted(), times)
+    }
 }
