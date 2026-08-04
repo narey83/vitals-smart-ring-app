@@ -51,6 +51,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var deviceLogButton: MaterialButton
     private lateinit var firmwareButton: MaterialButton
     private lateinit var browseButton: MaterialButton
+    private lateinit var expandButton: MaterialButton
+    private lateinit var goalButton: MaterialButton
+    private lateinit var aboutYouButton: MaterialButton
     private lateinit var valueFirmware: TextView
     private lateinit var commandInput: EditText
     private lateinit var frameCheck: CheckBox
@@ -137,6 +140,12 @@ class MainActivity : AppCompatActivity() {
         readAllButton.setOnClickListener { readEverything() }
         browseButton = findViewById(R.id.browseButton)
         browseButton.setOnClickListener { browseCommands() }
+        expandButton = findViewById(R.id.expandButton)
+        expandButton.setOnClickListener { showText("Bluetooth protocol log", log.text.toString()) }
+        goalButton = findViewById(R.id.goalButton)
+        goalButton.setOnClickListener { setStepGoal() }
+        aboutYouButton = findViewById(R.id.aboutYouButton)
+        aboutYouButton.setOnClickListener { setUserInfo() }
         valueFirmware = findViewById(R.id.valueFirmware)
         firmwareButton = findViewById(R.id.firmwareButton)
         firmwareButton.setOnClickListener {
@@ -535,7 +544,10 @@ class MainActivity : AppCompatActivity() {
         return if (out.isEmpty()) raw else out.toString().trimEnd()
     }
 
-    private fun showDeviceLog(text: String) {
+    private fun showDeviceLog(text: String) = showText("The ring's internal log", text)
+
+    /** One readable, selectable, shareable full-height text view, used for anything long. */
+    private fun showText(title: String, text: String) {
         val view = TextView(this).apply {
             setText(text)
             setTextIsSelectable(true)
@@ -544,18 +556,75 @@ class MainActivity : AppCompatActivity() {
             setPadding(36, 24, 36, 24)
             setTextColor(ContextCompat.getColor(this@MainActivity, R.color.ink))
         }
+        val scroll = ScrollView(this).apply { addView(view) }
         AlertDialog.Builder(this)
-            .setTitle("The ring's internal log")
-            .setView(ScrollView(this).apply { addView(view) })
+            .setTitle(title)
+            .setView(scroll)
             .setPositiveButton("Close", null)
             .setNeutralButton("Share") { _, _ ->
                 startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
                     type = "text/plain"
-                    putExtra(Intent.EXTRA_SUBJECT, "R99 ring internal log")
+                    putExtra(Intent.EXTRA_SUBJECT, title)
                     putExtra(Intent.EXTRA_TEXT, text)
-                }, "Share the ring's log"))
+                }, "Share"))
             }
             .show()
+        // Long output is nearly always read from the end.
+        scroll.post { scroll.fullScroll(View.FOCUS_DOWN) }
+    }
+
+    /** Asks for a whole number, then hands it to the caller. */
+    private fun askForNumber(title: String, hint: String, current: Int, onValue: (Int) -> Unit) {
+        val field = EditText(this).apply {
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER
+            setText(current.toString())
+            setHint(hint)
+            setPadding(48, 32, 48, 32)
+        }
+        AlertDialog.Builder(this)
+            .setTitle(title)
+            .setView(field)
+            .setPositiveButton("Send to ring") { _, _ ->
+                field.text.toString().trim().toIntOrNull()?.let(onValue)
+                    ?: showStatus("That was not a whole number.")
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    /** settingGoal: a type byte, the goal as uint32 little endian, then two trailing bytes. */
+    private fun setStepGoal() = askForNumber("Daily step goal", "steps", 10_000) { goal ->
+        send(
+            byteArrayOf(
+                0x01, 0x02, 0x00,
+                goal.toByte(), (goal shr 8).toByte(), (goal shr 16).toByte(), (goal shr 24).toByte(),
+                0x00, 0x00
+            ),
+            "step goal of $goal"
+        )
+    }
+
+    /**
+     * settingUserInfo takes four bytes. The SDK gives their order no names, so each is asked for
+     * plainly and the frame is shown before it is sent rather than dressed up as certainty.
+     */
+    private fun setUserInfo() {
+        val fields = listOf("Height in cm" to 175, "Weight in kg" to 75, "Age in years" to 40, "Sex, 0 or 1" to 1)
+        val values = fields.map { it.second }.toIntArray()
+        fun ask(index: Int) {
+            if (index == fields.size) {
+                send(
+                    byteArrayOf(0x01, 0x03) + values.map { it.toByte() }.toByteArray(),
+                    "your details (${values.joinToString(", ")})"
+                )
+                return
+            }
+            askForNumber(fields[index].first, "", values[index]) { entered ->
+                values[index] = entered and 0xFF
+                ask(index + 1)
+            }
+        }
+        ask(0)
     }
 
     private fun logNotification(characteristic: BluetoothGattCharacteristic, value: ByteArray) {
@@ -740,6 +809,26 @@ class MainActivity : AppCompatActivity() {
             // The ring is not a Bluetooth keyboard: this reaches whichever app holds the
             // connection, so no other camera app can ever see it.
             group == 0x04 && command == 0x03 -> "shutter pressed on the ring"
+            // GetDeviceInfo, named from the vendor SDK's own parser.
+            group == 0x02 && command == 0x00 && payload.size >= 6 -> buildString {
+                append("firmware V${byte(3)}.${byte(2)}")
+                append(", battery ${byte(5)}%")
+                if (byte(4) != 0) append(" (charging)")
+                append(", device id ${byte(0)}")
+            }
+            group == 0x02 && command == 0x0C && payload.size >= 8 -> {
+                val steps = byte(0) or (byte(1) shl 8) or (byte(2) shl 16)
+                val calories = byte(3) or (byte(4) shl 8)
+                val distance = byte(5) or (byte(6) shl 8) or (byte(7) shl 16)
+                "$steps steps, $distance distance, $calories calories"
+            }
+            group == 0x02 && command == 0x03 && payload.isNotEmpty() ->
+                "the ring calls itself \"${readable(payload.toList())}\""
+            // Every history query answers with a record count first.
+            group == 0x05 && payload.size >= 2 -> {
+                val count = byte(0) or (byte(1) shl 8)
+                if (count == 0) "no records stored" else "$count record${if (count == 1) "" else "s"} stored"
+            }
             // The ring's two refusals. Without these the app looked like it did nothing at all.
             payload.size == 1 && payload[0] == 0xFC.toByte() ->
                 "this firmware does not implement that command"
@@ -903,14 +992,52 @@ class MainActivity : AppCompatActivity() {
     private fun browseCommands() {
         val grouped = ALL_COMMANDS.groupBy { it.group }.toSortedMap()
         val keys = grouped.keys.toList()
-        val labels = keys.map { group ->
+        val labels = (listOf("Search by name…") + keys.map { group ->
             val name = COMMAND_GROUPS[group] ?: "Group"
             "%02X  %s  (%d)".format(group, name, grouped.getValue(group).size)
-        }.toTypedArray()
+        }).toTypedArray()
         AlertDialog.Builder(this)
             .setTitle("All ${ALL_COMMANDS.size} SDK commands")
-            .setItems(labels) { _, which -> browseGroup(keys[which]) }
+            .setItems(labels) { _, which ->
+                if (which == 0) searchCommands() else browseGroup(keys[which - 1])
+            }
             .setNegativeButton("Close", null)
+            .show()
+    }
+
+    /** 329 entries is too many to scroll, so they can be searched by name. */
+    private fun searchCommands() {
+        val field = EditText(this).apply {
+            hint = "heart, sleep, battery, factory…"
+            setPadding(48, 32, 48, 32)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Search commands")
+            .setView(field)
+            .setPositiveButton("Search") { _, _ ->
+                val term = field.text.toString().trim()
+                val hits = ALL_COMMANDS.filter { it.name.contains(term, ignoreCase = true) }
+                when {
+                    term.isEmpty() -> browseCommands()
+                    hits.isEmpty() -> AlertDialog.Builder(this)
+                        .setTitle("Nothing matched \"$term\"")
+                        .setPositiveButton("Back") { _, _ -> searchCommands() }
+                        .show()
+                    else -> showMatches(term, hits)
+                }
+            }
+            .setNegativeButton("Back") { _, _ -> browseCommands() }
+            .show()
+    }
+
+    private fun showMatches(term: String, hits: List<RingCommand>) {
+        val labels = hits.map {
+            "%02X %02X  %s%s".format(it.group, it.command, it.name, if (it.risky) "   [careful]" else "")
+        }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("${hits.size} matching \"$term\"")
+            .setItems(labels) { _, which -> confirmThenSend(hits[which]) }
+            .setNegativeButton("Back") { _, _ -> searchCommands() }
             .show()
     }
 

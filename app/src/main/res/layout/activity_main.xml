@@ -190,6 +190,30 @@
             android:layout_marginTop="8dp"
             android:text="Set the ring's clock to this phone" />
 
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:orientation="horizontal">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/goalButton"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Step goal" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/aboutYouButton"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:layout_weight="1"
+                android:text="About you" />
+        </LinearLayout>
+
         <com.google.android.material.button.MaterialButton
             android:id="@+id/browseButton"
             android:layout_width="match_parent"
@@ -285,6 +309,14 @@
                 android:text="Bluetooth protocol log"
                 android:textColor="@color/forest"
                 android:textStyle="bold" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/expandButton"
+                style="@style/Widget.Material3.Button.OutlinedButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="8dp"
+                android:text="Full screen" />
 
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/pauseButton"
