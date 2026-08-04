@@ -297,6 +297,14 @@ reading:
 The last two are the decisive pair: two measurements six minutes apart, one timestamp between
 them. The clock is not merely wrong, it is stopped.
 
+**A factory reset fixes it.** After `01 0E` with `"RSYS"` and setting the clock again, a
+measurement finishing at 00:40:29 stored `ED 34 05 32 00 5B` — stamped 00:40:29, to the second,
+eleven minutes after the clock was written rather than inheriting it. The same run also stored
+**one** record for a thirty-second measurement, not eighteen. So a stalled RTC is what made a
+day of separate readings look like one crowded second, and the readings were probably arriving
+on schedule the whole time. If stored timestamps ever bunch up again, suspect the clock before
+concluding the ring has stopped measuring.
+
 The ring's own log can be read back with `GetDeviceLog` (`02 08`) and is the only way to see
 what the ring believes the time is — its entries are stamped from the same RTC, so a write
 shows up there immediately (`23:01:49 exit on time change: 0`) and nothing appears afterwards
@@ -371,6 +379,23 @@ empty payload and to every guessed argument; with it:
 Its own log then reads `win_factory_reset 0003`, followed by entries dated `2020-01-01
 00:00:00` — the RTC returns to the factory epoch, so the clock must be set again afterwards.
 The bond survives; the ring reconnects on its own.
+
+**This one really does erase the readings**, unlike `SettingTime`: `Health_HistoryHeart` went
+from twenty-nine records to `no records stored`. Sync anything worth keeping to the phone first.
+`2a37` is cleared too, so it stops rebroadcasting the value it was holding.
+
+### Reading the debugger's log without screenshots
+
+The debugger writes every frame it sends or receives, decoded and in hex, to
+`files/protocol-log.txt`, so a whole session comes back as text:
+
+```
+adb shell run-as uk.co.r99companion cat files/protocol-log.txt | tail -40
+```
+
+Much faster than screenshotting the log view, and it catches what has scrolled away. `NOTIFY
+2a37: 04 00 -> 0 bpm, NOT on the finger` is how to tell the ring is off the hand, which
+otherwise looks like a ring that has stopped measuring.
 
 **Read the SDK before guessing a payload.** Every argument above comes from the vendor's
 `YCBTClient`, where each call is one line naming the command number and the exact bytes —

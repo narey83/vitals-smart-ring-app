@@ -959,6 +959,8 @@ class MainActivity : AppCompatActivity() {
                 "this firmware does not implement that command"
             payload.size == 1 && payload[0] == 0xFE.toByte() ->
                 "the ring rejected that — it wants an argument"
+            payload.size == 1 && payload[0] == 0xFB.toByte() ->
+                "refused — OpenFactory answers this, so the mode is presumably locked"
             // The firmware's own debug log. Byte 0 is a chunk marker, not text.
             group == 0x02 && command == 0x08 -> readable(payload.drop(1)).ifEmpty { null }
             else -> null
@@ -1195,7 +1197,9 @@ class MainActivity : AppCompatActivity() {
         (0x02 to 0x2A) to byteArrayOf(0x47, 0x46),   // "GF"  GetTerminalConf
         (0x02 to 0x2B) to byteArrayOf(0x47, 0x43),   // "GC"  GetSunGoldConf
         // settingRestoreFactory needs "RSYS"; deliberately not listed, so a wipe cannot be a
-        // single mistaken tap. Type 52535953 by hand if you ever genuinely want it.
+        // single mistaken tap. Type 52535953 by hand if you ever genuinely want it — that does
+        // work: the ring answers 00 and reboots, where an empty payload answers 01 and nothing
+        // happens. A refusal that looks like a reading is the trap this table exists to avoid.
     )
 
     /**
