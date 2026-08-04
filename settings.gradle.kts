@@ -11,3 +11,4 @@ dependencyResolutionManagement {
 }
 rootProject.name = "R99 Ring Companion"
 include(":app")
+include(":vitals")

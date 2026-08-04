@@ -1,0 +1,13 @@
+<resources>
+    <!-- Near-black rather than pure black: pure black crushes the card edges. -->
+    <color name="canvas">#0B0D10</color>
+    <color name="card">#14181D</color>
+    <color name="hairline">#232A32</color>
+    <color name="text">#F2F5F7</color>
+    <color name="muted">#8A95A1</color>
+    <!-- One accent per vital, so a glance is enough to tell them apart. -->
+    <color name="heart">#FF4D6D</color>
+    <color name="oxygen">#4CC9F0</color>
+    <color name="pressure">#B388FF</color>
+    <color name="motion">#5CE1A6</color>
+</resources>
