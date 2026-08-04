@@ -39,6 +39,30 @@ class UnitsTest {
         assertEquals(165, Units.kgToLb(75))
     }
 
+    @Test fun `stones and pounds survive the trip back to kilograms`() {
+        (40..150).forEach { kg ->
+            val (stones, pounds) = Units.kgToStones(kg)
+            val back = Units.stonesToKg(stones, pounds)
+            assertTrue("$kg kg became $stones st $pounds lb and returned as $back", back == kg)
+        }
+    }
+
+    @Test fun `pounds never reach a whole stone`() {
+        (40..150).forEach { kg ->
+            val (_, pounds) = Units.kgToStones(kg)
+            assertTrue("$kg kg produced $pounds lb", pounds in 0..13)
+        }
+    }
+
+    @Test fun `known weights convert as expected`() {
+        // 75 kg is 165 lb, which is 11 stone 11.
+        assertEquals(11 to 11, Units.kgToStones(75))
+        assertEquals(75, Units.stonesToKg(11, 11))
+        assertEquals("11 st 11 lb", Units.weight(75, metric = false, stones = true))
+        assertEquals("165 lb", Units.weight(75, metric = false))
+        assertEquals("75 kg", Units.weight(75, metric = true, stones = true))
+    }
+
     @Test fun `distance reads in whichever units are wanted`() {
         assertEquals("850 m", Units.distance(850, metric = true))
         assertEquals("1.02 km", Units.distance(1016, metric = true))

@@ -16,10 +16,24 @@ object Units {
 
     private const val CM_PER_INCH = 2.54
     private const val LB_PER_KG = 2.2046226
+    const val POUNDS_PER_STONE = 14
 
     fun kgToLb(kg: Int): Int = (kg * LB_PER_KG).roundToInt()
 
     fun lbToKg(lb: Int): Int = (lb / LB_PER_KG).roundToInt()
+
+    /**
+     * Whole stones and the pounds left over, which is how weight is spoken in Britain.
+     *
+     * The total is rounded to pounds before it is split, so a weight just under the next stone
+     * reads as 12 st 0 lb rather than 11 st 14 lb.
+     */
+    fun kgToStones(kg: Int): Pair<Int, Int> {
+        val pounds = kgToLb(kg)
+        return pounds / POUNDS_PER_STONE to pounds % POUNDS_PER_STONE
+    }
+
+    fun stonesToKg(stones: Int, pounds: Int): Int = lbToKg(stones * POUNDS_PER_STONE + pounds)
 
     /**
      * Whole feet and inches. The total is rounded before it is split, so a height that lands
@@ -41,7 +55,11 @@ object Units {
         else -> "%.2f mi".format(metres / 1609.344)
     }
 
-    fun weight(kg: Int, metric: Boolean): String = if (metric) "$kg kg" else "${kgToLb(kg)} lb"
+    fun weight(kg: Int, metric: Boolean, stones: Boolean = false): String = when {
+        metric -> "$kg kg"
+        stones -> kgToStones(kg).let { (st, lb) -> "$st st $lb lb" }
+        else -> "${kgToLb(kg)} lb"
+    }
 
     fun height(cm: Int, metric: Boolean): String =
         if (metric) "$cm cm" else cmToFeetInches(cm).let { (feet, inches) -> "$feet'$inches\"" }

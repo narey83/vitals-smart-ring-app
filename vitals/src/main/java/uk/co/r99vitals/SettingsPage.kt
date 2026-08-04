@@ -84,7 +84,9 @@ data class Profile(
     val heightCm: Int = 175,
     val weightKg: Int = 75,
     /** Which units to show. Height and weight are stored in metric either way. */
-    val metric: Boolean = true
+    val metric: Boolean = true,
+    /** Weight in stones and pounds rather than pounds alone. Imperial only; kg ignores it. */
+    val stones: Boolean = true
 ) {
     companion object {
         fun read(prefs: SharedPreferences) = Profile(
@@ -94,7 +96,8 @@ data class Profile(
             storedAge = prefs.getInt("age", 30),
             heightCm = prefs.getInt("height", 175),
             weightKg = prefs.getInt("weight", 75),
-            metric = prefs.getBoolean("metric", true)
+            metric = prefs.getBoolean("metric", true),
+            stones = prefs.getBoolean("stones", true)
         )
     }
 
@@ -119,6 +122,7 @@ data class Profile(
         .putInt("height", heightCm)
         .putInt("weight", weightKg)
         .putBoolean("metric", metric)
+        .putBoolean("stones", stones)
         .apply()
 }
 
@@ -202,7 +206,7 @@ fun SettingsPage(
                 editing = Editing.Height
             }
             Divider()
-            Value("Weight", Units.weight(profile.weightKg, profile.metric)) {
+            Value("Weight", Units.weight(profile.weightKg, profile.metric, profile.stones)) {
                 editing = Editing.Weight
             }
         }
@@ -414,6 +418,14 @@ private fun WheelSheet(
     var month by remember(editing) { mutableStateOf(start.monthValue) }
     var year by remember(editing) { mutableStateOf(start.year) }
 
+    // Feet and inches, and stones and pounds, have the same problem the date had: both halves
+    // are worked out from one stored number, so moving either recomputes the other and it
+    // shifts under the finger. Each half keeps its own value and writes through to the profile.
+    var feet by remember(editing) { mutableStateOf(Units.cmToFeetInches(profile.heightCm).first) }
+    var inches by remember(editing) { mutableStateOf(Units.cmToFeetInches(profile.heightCm).second) }
+    var stone by remember(editing) { mutableStateOf(Units.kgToStones(profile.weightKg).first) }
+    var pounds by remember(editing) { mutableStateOf(Units.kgToStones(profile.weightKg).second) }
+
     fun finish() {
         if (editing == Editing.Birthday) {
             // 31 February is reachable on unlatched wheels and is not a date, so the day is
@@ -478,13 +490,14 @@ private fun WheelSheet(
                     }
                 } else {
                     // Feet and inches are two wheels, because they are two numbers.
-                    val (feet, inches) = Units.cmToFeetInches(profile.heightCm)
                     Row(horizontalArrangement = Arrangement.Center) {
                         Picker(feet, 3..7, { "$it ft" }, Modifier.width(120.dp)) {
+                            feet = it
                             onProfile(profile.copy(heightCm = Units.feetInchesToCm(it, inches)))
                         }
                         Spacer(Modifier.width(12.dp))
                         Picker(inches, 0..11, { "$it in" }, Modifier.width(120.dp)) {
+                            inches = it
                             onProfile(profile.copy(heightCm = Units.feetInchesToCm(feet, it)))
                         }
                     }
@@ -494,8 +507,30 @@ private fun WheelSheet(
                         onProfile(profile.copy(weightKg = it))
                     }
                 } else {
-                    Picker(Units.kgToLb(profile.weightKg), 66..440, { "$it lb" }, Modifier.width(160.dp)) {
-                        onProfile(profile.copy(weightKg = Units.lbToKg(it)))
+                    // Stones or plain pounds is a choice about weight alone, so it is made here
+                    // rather than in the Units row, which also governs height and distance.
+                    Row {
+                        Toggle("Stones", profile.stones) { onProfile(profile.copy(stones = true)) }
+                        Spacer(Modifier.width(8.dp))
+                        Toggle("Pounds", !profile.stones) { onProfile(profile.copy(stones = false)) }
+                    }
+                    Spacer(Modifier.height(20.dp))
+                    if (profile.stones) {
+                        Row(horizontalArrangement = Arrangement.Center) {
+                            Picker(stone, 4..31, { "$it st" }, Modifier.width(110.dp)) {
+                                stone = it
+                                onProfile(profile.copy(weightKg = Units.stonesToKg(it, pounds)))
+                            }
+                            Spacer(Modifier.width(12.dp))
+                            Picker(pounds, 0..13, { "$it lb" }, Modifier.width(110.dp)) {
+                                pounds = it
+                                onProfile(profile.copy(weightKg = Units.stonesToKg(stone, it)))
+                            }
+                        }
+                    } else {
+                        Picker(Units.kgToLb(profile.weightKg), 66..440, { "$it lb" }, Modifier.width(160.dp)) {
+                            onProfile(profile.copy(weightKg = Units.lbToKg(it)))
+                        }
                     }
                 }
                 // Whole hundreds: nobody sets a goal of 10,137.
