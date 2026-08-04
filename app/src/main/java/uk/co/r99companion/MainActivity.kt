@@ -14,7 +14,10 @@ import android.bluetooth.BluetoothStatusCodes
 import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -105,6 +108,41 @@ class MainActivity : AppCompatActivity() {
     private var stepRunning = false
     private var currentStep = 0
 
+    /**
+     * Lets the app be driven over adb instead of by tapping, which is far quicker when working
+     * through a protocol:
+     *
+     *   adb shell am broadcast -a uk.co.r99companion.RUN --es do connect
+     *   adb shell am broadcast -a uk.co.r99companion.RUN --es hex 020C
+     *
+     * Registered at runtime and exported, so any app on the phone could also send to it. That is
+     * an acceptable trade in a debug tool that only ever talks to a ring, but it is the reason
+     * this belongs in the debugger and not in Vitals.
+     */
+    private val overAdb = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            val hex = intent?.getStringExtra("hex")
+            val instruction = intent?.getStringExtra("do")
+            runOnUiThread {
+                when {
+                    instruction == "connect" -> requestBluetoothThen { connectToKnownRing() }
+                    instruction == "readall" -> readEverything()
+                    instruction == "log" -> send(byteArrayOf(0x02, 0x08), "device log")
+                    instruction == "info" -> send(byteArrayOf(0x02, 0x00, 0x47, 0x43), "device info")
+                    instruction == "caps" -> send(byteArrayOf(0x02, 0x01, 0x47, 0x46), "capabilities")
+                    instruction == "clock" -> setRingClock()
+                    hex != null -> parseHex(hex)?.let { bytes ->
+                        val named = ALL_COMMANDS.firstOrNull {
+                            bytes.size >= 2 && it.group == (bytes[0].toInt() and 0xFF) &&
+                                it.command == (bytes[1].toInt() and 0xFF)
+                        }?.name ?: "raw $hex"
+                        dispatch(bytes, named)
+                    } ?: showStatus("adb: \"$hex\" is not valid hex")
+                }
+            }
+        }
+    }
+
     private var afterPermission: (() -> Unit)? = null
 
     private val permissions = registerForActivityResult(
@@ -185,6 +223,9 @@ class MainActivity : AppCompatActivity() {
         log.text = runCatching { logFile.readText().takeLast(20_000) }.getOrDefault("")
         append("\n=== session ${sessionClock.format(Date())} ===\n")
         append("This app does not send health data anywhere.\n")
+        ContextCompat.registerReceiver(
+            this, overAdb, IntentFilter("uk.co.r99companion.RUN"), ContextCompat.RECEIVER_EXPORTED
+        )
     }
 
     /**
@@ -398,9 +439,10 @@ class MainActivity : AppCompatActivity() {
                     append("Listening for live notifications…\n")
                     false
                 }
-                // The ring stamps its stored records with its own clock, so a drifting clock
-                // means wrongly dated history. Correct it on every connection.
-                setRingClock()
+                // Deliberately NOT setting the clock here. The ring abandons a running sleep
+                // session when its clock moves ("exit sleep because time change" in its own
+                // log), so setting it on every connection destroys sleep tracking. Use the
+                // button, when awake and not wearing it.
             }
         }
 
@@ -1293,6 +1335,7 @@ class MainActivity : AppCompatActivity() {
 
     @SuppressLint("MissingPermission")
     override fun onDestroy() {
+        runCatching { unregisterReceiver(overAdb) }
         stopScan()
         handler.removeCallbacksAndMessages(null)
         gatt?.disconnect()

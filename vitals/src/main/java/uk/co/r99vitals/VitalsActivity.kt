@@ -38,7 +38,12 @@ class VitalsActivity : AppCompatActivity() {
     private lateinit var pressureValue: TextView
     private lateinit var stepsValue: TextView
     private lateinit var stepsCaption: TextView
-    private lateinit var measureButton: MaterialButton
+    private lateinit var heartButton: MaterialButton
+    private lateinit var oxygenButton: MaterialButton
+    private lateinit var pressureButton: MaterialButton
+    private lateinit var historyButton: MaterialButton
+    private lateinit var heartTrend: TextView
+    private lateinit var history: History
 
     private val handler = Handler(Looper.getMainLooper())
     private var gatt: BluetoothGatt? = null
@@ -69,9 +74,18 @@ class VitalsActivity : AppCompatActivity() {
         pressureValue = findViewById(R.id.pressureValue)
         stepsValue = findViewById(R.id.stepsValue)
         stepsCaption = findViewById(R.id.stepsCaption)
-        measureButton = findViewById(R.id.measureButton)
+        heartButton = findViewById(R.id.heartButton)
+        oxygenButton = findViewById(R.id.oxygenButton)
+        pressureButton = findViewById(R.id.pressureButton)
+        historyButton = findViewById(R.id.historyButton)
+        heartTrend = findViewById(R.id.heartTrend)
+        history = History(this)
         applyInsets()
-        measureButton.setOnClickListener { takeReadings() }
+        heartButton.setOnClickListener { measure(Ring.HEART, "heart rate") }
+        oxygenButton.setOnClickListener { measure(Ring.OXYGEN, "blood oxygen") }
+        pressureButton.setOnClickListener { measure(Ring.PRESSURE, "blood pressure") }
+        historyButton.setOnClickListener { showHistory() }
+        showTrend()
         askThenConnect()
     }
 
@@ -137,26 +151,47 @@ class VitalsActivity : AppCompatActivity() {
         }
     }
 
-    /** One tap measures heart rate, then oxygen, then pressure, each taking around half a minute. */
-    private fun takeReadings() {
+    /** Each vital is measured on its own, taking around half a minute. */
+    private fun measure(type: Int, label: String) {
         if (command == null) { linkState.text = "Not connected yet"; connect(); return }
-        sweep = listOf(Ring.HEART, Ring.OXYGEN, Ring.PRESSURE)
-        heartCaption.text = "Measuring — keep still"
-        measureButton.isEnabled = false
-        measureButton.text = "Measuring…"
-        nextInSweep()
+        heartCaption.text = "Measuring $label — keep still"
+        setButtonsEnabled(false)
+        enqueue { write(Ring.startMeasuring(type)) }
     }
 
-    private fun nextInSweep() {
-        val type = sweep.firstOrNull()
-        if (type == null) {
-            measureButton.isEnabled = true
-            measureButton.text = "Take a reading"
-            heartCaption.text = "Measured just now"
-            return
+    private fun setButtonsEnabled(enabled: Boolean) {
+        heartButton.isEnabled = enabled
+        oxygenButton.isEnabled = enabled
+        pressureButton.isEnabled = enabled
+    }
+
+    private fun showTrend() {
+        val since = System.currentTimeMillis() - 24 * 60 * 60 * 1000
+        heartTrend.text = "Last 24 hours: " + history.summary("heart", since)
+    }
+
+    private fun showHistory() {
+        val view = TextView(this).apply {
+            text = history.report()
+            setTextIsSelectable(true)
+            typeface = android.graphics.Typeface.MONOSPACE
+            textSize = 12f
+            setPadding(40, 28, 40, 28)
+            setTextColor(ContextCompat.getColor(this@VitalsActivity, R.color.text))
         }
-        sweep = sweep.drop(1)
-        enqueue { write(Ring.startMeasuring(type)) }
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("History")
+            .setView(android.widget.ScrollView(this).apply { addView(view) })
+            .setPositiveButton("Close", null)
+            .setNeutralButton("Export") { _, _ ->
+                startActivity(android.content.Intent.createChooser(
+                    android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                        type = "text/csv"
+                        putExtra(android.content.Intent.EXTRA_SUBJECT, "Vitals readings")
+                        putExtra(android.content.Intent.EXTRA_TEXT, history.asCsv())
+                    }, "Export readings"))
+            }
+            .show()
     }
 
     private val callback = object : BluetoothGattCallback() {
@@ -187,17 +222,9 @@ class VitalsActivity : AppCompatActivity() {
                     }
                 }
                 enqueue { write(Ring.deviceInfo()) }
-                // The ring dates its stored records with its own clock, so keep it right.
-                val now = Calendar.getInstance()
-                enqueue {
-                    write(
-                        Ring.setClock(
-                            now.get(Calendar.YEAR), now.get(Calendar.MONTH) + 1,
-                            now.get(Calendar.DAY_OF_MONTH), now.get(Calendar.HOUR_OF_DAY),
-                            now.get(Calendar.MINUTE), now.get(Calendar.SECOND)
-                        )
-                    )
-                }
+                // The clock is deliberately left alone: writing it makes the ring abandon a
+                // running sleep session, which its own log reports as "exit sleep because time
+                // change". Sleep data matters more than a few seconds of drift.
                 Ring.automaticMonitoring(true).forEach { frame -> enqueue { write(frame) } }
                 enqueue { linkState.text = "Your ring"; false }
             }
@@ -246,11 +273,24 @@ class VitalsActivity : AppCompatActivity() {
             return
         }
         when (val reading = Ring.read(value)) {
-            is Ring.Reading.Heart -> heartValue.text = reading.bpm.toString()
-            is Ring.Reading.Oxygen -> oxygenValue.text = "${reading.percent}%"
-            is Ring.Reading.Pressure -> pressureValue.text = "${reading.systolic}/${reading.diastolic}"
+            is Ring.Reading.Heart -> {
+                heartValue.text = reading.bpm.toString()
+                history.record("heart", reading.bpm)
+            }
+            is Ring.Reading.Oxygen -> {
+                oxygenValue.text = "${reading.percent}%"
+                history.record("oxygen", reading.percent)
+            }
+            is Ring.Reading.Pressure -> {
+                pressureValue.text = "${reading.systolic}/${reading.diastolic}"
+                history.record("pressure", reading.systolic, reading.diastolic)
+            }
             is Ring.Reading.Power -> linkState.text = "Your ring · ${reading.percent}%"
-            is Ring.Reading.Finished -> nextInSweep()
+            is Ring.Reading.Finished -> {
+                setButtonsEnabled(true)
+                heartCaption.text = "Measured just now"
+                showTrend()
+            }
             else -> Unit
         }
     }

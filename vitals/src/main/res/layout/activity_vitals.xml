@@ -85,6 +85,15 @@
                 android:text="Not measured yet"
                 android:textColor="@color/muted"
                 android:textSize="13sp" />
+
+            <TextView
+                android:id="@+id/heartTrend"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:text="no readings yet"
+                android:textColor="@color/muted"
+                android:textSize="12sp" />
         </LinearLayout>
 
         <!-- Oxygen and pressure sit side by side: both are on-demand, both are secondary. -->
@@ -193,16 +202,61 @@
                 android:textSize="13sp" />
         </LinearLayout>
 
-        <com.google.android.material.button.MaterialButton
-            android:id="@+id/measureButton"
+        <LinearLayout
             android:layout_width="match_parent"
-            android:layout_height="58dp"
+            android:layout_height="wrap_content"
             android:layout_marginTop="20dp"
-            android:backgroundTint="@color/heart"
-            android:text="Take a reading"
-            android:textColor="@color/canvas"
-            android:textSize="16sp"
-            app:cornerRadius="29dp" />
+            android:orientation="horizontal">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/heartButton"
+                android:layout_width="0dp"
+                android:layout_height="54dp"
+                android:layout_weight="1"
+                android:backgroundTint="@color/heart"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:text="Heart"
+                android:textColor="@color/canvas"
+                app:cornerRadius="27dp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/oxygenButton"
+                android:layout_width="0dp"
+                android:layout_height="54dp"
+                android:layout_marginStart="10dp"
+                android:layout_weight="1"
+                android:backgroundTint="@color/oxygen"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:text="SpO2"
+                android:textColor="@color/canvas"
+                app:cornerRadius="27dp" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/pressureButton"
+                android:layout_width="0dp"
+                android:layout_height="54dp"
+                android:layout_marginStart="10dp"
+                android:layout_weight="1"
+                android:backgroundTint="@color/pressure"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:text="BP"
+                android:textColor="@color/canvas"
+                app:cornerRadius="27dp" />
+        </LinearLayout>
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/historyButton"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:layout_marginTop="10dp"
+            android:text="History"
+            android:textColor="@color/text"
+            app:cornerRadius="26dp"
+            app:strokeColor="@color/hairline" />
 
         <TextView
             android:id="@+id/footnote"
