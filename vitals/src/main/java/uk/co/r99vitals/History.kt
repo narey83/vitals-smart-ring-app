@@ -23,8 +23,31 @@ class History(context: Context) {
 
     data class Entry(val at: Date, val kind: String, val value: Int, val extra: Int)
 
+    private companion object {
+        /** Readings closer together than this belong to the same measurement. */
+        const val BURST = 90_000L
+    }
+
+    /**
+     * One entry per measurement, not one per frame.
+     *
+     * The ring streams a reading a second while it measures, so a single thirty-second
+     * measurement would otherwise leave thirty near-identical rows: noise in the list and a
+     * chart plotting the same moment over and over. A reading that arrives within [BURST] of the
+     * previous one of the same kind replaces it, so what is kept is where the measurement
+     * settled rather than where it started.
+     */
     fun record(kind: String, value: Int, extra: Int = 0) {
-        runCatching { file.appendText("${System.currentTimeMillis()},$kind,$value,$extra\n") }
+        runCatching {
+            val now = System.currentTimeMillis()
+            val lines = if (file.exists()) file.readLines().toMutableList() else mutableListOf()
+            val previous = lines.lastOrNull()?.split(",")
+            val sameBurst = previous != null && previous.size >= 4 &&
+                previous[1] == kind && now - (previous[0].toLongOrNull() ?: 0L) < BURST
+            if (sameBurst) lines[lines.lastIndex] = "$now,$kind,$value,$extra"
+            else lines.add("$now,$kind,$value,$extra")
+            file.writeText(lines.joinToString("\n", postfix = "\n"))
+        }
     }
 
     fun all(): List<Entry> = runCatching {

@@ -1,7 +1,10 @@
 <resources>
     <style name="Theme.Vitals" parent="Theme.Material3.Dark.NoActionBar">
-        <item name="android:statusBarColor">@color/canvas</item>
-        <item name="android:navigationBarColor">@color/canvas</item>
+        <!-- Transparent, so the Compose background reaches the edges. Painting these with a
+             resource colour left a visible band wherever it differed by a shade. -->
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
         <item name="android:windowLightStatusBar">false</item>
         <item name="colorPrimary">@color/heart</item>
     </style>
