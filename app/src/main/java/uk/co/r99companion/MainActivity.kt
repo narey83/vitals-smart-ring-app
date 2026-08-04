@@ -49,6 +49,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var pressureButton: MaterialButton
     private lateinit var readAllButton: MaterialButton
     private lateinit var deviceLogButton: MaterialButton
+    private lateinit var firmwareButton: MaterialButton
+    private lateinit var browseButton: MaterialButton
+    private lateinit var valueFirmware: TextView
     private lateinit var commandInput: EditText
     private lateinit var frameCheck: CheckBox
     private lateinit var monitorButton: MaterialButton
@@ -130,6 +133,13 @@ class MainActivity : AppCompatActivity() {
         oxygenButton = findViewById(R.id.oxygenButton)
         readAllButton = findViewById(R.id.readAllButton)
         readAllButton.setOnClickListener { readEverything() }
+        browseButton = findViewById(R.id.browseButton)
+        browseButton.setOnClickListener { browseCommands() }
+        valueFirmware = findViewById(R.id.valueFirmware)
+        firmwareButton = findViewById(R.id.firmwareButton)
+        firmwareButton.setOnClickListener {
+            send(byteArrayOf(0x02, 0x00, 0x47, 0x43), "firmware and hardware info")
+        }
         deviceLogButton = findViewById(R.id.deviceLogButton)
         deviceLogButton.setOnClickListener { send(byteArrayOf(0x02, 0x08), "device log request") }
         pressureButton = findViewById(R.id.pressureButton)
@@ -509,10 +519,15 @@ class MainActivity : AppCompatActivity() {
                 valueOxygen.text = "Blood oxygen — ${byte(0)}%"
             group == 0x06 && command == 0x03 && payload.size >= 2 ->
                 valuePressure.text = "Blood pressure — ${byte(0)}/${byte(1)} (estimated)"
-            // GetDeviceInfo: the SDK reads battery state at [4] and the percentage at [5].
-            group == 0x02 && command == 0x00 && payload.size >= 6 ->
+            // GetDeviceInfo. The SDK reads the version as main.sub and the battery at [4]/[5];
+            // the version agrees with the [V2.32] the ring stamps on its own log lines.
+            group == 0x02 && command == 0x00 && payload.size >= 6 -> {
                 valueBattery.text = "Battery — ${byte(5)}%" +
                     if (byte(4) != 0) " (charging)" else ""
+                val rest = payload.drop(6).joinToString(" ") { "%02X".format(it) }
+                valueFirmware.text = "Firmware — V${byte(3)}.${byte(2)}, device id ${byte(0)}" +
+                    if (rest.isNotEmpty()) "\n  further version bytes: $rest" else ""
+            }
             group == 0x02 && command == 0x0C && payload.size >= 8 -> {
                 val steps = byte(0) or (byte(1) shl 8) or (byte(2) shl 16)
                 val calories = byte(3) or (byte(4) shl 8)
@@ -747,6 +762,52 @@ class MainActivity : AppCompatActivity() {
         Triple(0x07, 0x05, byteArrayOf()) to "Collect_File_Count",
         Triple(0x07, 0x06, byteArrayOf()) to "Collect_File_List",
     )
+
+    /**
+     * Every command the vendor SDK knows, reachable by hand. Nothing is withheld: the ones that
+     * can erase or reset the ring are marked and confirmed, not hidden. Whatever is typed in the
+     * hex box is used as the payload.
+     */
+    private fun browseCommands() {
+        val grouped = ALL_COMMANDS.groupBy { it.group }.toSortedMap()
+        val keys = grouped.keys.toList()
+        val labels = keys.map { group ->
+            val name = COMMAND_GROUPS[group] ?: "Group"
+            "%02X  %s  (%d)".format(group, name, grouped.getValue(group).size)
+        }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("All ${ALL_COMMANDS.size} SDK commands")
+            .setItems(labels) { _, which -> browseGroup(keys[which]) }
+            .setNegativeButton("Close", null)
+            .show()
+    }
+
+    private fun browseGroup(group: Int) {
+        val commands = ALL_COMMANDS.filter { it.group == group }
+        val labels = commands.map {
+            "%02X %02X  %s%s".format(it.group, it.command, it.name, if (it.risky) "   [careful]" else "")
+        }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle(COMMAND_GROUPS[group] ?: "Group %02X".format(group))
+            .setItems(labels) { _, which -> confirmThenSend(commands[which]) }
+            .setNegativeButton("Back") { _, _ -> browseCommands() }
+            .show()
+    }
+
+    private fun confirmThenSend(command: RingCommand) {
+        val payload = parseHex(commandInput.text.toString()) ?: byteArrayOf()
+        val bytes = byteArrayOf(command.group.toByte(), command.command.toByte()) + payload
+        if (!command.risky) { send(bytes, command.name); return }
+        AlertDialog.Builder(this)
+            .setTitle(command.name)
+            .setMessage(
+                "This command can erase stored data, reset the ring, or start a firmware " +
+                    "transfer. It will be sent as ${asFrame(bytes).toHex()}.\n\nSend it?"
+            )
+            .setPositiveButton("Send anyway") { _, _ -> send(bytes, command.name) }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
 
     private fun readEverything() {
         val active = gatt

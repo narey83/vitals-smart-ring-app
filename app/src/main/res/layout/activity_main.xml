@@ -78,6 +78,14 @@
                 android:textSize="16sp" />
 
             <TextView
+                android:id="@+id/valueFirmware"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Firmware — not read yet"
+                android:textColor="@color/ink"
+                android:textSize="16sp" />
+
+            <TextView
                 android:id="@+id/valueBattery"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -181,6 +189,21 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
             android:text="Set the ring's clock to this phone" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/browseButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="Browse all 329 SDK commands" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/firmwareButton"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="Read firmware and hardware info" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/deviceLogButton"
