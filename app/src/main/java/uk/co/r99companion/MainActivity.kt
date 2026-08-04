@@ -442,7 +442,7 @@ class MainActivity : AppCompatActivity() {
     @SuppressLint("MissingPermission")
     private fun sendCommand() {
         val active = gatt
-        if (active == null || writable.isEmpty()) { showStatus("Connect to the ring first."); return }
+        if (active == null || writable.isEmpty()) { reportNotConnected("That command"); return }
         val payload = parseHex(commandInput.text.toString())
         if (payload == null) { showStatus("Enter an even number of hex digits, such as 03."); return }
         val bytes = if (frameCheck.isChecked) asFrame(payload) else payload
@@ -594,6 +594,21 @@ class MainActivity : AppCompatActivity() {
      */
     private var awaiting: Triple<Int, Int, String>? = null
 
+    /**
+     * A command with no connection behind it used to fail into the status line, far up the page
+     * from the buttons, so it looked as though nothing had happened at all.
+     */
+    private fun reportNotConnected(label: String) {
+        showStatus("Not connected — tap \"Connect straight to my ring\" first.")
+        AlertDialog.Builder(this)
+            .setTitle("Not connected")
+            .setMessage("$label was not sent.\n\nTap \"Connect straight to my ring\" at the top, " +
+                "wait for the log to say it is listening, then try again.")
+            .setPositiveButton("Connect now") { _, _ -> requestBluetoothThen { connectToKnownRing() } }
+            .setNegativeButton("Close", null)
+            .show()
+    }
+
     private fun showReply(label: String, value: ByteArray) {
         val payload = value.copyOfRange(4, value.size - 2)
         val bytes = payload.joinToString(" ") { "%02X".format(it) }.ifEmpty { "(no payload)" }
@@ -618,7 +633,7 @@ class MainActivity : AppCompatActivity() {
     private fun send(bytes: ByteArray, label: String): Boolean {
         val active = gatt
         val channel = writable[COMMAND_CHANNEL]
-        if (active == null || channel == null) { showStatus("Connect to the ring first."); return false }
+        if (active == null || channel == null) { reportNotConnected(label); return false }
         val frame = asFrame(bytes)
         awaiting = Triple(bytes[0].toInt() and 0xFF, bytes[1].toInt() and 0xFF, label)
         enqueue {
@@ -869,7 +884,7 @@ class MainActivity : AppCompatActivity() {
      */
     private fun dispatch(bytes: ByteArray, label: String) {
         val active = gatt
-        if (active == null || writable.isEmpty()) { showStatus("Connect to the ring first."); return }
+        if (active == null || writable.isEmpty()) { reportNotConnected(label); return }
         val frame = if (frameCheck.isChecked) asFrame(bytes) else bytes
         if (bytes.size >= 2) {
             awaiting = Triple(bytes[0].toInt() and 0xFF, bytes[1].toInt() and 0xFF, label)
@@ -927,7 +942,7 @@ class MainActivity : AppCompatActivity() {
     private fun readEverything() {
         val active = gatt
         val channel = writable[COMMAND_CHANNEL]
-        if (active == null || channel == null) { showStatus("Connect to the ring first."); return }
+        if (active == null || channel == null) { reportNotConnected("That measurement"); return }
         append("\n=== reading every safe query ===\n")
         readOnlyQueries.forEach { (spec, name) ->
             val (group, command, listed) = spec
@@ -947,7 +962,7 @@ class MainActivity : AppCompatActivity() {
     private fun measure(type: Byte, label: String) {
         val active = gatt
         val channel = writable[COMMAND_CHANNEL]
-        if (active == null || channel == null) { showStatus("Connect to the ring first."); return }
+        if (active == null || channel == null) { reportNotConnected("That request"); return }
         val bytes = asFrame(byteArrayOf(0x03, 0x2F, 0x01, type))
         enqueue {
             val sent = write(active, channel, bytes)
