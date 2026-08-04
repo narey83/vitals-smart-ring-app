@@ -7,6 +7,8 @@ import androidx.health.connect.client.records.BloodPressureRecord
 import androidx.health.connect.client.records.HeartRateRecord
 import androidx.health.connect.client.records.OxygenSaturationRecord
 import androidx.health.connect.client.records.StepsRecord
+import androidx.health.connect.client.records.metadata.Device
+import androidx.health.connect.client.records.metadata.Metadata
 import androidx.health.connect.client.units.Percentage
 import androidx.health.connect.client.units.Pressure
 import java.time.Instant
@@ -28,6 +30,9 @@ class HealthExport(private val context: Context) {
         HealthPermission.getWritePermission(BloodPressureRecord::class),
         HealthPermission.getWritePermission(StepsRecord::class)
     )
+
+    // The ring took these readings itself, so they are attributed to it rather than to the phone.
+    private val ring = Metadata.autoRecorded(Device(type = Device.TYPE_RING))
 
     fun availability(): Int = HealthConnectClient.getSdkStatus(context)
 
@@ -53,16 +58,19 @@ class HealthExport(private val context: Context) {
                 "heart" -> HeartRateRecord(
                     startTime = at, startZoneOffset = zone,
                     endTime = at.plusSeconds(1), endZoneOffset = zone,
-                    samples = listOf(HeartRateRecord.Sample(at, entry.value.toLong()))
+                    samples = listOf(HeartRateRecord.Sample(at, entry.value.toLong())),
+                    metadata = ring
                 )
                 "oxygen" -> OxygenSaturationRecord(
                     time = at, zoneOffset = zone,
-                    percentage = Percentage(entry.value.toDouble())
+                    percentage = Percentage(entry.value.toDouble()),
+                    metadata = ring
                 )
                 "pressure" -> BloodPressureRecord(
                     time = at, zoneOffset = zone,
                     systolic = Pressure.millimetersOfMercury(entry.value.toDouble()),
-                    diastolic = Pressure.millimetersOfMercury(entry.extra.toDouble())
+                    diastolic = Pressure.millimetersOfMercury(entry.extra.toDouble()),
+                    metadata = ring
                 )
                 // The ring reports a running total; Health Connect wants a count for a period,
                 // so a day's steps are written as one record covering that day.
@@ -89,7 +97,8 @@ class HealthExport(private val context: Context) {
                 startZoneOffset = zone,
                 endTime = day.plusDays(1).atStartOfDay(ZoneId.systemDefault()).toInstant().minusSeconds(1),
                 endZoneOffset = zone,
-                count = total.toLong()
+                count = total.toLong(),
+                metadata = ring
             )
         }
         if (records.isEmpty()) return 0

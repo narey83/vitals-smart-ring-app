@@ -280,6 +280,9 @@ class MainActivity : AppCompatActivity() {
     private fun startScan() {
         val bluetooth = adapter
         if (bluetooth == null || !bluetooth.isEnabled) { showStatus("Turn Bluetooth on, then try again."); return }
+        // The scanner is null while the adapter is still coming up, even once isEnabled is true.
+        val le = bluetooth.bluetoothLeScanner
+        if (le == null) { showStatus("Bluetooth is still starting up. Try again in a moment."); return }
         if (scanning) return
         scanning = true
         candidates.clear()
@@ -287,7 +290,7 @@ class MainActivity : AppCompatActivity() {
         showStatus("Scanning for nearby Bluetooth rings…")
         append("Scan started\n")
         val settings = ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build()
-        bluetooth.bluetoothLeScanner.startScan(null, settings, scanner)
+        le.startScan(null, settings, scanner)
         handler.postDelayed({ finishScan() }, 12_000)
     }
 
