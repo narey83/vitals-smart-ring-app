@@ -255,33 +255,41 @@ Turning on `settingHeartMonitor` took `Health_HistoryHeart` from one record to f
 of it took the same query to twenty-five. That store is the only place the automatic readings
 exist — see "Automatic readings are stored, never pushed" above.
 
-### One record per sample, one timestamp per session — verified
+### The ring's clock stops, and every later record inherits the stopped time — verified
 
-A run of records sharing a timestamp is not a decoding mistake. Byte 4 of a heart record is
-`00` in every one of them, so there is no hidden index or offset: the ring stamps every sample
-of a measurement with the second that measurement began, and a measurement streams samples for
-about thirty seconds. Twenty-five records read back as four sessions:
+A run of records sharing a timestamp is **not** a measurement session, which is what it first
+looks like. It is the ring's clock having stopped: every reading taken afterwards is written
+with the last time the clock knew.
+
+Proved directly. At 23:50 a heart rate was measured on demand — the ring reported 86, 86, 87,
+87 bpm live and finished normally — and the record it appended to the store was:
 
 ```
-80 E5 03 32 00 54    00:49:20  84 bpm   ┐
-80 E5 03 32 00 63    00:49:20  99 bpm   ├ one session, five samples
-80 E5 03 32 00 51    00:49:20  81 bpm   ┘
-FF 09 04 32 00 53    03:25:03  83 bpm
-57 AB 04 32 00 4F    14:53:27  79 bpm
-8D AC 04 32 00 54    14:58:37  84 bpm   ┐ one session, eighteen samples
-…                                       ┘
+8D AC 04 32 00 57      87 bpm, stamped 13:58:37 UTC
 ```
 
-A client should therefore collapse each run to one reading rather than plotting eighteen points
-on one minute.
+Ten hours late, on the same timestamp as the nineteen records before it. The ring's own log ends
+at `13:58:37 fatfs_record_history,total=37` with nothing after it, though writes plainly kept
+happening. So the timestamps are decoded correctly — `13:53:27` and `13:58:37` in the firmware
+log match the records exactly, the ring keeping UTC where the phone shows BST — and the clock
+behind them simply stopped.
 
-**Four sessions is a whole day**, which is the open question. `settingHeartMonitor` is set to
-fifteen minutes and acknowledged with `00`, but the store gained nothing between 15:00 and
-midnight with the ring worn throughout. The two overnight sessions and none during the day hint
-that this firmware samples while it believes the wearer is asleep and otherwise leaves the
-sensor alone. `GetSensorSamplingInfo` (`02 15`) would settle what the ring thinks its schedule
-is, but it replies `FC`, not implemented. Capturing what the vendor app sends at setup is the
-next thing to try.
+Which means:
+
+- **Records sharing a timestamp must not be collapsed into one reading.** They are separate
+  measurements that have lost their times, not samples of one measurement.
+- **Automatic readings may well be happening on schedule.** They pile onto the frozen timestamp
+  where they are indistinguishable from each other, which reads as a ring that stopped
+  measuring at teatime.
+- Nothing can be trusted about *when* a stored reading was taken once the clock has stopped.
+
+The log shows the ring struggling with time on its own: `missing_midnight_tick!`, and `exit
+sleep because time change` five times over one night. `SettingTime` (`01 00`) would fix the
+clock and is the one command that erases the store — see above — so it trades the ring's
+existing records for correctly stamped future ones.
+
+`GetSensorSamplingInfo` (`02 15`), which would say what schedule the ring thinks it is on,
+replies `FC`, not implemented.
 
 ## Refusal codes and required arguments
 
