@@ -98,7 +98,7 @@ class History(private val file: File) {
      * same records come back again and again. Anything already written within a burst of that
      * moment is therefore left alone: a backfill that ran twice must not double the day.
      */
-    fun backfill(kind: String, readings: List<Pair<Long, Int>>) {
+    fun backfill(kind: String, readings: List<Triple<Long, Int, Int>>) {
         if (readings.isEmpty()) return
         synchronized(writing) {
             runCatching {
@@ -108,9 +108,9 @@ class History(private val file: File) {
                     if (parts.getOrNull(1) == kind) parts[0].toLongOrNull() else null
                 }.toMutableList()
                 var added = false
-                readings.forEach { (at, value) ->
+                readings.forEach { (at, value, extra) ->
                     if (known.none { kotlin.math.abs(it - at) < BURST }) {
-                        lines.add("$at,$kind,$value,0,0")
+                        lines.add("$at,$kind,$value,$extra,0")
                         known.add(at)
                         added = true
                     }

@@ -693,6 +693,11 @@ class VitalsActivity : AppCompatActivity() {
         override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
             runOnUiThread {
                 if (status != BluetoothGatt.GATT_SUCCESS) { ui = ui.copy(link = "Could not read the ring"); return@runOnUiThread }
+                // Ask for room before asking for anything else. The default ATT payload is 20
+                // bytes, and a day of stored readings comes back as a single 150-byte frame:
+                // without this the ring answers with a count and the records never arrive at
+                // all, which reads exactly like a ring that has not recorded anything.
+                enqueue { gatt.requestMtu(517) }
                 gatt.services.forEach { service ->
                     service.characteristics.forEach { characteristic ->
                         if (characteristic.uuid == Ring.COMMAND_CHANNEL) command = characteristic
@@ -706,6 +711,8 @@ class VitalsActivity : AppCompatActivity() {
                 // The readings taken while nothing was listening. The ring keeps them to itself
                 // until asked, so every connection asks; History drops the ones already held.
                 enqueue { write(Ring.storedHeart()) }
+                enqueue { write(Ring.storedPressure()) }
+                enqueue { write(Ring.storedOxygen()) }
                 // The clock is deliberately left alone: writing it makes the ring abandon a
                 // running sleep session, which its own log reports as "exit sleep because time
                 // change". Sleep data matters more than a few seconds of drift.
@@ -758,8 +765,14 @@ class VitalsActivity : AppCompatActivity() {
             Ring.readStandardHeartRate(value)?.let { ui = ui.copy(heart = it) }
             return
         }
-        Ring.readStoredHeart(value).takeIf { it.isNotEmpty() }?.let {
-            history.backfill("heart", it)
+        // The stored records, arriving in reply to the history queries sent on connecting. Each
+        // reader recognises its own command and ignores the other two.
+        listOf(
+            "heart" to Ring.readStoredHeart(value),
+            "oxygen" to Ring.readStoredOxygen(value),
+            "pressure" to Ring.readStoredPressure(value)
+        ).firstOrNull { it.second.isNotEmpty() }?.let { (kind, readings) ->
+            history.backfill(kind, readings)
             return
         }
         when (val reading = Ring.read(value)) {
@@ -792,7 +805,12 @@ class VitalsActivity : AppCompatActivity() {
                 showTrend()
                 if (ui.workout != null) keepMeasuring()
             }
-            else -> Unit
+            // ponytail: frames nothing here understands, in debug builds only. This is how the
+            // missing history turned up — the ring was answering with a record count and the
+            // records themselves were never arriving, which nothing else would have shown.
+            else -> if (BuildConfig.DEBUG && reading == null) {
+                android.util.Log.d("r99app", "unread ${value.joinToString("") { "%02X".format(it) }}")
+            }
         }
     }
 

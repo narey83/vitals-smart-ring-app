@@ -77,7 +77,7 @@ class RingFrameTest {
             0x05, 0x15,
             byteArrayOf(0x04, 0x03, 0x02, 0x01, 0x00, 0x52)
         )
-        assertEquals(listOf(963_593_860_000L to 82), Ring.readStoredHeart(frame))
+        assertEquals(listOf(Triple(963_593_860_000L, 82, 0)), Ring.readStoredHeart(frame))
     }
 
     /** The ring's store is fixed size, so unused slots come back as zero rather than absent. */
@@ -89,11 +89,54 @@ class RingFrameTest {
                 0x05, 0x03, 0x02, 0x01, 0x00, 0x00
             )
         )
-        assertEquals(listOf(963_593_860_000L to 82), Ring.readStoredHeart(frame))
+        assertEquals(listOf(Triple(963_593_860_000L, 82, 0)), Ring.readStoredHeart(frame))
     }
 
     /** Live readings share the group. Decoding one as history would date it to the year 2000. */
     @Test fun `a live heart frame is not mistaken for stored history`() {
-        assertEquals(emptyList<Pair<Long, Int>>(), Ring.readStoredHeart(Ring.frame(0x06, 0x01, byteArrayOf(0x52))))
+        assertEquals(emptyList<Triple<Long, Int, Int>>(), Ring.readStoredHeart(Ring.frame(0x06, 0x01, byteArrayOf(0x52))))
+    }
+
+    /**
+     * Captured from the ring, and decoded here to what the debugger displayed for the same
+     * bytes: `2026-08-04 00:49:20  116/76` and `04:36:32  117/78`. Both halves come from one
+     * record, so a shifted offset would read a plausible pressure with the wrong diastolic.
+     */
+    @Test fun `stored blood pressure matches the capture`() {
+        val frame = Ring.frame(
+            0x05, 0x17,
+            byteArrayOf(
+                0x80.toByte(), 0xE5.toByte(), 0x03, 0x32, 0x00, 0x74, 0x4C, 0x4E,
+                0xC0.toByte(), 0x1A, 0x04, 0x32, 0x00, 0x75, 0x4E, 0x56
+            )
+        )
+        assertEquals(
+            listOf(Triple(1_785_800_960_000L, 116, 76), Triple(1_785_814_592_000L, 117, 78)),
+            Ring.readStoredPressure(frame)
+        )
+    }
+
+    /**
+     * Also captured. Blood oxygen arrives inside the twenty-byte comprehensive record, where
+     * every other field is a feature this ring does not have and reads as zero — so the tenth
+     * byte is the whole reading, and finding it is the entire trick.
+     */
+    @Test fun `stored blood oxygen matches the capture`() {
+        val frame = Ring.frame(
+            0x05, 0x18,
+            byteArrayOf(
+                0x80.toByte(), 0xE5.toByte(), 0x03, 0x32, 0x00, 0x00, 0x00, 0x00, 0x00, 0x63,
+                0x00, 0x00, 0x00, 0x00, 0x0F, 0x00, 0x00, 0x00, 0x55, 0x32
+            )
+        )
+        assertEquals(listOf(Triple(1_785_800_960_000L, 99, 0)), Ring.readStoredOxygen(frame))
+    }
+
+    /** Three replies on one channel, each carrying a different record width. */
+    @Test fun `each stored reply is read only by its own reader`() {
+        val pressure = Ring.frame(0x05, 0x17, ByteArray(8) { 0x40 })
+        assertEquals(emptyList<Triple<Long, Int, Int>>(), Ring.readStoredHeart(pressure))
+        assertEquals(emptyList<Triple<Long, Int, Int>>(), Ring.readStoredOxygen(pressure))
+        assertEquals(1, Ring.readStoredPressure(pressure).size)
     }
 }

@@ -65,7 +65,7 @@ Written to `be940001`. Payload excludes the header and CRC, which are computed.
 | `02 25` | none | `GetPowerStatistics`, 38-byte reply | captured, not decoded |
 | `01 0C` | `<on> <minutes>` | `settingHeartMonitor` — periodic heart rate | **verified**, accepted |
 | `01 26` | `<on> <minutes>` | `settingBloodOxygenModeMonitor` — periodic SpO2 | **verified**, accepted |
-| `01 1C` | `<on> <minutes>` | `settingBloodPressureMonitor` — periodic BP | from the SDK, payload assumed to match the two above, untested |
+| `01 1C` | `<on> <minutes>` | `settingBloodPressureMonitor` — periodic BP | **refused** — replies `01 1C 07 00 FC CB 44`, not implemented on this firmware |
 | `03 0E` | `<on>` | `AppControlTakePhoto` — arm the shutter gesture | **verified** |
 | `01 02` | `<type> <goal uint32 LE> <2 more>` | `settingGoal` | from the SDK, untested |
 | `01 03` | 4 bytes | `settingUserInfo` | from the SDK, untested |
@@ -104,7 +104,9 @@ The full 329-command table, lifted from the vendor SDK, is in [COMMANDS.md](COMM
 | `06 03` | `<systolic> <diastolic> …` | live blood pressure | **verified** — 115/75, 116/76 observed |
 | `04 0E` | `<type> 01` | measurement complete, `type` as above; app acknowledges with `04 0E` + `00` | **verified** |
 | `05 15` | six bytes a record: seconds-from-2000 uint32 LE, a spare byte, then bpm | stored heart rates, following a `05 06` query | **verified** — 25 records read back, including two taken overnight |
-| `05 80` | varies | history block push | captured, not decoded |
+| `05 17` | eight bytes a record: the same timestamp, a spare byte, systolic, diastolic, then a third value | stored blood pressure, following `05 08` | **verified** — `80 E5 03 32 00 74 4C 4E` is `00:49:20  116/76` |
+| `05 18` | twenty bytes a record: the same timestamp, then the percentage at byte 9 | stored blood oxygen, following `05 09` | **verified** — 93–99%, on timestamps matching the pressure records |
+| `05 80` | varies | history block push, sent after the records | captured, not decoded |
 
 `06 03` carries a third byte tracking close to the systolic value (`4B`, `4C`, `4E`) and then
 eleven zero bytes. It is probably pulse, but that is unconfirmed, so this app prints only the
@@ -137,8 +139,27 @@ unchanged eighteen times in twenty-five minutes as `04 52`. Writing down every p
 day with one stale reading a minute and looks, at a glance, exactly like working automatic
 sampling. Only a *changed* value there is evidence of a measurement.
 
-Automatic blood oxygen and pressure are presumably stored the same way, under `05 1A` and
-`05 08`, but their record layouts have not been read back yet.
+Blood pressure comes back from `05 08` and blood oxygen from `05 09`, the whole-history query —
+**not** from `05 1A`, `Health_HistoryBloodOxygen`, which this firmware write-acknowledges and
+then never answers. `05 09` returns the vendor's twenty-byte comprehensive record, of which this
+ring fills in the oxygen percentage and leaves every other field zero.
+
+### Ask for a bigger MTU first — verified
+
+**Without `requestMtu`, the history is invisible.** The default ATT payload is twenty bytes;
+a day of stored readings comes back as one 150-byte frame. The ring answers the query — the
+count arrives, because the count reply is small enough — and then the records themselves are
+simply never delivered:
+
+```
+<-- 05 06 10 00 19 00 01 00 00 00 96 00 00 00     25 records, 150 bytes to follow
+                                                   …and nothing follows
+```
+
+The vendor app and the debugger both negotiate up (`requestMtu(517)`, granted 185) before
+reading anything, which is why this never showed there. A client that skips it sees a ring
+reporting readings it will not hand over, and reads exactly like a ring that has recorded
+nothing at all.
 
 ## Reading a heart rate — verified end to end
 

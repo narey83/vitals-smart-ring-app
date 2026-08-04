@@ -78,10 +78,11 @@ object Ring {
      * keeps this setting itself, so a monitor that is simply not mentioned stays however it was
      * last left, which is how a switch turned off in the app comes back on by itself.
      *
-     * `01 0C` and `01 26` are verified against hardware. **`01 1C` is not** — blood pressure
-     * monitoring comes from the vendor SDK's command table, and its payload is assumed to match
-     * the other two rather than having been captured. It is off by default for that reason. The
-     * frame is well formed either way, so the ring rejecting it costs nothing.
+     * `01 0C` and `01 26` are verified against hardware and answer `00`. **`01 1C` is refused**:
+     * this firmware replies `FC`, not implemented, so the ring takes blood pressure on its own
+     * schedule for nobody. It stays off by default and the frame is still sent, because being
+     * turned off is the one thing the command can usefully say. Stored pressure records do
+     * exist — see `05 08` in PROTOCOL.md — so the ring measures it alongside something else.
      */
     fun automaticMonitoring(monitors: Monitors, minutes: Int = 5): List<ByteArray> {
         fun flag(on: Boolean) = if (on) 0x01.toByte() else 0x00.toByte()
@@ -154,34 +155,60 @@ object Ring {
     }
 
     /**
-     * Asks for the heart rates the ring took on its own schedule.
+     * Asks for the readings the ring took on its own schedule.
      *
      * This is the only way to see them. The ring does not push an automatic reading when it
      * takes one — it writes it to its own store and says nothing — so a client that merely
-     * listens sees a day of taps and nothing between them. The reply carries a count, then the
-     * records themselves arrive as `05 15` pushes.
+     * listens sees a day of taps and nothing between them. Each query is answered with a count
+     * and then the records themselves, as a push under a different command.
+     *
+     * Blood oxygen comes from the whole-history query rather than `05 1A`, which this firmware
+     * accepts and never answers.
      */
     fun storedHeart() = frame(0x05, 0x06)
+    fun storedPressure() = frame(0x05, 0x08)
+    fun storedOxygen() = frame(0x05, 0x09)
+
+    /** Stored heart rates: six bytes a record, the reading last. */
+    fun readStoredHeart(value: ByteArray) = records(value, 0x15, 6).mapNotNull { record ->
+        record.reading(5)?.let { Triple(takenAt(record), it, 0) }
+    }
 
     /**
-     * A stored-heart push: six bytes per record, four of timestamp then the reading.
-     *
-     * The ring counts seconds from 2000 rather than from the epoch. Records often share a
-     * timestamp — a run of them will read as one instant — so these are worth no more than the
-     * hour they fall in; the burst window in [History] collapses each run to a single row.
+     * Stored blood oxygen, from the whole-history reply: twenty bytes a record of which only
+     * the percentage is filled in. The rest is the vendor's comprehensive layout — heart rate
+     * variability, temperature and the others this ring does not implement — and reads as zero.
      */
-    fun readStoredHeart(value: ByteArray): List<Pair<Long, Int>> {
+    fun readStoredOxygen(value: ByteArray) = records(value, 0x18, 20).mapNotNull { record ->
+        record.reading(9)?.let { Triple(takenAt(record), it, 0) }
+    }
+
+    /** Stored blood pressure: eight bytes a record, systolic then diastolic. */
+    fun readStoredPressure(value: ByteArray) = records(value, 0x17, 8).mapNotNull { record ->
+        record.reading(5)?.let { Triple(takenAt(record), it, record[6].toInt() and 0xFF) }
+    }
+
+    /** Splits a stored-history push into its fixed-width records, or nothing if it is not one. */
+    private fun records(value: ByteArray, command: Int, size: Int): List<List<Byte>> {
         if (value.size < 6) return emptyList()
-        if ((value[0].toInt() and 0xFF) != 0x05 || (value[1].toInt() and 0xFF) != 0x15) return emptyList()
-        return value.copyOfRange(4, value.size - 2).toList().chunked(6)
-            .filter { it.size == 6 }
-            .mapNotNull { record ->
-                var seconds = 0L
-                for (i in 3 downTo 0) seconds = (seconds shl 8) or (record[i].toLong() and 0xFF)
-                val bpm = record[5].toInt() and 0xFF
-                // A zero reading is an empty slot in the ring's store, not a heart that stopped.
-                if (bpm == 0) null else EPOCH_2000 + seconds * 1000L to bpm
-            }
+        if ((value[0].toInt() and 0xFF) != 0x05 || (value[1].toInt() and 0xFF) != command) return emptyList()
+        return value.copyOfRange(4, value.size - 2).toList().chunked(size).filter { it.size == size }
+    }
+
+    /** A zero is an unused slot in the ring's store, not a reading of nothing. */
+    private fun List<Byte>.reading(at: Int) = (this[at].toInt() and 0xFF).takeIf { it != 0 }
+
+    /**
+     * The ring counts seconds from 2000 rather than from the epoch.
+     *
+     * Records often share a timestamp — twenty of them in one capture — so a run of them is
+     * worth the hour it falls in and not the minute; the burst window in [History] collapses
+     * each run to a single row.
+     */
+    private fun takenAt(record: List<Byte>): Long {
+        var seconds = 0L
+        for (i in 3 downTo 0) seconds = (seconds shl 8) or (record[i].toLong() and 0xFF)
+        return EPOCH_2000 + seconds * 1000L
     }
 
     private const val EPOCH_2000 = 946_684_800_000L

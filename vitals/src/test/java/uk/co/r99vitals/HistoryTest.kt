@@ -77,7 +77,7 @@ class HistoryTest {
      */
     @Test fun `the same stored records are only written down once`() {
         val history = history()
-        val readings = listOf(1_700_000_000_000L to 71, 1_700_000_900_000L to 68)
+        val readings = listOf(Triple(1_700_000_000_000L, 71, 0), Triple(1_700_000_900_000L, 68, 0))
         history.backfill("heart", readings)
         history.backfill("heart", readings)
         assertEquals(2, history.all().size)
@@ -88,8 +88,17 @@ class HistoryTest {
     @Test fun `a backfill leaves the day in order`() {
         val history = history()
         history.record("heart", 80)
-        history.backfill("heart", listOf(1_700_000_000_000L to 71))
+        history.backfill("heart", listOf(Triple(1_700_000_000_000L, 71, 0)))
         val times = history.all().map { it.at.time }
         assertEquals(times.sorted(), times)
+    }
+
+    /** Blood pressure is two numbers. A backfill that kept only the systolic would lose half. */
+    @Test fun `a backfilled blood pressure keeps both halves`() {
+        val history = history()
+        history.backfill("pressure", listOf(Triple(1_700_000_000_000L, 116, 76)))
+        val entry = history.all().single()
+        assertEquals(116, entry.value)
+        assertEquals(76, entry.extra)
     }
 }
