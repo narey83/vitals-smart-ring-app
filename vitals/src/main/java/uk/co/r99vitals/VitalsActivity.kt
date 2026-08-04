@@ -308,13 +308,26 @@ class VitalsActivity : AppCompatActivity() {
                 last?.let { "${it.value}/${it.extra}" }, readings, entries,
                 note = "Estimated from the pulse waveform, not measured with a cuff."
             )
-            Tab.Steps -> VitalDay(
-                "Movement", "steps", Ink.motion,
-                Icons.Rounded.DirectionsWalk,
-                // Steps are a running total, so the day's figure is its highest point.
-                readings.maxOrNull()?.let { "%,d".format(it) }, readings, entries,
-                canMeasure = false
-            )
+            Tab.Steps -> {
+                // The ring reports a running total, so the interesting figure is how many were
+                // taken in each hour: the difference between one hour's peak and the last.
+                val byHour = IntArray(24)
+                entries.forEach {
+                    val hour = java.util.Calendar.getInstance().apply { time = it.at }
+                        .get(java.util.Calendar.HOUR_OF_DAY)
+                    byHour[hour] = maxOf(byHour[hour], it.value)
+                }
+                var carried = 0
+                val hourly = byHour.map { peak ->
+                    if (peak == 0) 0 else (peak - carried).coerceAtLeast(0).also { carried = peak }
+                }
+                VitalDay(
+                    "Movement", "steps", Ink.motion,
+                    Icons.Rounded.DirectionsWalk,
+                    readings.maxOrNull()?.let { "%,d".format(it) }, hourly, entries,
+                    canMeasure = false, asBars = true
+                )
+            }
             else -> VitalDay(
                 "Heart rate", "bpm", Ink.heart,
                 Icons.Rounded.Favorite,

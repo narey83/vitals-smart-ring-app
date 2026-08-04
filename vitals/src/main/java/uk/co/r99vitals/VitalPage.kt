@@ -49,7 +49,9 @@ data class VitalDay(
     val readings: List<Int>,
     val entries: List<History.Entry>,
     val note: String? = null,
-    val canMeasure: Boolean = true
+    val canMeasure: Boolean = true,
+    /** Steps accumulate, so they read as hourly bars rather than a climbing line. */
+    val asBars: Boolean = false
 )
 
 private val dayLabel = SimpleDateFormat("EEEE d MMMM", Locale.UK)
@@ -69,7 +71,7 @@ fun VitalPage(
             .background(Ink.canvas)
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp)
-            .padding(bottom = 28.dp)
+            .padding(top = 12.dp, bottom = 28.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(day.icon, null, tint = day.accent, modifier = Modifier.size(18.dp))
@@ -101,22 +103,33 @@ fun VitalPage(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(Modifier.padding(vertical = 20.dp, horizontal = 16.dp)) {
-                    TrendChart(day.readings, day.accent, Modifier.fillMaxWidth().height(150.dp))
+                    if (day.asBars) BarChart(day.readings, day.accent, Modifier.fillMaxWidth().height(150.dp))
+                    else TrendChart(day.readings, day.accent, Modifier.fillMaxWidth().height(150.dp))
                     Spacer(Modifier.height(14.dp))
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Stat("LOW", day.readings.min().toString(), day.accent)
-                        Stat("AVERAGE", day.readings.average().toInt().toString(), day.accent)
-                        Stat("HIGH", day.readings.max().toString(), day.accent)
-                        Stat("READINGS", day.readings.size.toString(), day.accent)
+                        if (day.asBars) {
+                            Stat("TOTAL", "%,d".format(day.readings.sum()), day.accent)
+                            Stat("BUSIEST", day.readings.max().toString(), day.accent)
+                            Stat("ACTIVE HOURS", day.readings.count { it > 0 }.toString(), day.accent)
+                        } else {
+                            Stat("LOW", day.readings.min().toString(), day.accent)
+                            Stat("AVERAGE", day.readings.average().toInt().toString(), day.accent)
+                            Stat("HIGH", day.readings.max().toString(), day.accent)
+                            Stat("READINGS", day.readings.size.toString(), day.accent)
+                        }
                     }
                 }
             }
-        } else {
+        } else if (day.readings.isEmpty()) {
             Spacer(Modifier.height(20.dp))
             Text(
                 if (dayOffset == 0) "No readings yet today." else "Nothing recorded that day.",
                 color = Ink.muted, fontSize = 14.sp
             )
+        } else {
+            // One reading is a reading, not an empty day; it just cannot be drawn as a trend.
+            Spacer(Modifier.height(16.dp))
+            Text("One reading so far today.", color = Ink.muted, fontSize = 14.sp)
         }
 
         if (day.canMeasure && dayOffset == 0) {

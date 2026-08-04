@@ -1,11 +1,8 @@
 package uk.co.r99vitals
 
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.systemBars
-import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Air
 import androidx.compose.material.icons.rounded.DirectionsWalk
@@ -71,12 +68,9 @@ fun Shell(
             }
         }
     ) { padding ->
-        Column(
-            Modifier
-                .fillMaxSize()
-                .padding(padding)
-                .windowInsetsPadding(WindowInsets.systemBars)
-        ) {
+        // Scaffold already accounts for the system bars and the navigation bar, so adding
+        // windowInsetsPadding on top counted the status bar twice and left a dead band.
+        Column(Modifier.fillMaxSize().padding(padding)) {
             when (tab) {
                 Tab.Today -> VitalsScreen(state, onMeasure, onInterval, onExport, onLink)
                 else -> VitalPage(

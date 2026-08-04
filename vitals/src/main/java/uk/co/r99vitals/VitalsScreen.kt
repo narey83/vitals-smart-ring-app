@@ -104,7 +104,7 @@ fun VitalsScreen(
             .background(Ink.canvas)
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp)
-            .padding(top = 24.dp, bottom = 32.dp)
+            .padding(top = 12.dp, bottom = 32.dp)
     ) {
         Header(state, onLink)
         Spacer(Modifier.height(22.dp))
@@ -235,6 +235,26 @@ private fun HeartCard(state: VitalsState) {
 }
 
 /** A trend drawn as a shape, because at this size the shape is the information. */
+@Composable
+fun BarChart(values: List<Int>, accent: Color, modifier: Modifier) {
+    val grow by animateFloatAsState(1f, tween(700), label = "bars")
+    Canvas(modifier) {
+        if (values.isEmpty()) return@Canvas
+        val peak = values.max().coerceAtLeast(1)
+        val gap = size.width / values.size * 0.25f
+        val barWidth = size.width / values.size - gap
+        values.forEachIndexed { i, value ->
+            val height = (value.toFloat() / peak) * size.height * grow
+            drawRoundRect(
+                color = if (value == 0) accent.copy(alpha = 0.12f) else accent,
+                topLeft = Offset(i * (barWidth + gap), size.height - height),
+                size = androidx.compose.ui.geometry.Size(barWidth, height),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(barWidth / 2.5f)
+            )
+        }
+    }
+}
+
 @Composable
 fun TrendChart(values: List<Int>, accent: Color, modifier: Modifier) {
     val grow by animateFloatAsState(1f, tween(700), label = "grow")
