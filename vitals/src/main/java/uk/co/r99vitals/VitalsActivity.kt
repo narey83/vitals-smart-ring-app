@@ -43,7 +43,6 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
-import kotlin.math.roundToInt
 
 /**
  * A quiet view of what the ring knows. The debugger app in this repository is where the protocol
@@ -481,26 +480,16 @@ class VitalsActivity : AppCompatActivity() {
                 Icons.Rounded.Bloodtype,
                 last?.value?.toString(), readings, entries,
                 positions = positions,
-                hours = hourly(
-                    entries,
-                    summary = { "${it.map { r -> r.value }.average().roundToInt()}%" }
-                ) { "${it.value}%" }
+                rows = rows(entries) { "${it.value}%" }
             )
             Tab.Pressure -> VitalDay(
                 "Blood pressure", "mmHg", Ink.pressure,
                 Icons.Rounded.MonitorHeart,
                 last?.let { "${it.value}/${it.extra}" }, readings, entries,
+                diastolic = entries.map { it.extra },
                 note = "Estimated from the pulse waveform, not measured with a cuff.",
                 positions = positions,
-                hours = hourly(
-                    entries,
-                    summary = { hour ->
-                        // Both halves average separately: the highest systolic and the lowest
-                        // diastolic of an hour rarely belong to the same reading.
-                        "${hour.map { it.value }.average().roundToInt()}/" +
-                            "${hour.map { it.extra }.average().roundToInt()}"
-                    }
-                ) { "${it.value}/${it.extra}" }
+                rows = rows(entries) { "${it.value}/${it.extra}" }
             )
             Tab.Steps -> {
                 // The ring reports a running total, so both the bars and the rows below them are
@@ -513,19 +502,12 @@ class VitalsActivity : AppCompatActivity() {
                     Steps.total(entries).takeIf { it > 0 }?.let { "%,d".format(it) },
                     hours.map { it.steps }, entries,
                     canMeasure = false, asBars = true,
-                    // An hour the ring never reported on is not the same as an hour spent still,
-                    // so hours with no readings at all are left out rather than shown as zero.
-                    hours = hours.filter { it.slots.isNotEmpty() }.map { hour ->
-                        HourGroup(
-                            hour = hour.hour,
-                            summary = if (hour.steps > 0) "%,d".format(hour.steps) else "—",
-                            rows = hour.slots.map {
-                                HourGroup.Row(
-                                    "%02d:%02d".format(it.hour, it.minute),
-                                    if (it.steps > 0) "%,d".format(it.steps) else "0"
-                                )
-                            },
-                            quiet = hour.steps == 0
+                    // A quarter hour the ring never reported on is not the same as one spent
+                    // still, so only the quarters it did report on are listed.
+                    rows = hours.flatMap { it.slots }.map {
+                        Reading(
+                            "%02d:%02d".format(it.hour, it.minute),
+                            if (it.steps > 0) "%,d".format(it.steps) else "0"
                         )
                     }
                 )
@@ -535,50 +517,19 @@ class VitalsActivity : AppCompatActivity() {
                 Icons.Rounded.Favorite,
                 last?.value?.toString(), readings, entries,
                 positions = positions,
-                hours = hourly(
-                    entries,
-                    summary = { "${it.map { r -> r.value }.average().roundToInt()}" }
-                ) { it.value.toString() }
+                rows = rows(entries) { it.value.toString() }
             )
         }
     }
 
     /**
-     * A day's readings grouped into the hours they arrived in.
+     * A day's readings, worded for the list beneath the chart.
      *
      * Steps are the exception and do their own thing, because a running total has to be
-     * differenced before it means anything. Everything else is simply read, so an hour is a
-     * summary of the readings in it and opens to show them.
+     * differenced before it means anything. Everything else is simply read.
      */
-    private fun hourly(
-        entries: List<History.Entry>,
-        summary: (List<History.Entry>) -> String,
-        range: (List<History.Entry>) -> String? = { spread(it.map { r -> r.value }) },
-        value: (History.Entry) -> String
-    ): List<HourGroup> {
-        if (entries.isEmpty()) return emptyList()
-        val clock = java.util.Calendar.getInstance()
-        return entries
-            .groupBy { clock.apply { time = it.at }.get(java.util.Calendar.HOUR_OF_DAY) }
-            .toSortedMap()
-            .map { (hour, readings) ->
-                HourGroup(
-                    hour = hour,
-                    summary = summary(readings),
-                    range = range(readings),
-                    rows = readings.map {
-                        HourGroup.Row(hourMinute.format(it.at), value(it), manual = it.manual)
-                    }
-                )
-            }
-    }
-
-    /** Low to high, or nothing at all when every reading in the hour was the same. */
-    private fun spread(values: List<Int>): String? {
-        val low = values.min()
-        val high = values.max()
-        return if (low == high) null else "$low–$high"
-    }
+    private fun rows(entries: List<History.Entry>, value: (History.Entry) -> String) =
+        entries.map { Reading(hourMinute.format(it.at), value(it), manual = it.manual) }
 
     /** Worded here so the screen only has to decide whether to show it. */
     private fun birthdayGreeting(): String? {

@@ -1,8 +1,6 @@
 package uk.co.r99vitals
 
 import androidx.compose.foundation.background
-import androidx.compose.animation.animateContentSize
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,7 +19,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ChevronLeft
 import androidx.compose.material.icons.rounded.ChevronRight
-import androidx.compose.material.icons.rounded.ExpandMore
+import androidx.compose.material.icons.rounded.Timer
 import androidx.compose.material.icons.rounded.TouchApp
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -30,14 +28,9 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -58,39 +51,26 @@ data class VitalDay(
     val value: String?,
     val readings: List<Int>,
     val entries: List<History.Entry>,
+    /** The lower half of a blood pressure reading; empty for every vital that has only one number. */
+    val diastolic: List<Int> = emptyList(),
     val note: String? = null,
     val canMeasure: Boolean = true,
     /** Steps accumulate, so they read as hourly bars rather than a climbing line. */
     val asBars: Boolean = false,
     /** Where each reading sits in the day, 0 to 1, so the line can be drawn against a clock. */
     val positions: List<Float> = emptyList(),
-    /** The day cut into hours, each opening to show what it was made of. */
-    val hours: List<HourGroup> = emptyList()
+    /** The day's readings in the order they arrived; the page shows them newest first. */
+    val rows: List<Reading> = emptyList()
 )
 
 /**
- * One hour of a vital, and the rows it opens to reveal.
+ * One reading, already worded.
  *
- * What an hour means differs by vital — steps add up, a heart rate averages — so the summary
- * arrives already worked out and already formatted. This is a shape for showing, not for
- * calculating in.
+ * What a reading says differs by vital — steps add up, a pressure has two halves — so it
+ * arrives formatted. This is a shape for showing, not for calculating in. [manual] marks a
+ * reading the wearer asked for rather than one the ring took on its own schedule.
  */
-data class HourGroup(
-    val hour: Int,
-    val summary: String,
-    val rows: List<Row>,
-    /**
-     * The spread behind the summary, where one exists. An hour with a single reading has no
-     * range worth stating, and a total has no range at all, so both leave this null rather
-     * than printing something that reads like information.
-     */
-    val range: String? = null,
-    /** An hour that happened but amounts to nothing, drawn back rather than in the accent. */
-    val quiet: Boolean = false
-) {
-    /** [manual] marks a reading the wearer asked for rather than one the ring took itself. */
-    data class Row(val at: String, val value: String, val manual: Boolean = false)
-}
+data class Reading(val at: String, val value: String, val manual: Boolean = false)
 
 private val dayLabel = SimpleDateFormat("EEEE d MMMM", Locale.UK)
 
@@ -134,6 +114,12 @@ fun VitalPage(
         }
         day.note?.let { Text(it, color = Ink.muted, fontSize = 13.sp) }
 
+        // Blood pressure is the one vital where the number alone is not the answer.
+        if (day.diastolic.isNotEmpty() && day.readings.isNotEmpty()) {
+            Spacer(Modifier.height(14.dp))
+            PressureVerdict(day.readings.last(), day.diastolic.last())
+        }
+
         if (day.readings.size > 1) {
             Spacer(Modifier.height(20.dp))
             Card(
@@ -142,7 +128,15 @@ fun VitalPage(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(Modifier.padding(vertical = 20.dp, horizontal = 16.dp)) {
-                    if (day.asBars) {
+                    if (day.diastolic.isNotEmpty() && day.diastolic.size == day.readings.size) {
+                        PressureChart(
+                            day.readings, day.diastolic, day.positions,
+                            Modifier.fillMaxWidth().height(190.dp)
+                        )
+                        if (day.positions.size == day.readings.size) HourAxis(SCALE_GUTTER)
+                        Spacer(Modifier.height(10.dp))
+                        PressureKey()
+                    } else if (day.asBars) {
                         BarChart(day.readings, day.accent, Modifier.fillMaxWidth().height(150.dp))
                         HourAxis()
                     } else {
@@ -156,7 +150,16 @@ fun VitalPage(
                     }
                     Spacer(Modifier.height(14.dp))
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        if (day.asBars) {
+                        if (day.diastolic.size == day.readings.size && day.diastolic.isNotEmpty()) {
+                            // Each half is summarised on its own: the day's highest systolic and
+                            // its highest diastolic rarely belong to the same reading.
+                            fun pair(pick: List<Int>.() -> Int) =
+                                "${day.readings.pick()}/${day.diastolic.pick()}"
+                            Stat("LOW", pair { min() }, day.accent)
+                            Stat("AVERAGE", pair { average().toInt() }, day.accent)
+                            Stat("HIGH", pair { max() }, day.accent)
+                            Stat("READINGS", day.readings.size.toString(), day.accent)
+                        } else if (day.asBars) {
                             Stat("TOTAL", "%,d".format(day.readings.sum()), day.accent)
                             Stat("BUSIEST", day.readings.max().toString(), day.accent)
                             Stat("ACTIVE HOURS", day.readings.count { it > 0 }.toString(), day.accent)
@@ -216,17 +219,15 @@ fun VitalPage(
             }
         }
 
-        if (day.hours.isNotEmpty()) {
+        if (day.rows.isNotEmpty()) {
             Spacer(Modifier.height(26.dp))
             Text(
-                "BY THE HOUR", color = Ink.muted, fontSize = 11.sp,
+                "READINGS", color = Ink.muted, fontSize = 11.sp,
                 fontWeight = FontWeight.Bold, letterSpacing = 1.6.sp
             )
             Spacer(Modifier.height(4.dp))
-            // An hour the ring never reported on is not the same as an hour spent still, so
-            // hours with no readings at all are left out rather than shown as zero.
-            // Newest hour first: the recent ones are the ones being looked for.
-            day.hours.asReversed().forEach { hour -> HourRow(hour, day.accent) }
+            // Newest first: the recent ones are the ones being looked for.
+            day.rows.asReversed().forEach { ReadingRow(it, day.accent) }
         }
     }
 }
@@ -245,79 +246,32 @@ private fun HourAxis(endInset: Dp = 0.dp) {
     }
 }
 
-/**
- * One hour, which opens to show what it was made of.
- *
- * The hour is the figure worth reading, so a day is a short list rather than a wall of rows.
- * What is inside answers "when in that hour", which is a question you only sometimes have, so
- * it stays folded away until asked for.
- */
+/** One reading: where it came from, when it happened, what it said. */
 @Composable
-private fun HourRow(hour: HourGroup, accent: Color) {
-    var open by remember { mutableStateOf(false) }
-    val turn by animateFloatAsState(if (open) 180f else 0f, label = "chevron")
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .clickableNoRippleShared { open = !open }
-            .animateContentSize()
-            .padding(top = 14.dp)
+private fun ReadingRow(row: Reading, accent: Color) {
+    Row(
+        Modifier.fillMaxWidth().padding(top = 12.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    Icons.Rounded.ExpandMore, if (open) "Collapse" else "Expand",
-                    tint = Ink.muted,
-                    modifier = Modifier.size(16.dp).rotate(turn)
-                )
-                Spacer(Modifier.width(8.dp))
-                Text("%02d:00".format(hour.hour), color = Ink.text, fontSize = 15.sp)
-            }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                hour.range?.let {
-                    Text(it, color = Ink.muted, fontSize = 13.sp)
-                    Spacer(Modifier.width(10.dp))
-                }
-                Text(
-                    hour.summary,
-                    color = if (hour.quiet) Ink.muted else accent,
-                    fontSize = 15.sp,
-                    fontWeight = if (hour.quiet) FontWeight.Normal else FontWeight.Medium
-                )
-            }
+        // Where a reading came from belongs next to when it happened: a reading the wearer
+        // stood still for is worth telling apart from one the ring took on its own schedule
+        // while they were doing something else.
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                if (row.manual) Icons.Rounded.TouchApp else Icons.Rounded.Timer,
+                if (row.manual) "Measured by you" else "Measured on the ring's interval",
+                tint = if (row.manual) accent else Ink.muted,
+                modifier = Modifier.size(14.dp)
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(row.at, color = Ink.text, fontSize = 14.sp)
         }
-        if (open) {
-            hour.rows.forEach { row ->
-                Row(
-                    Modifier.fillMaxWidth().padding(start = 24.dp, top = 7.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(row.at, color = Ink.muted, fontSize = 13.sp)
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        // A reading the wearer stood still for is worth telling apart from one
-                        // the ring took while they were doing something else.
-                        if (row.manual) {
-                            Icon(
-                                Icons.Rounded.TouchApp, "Measured by you",
-                                tint = accent, modifier = Modifier.size(13.dp)
-                            )
-                            Spacer(Modifier.width(5.dp))
-                        }
-                        Text(
-                            row.value,
-                            color = if (row.manual) accent else Ink.muted,
-                            fontSize = 13.sp
-                        )
-                    }
-                }
-            }
-            Spacer(Modifier.height(4.dp))
-        }
+        Text(
+            row.value,
+            color = if (row.manual) accent else Ink.muted,
+            fontSize = 14.sp
+        )
     }
 }
 
