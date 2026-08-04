@@ -256,6 +256,14 @@
         </LinearLayout>
 
         <CheckBox
+            android:id="@+id/chooseChannelCheck"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:checked="false"
+            android:text="Ask which Bluetooth channel to use (normally be940001)"
+            android:textColor="@color/ink" />
+
+        <CheckBox
             android:id="@+id/frameCheck"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

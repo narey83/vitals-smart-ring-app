@@ -54,6 +54,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var valueFirmware: TextView
     private lateinit var commandInput: EditText
     private lateinit var frameCheck: CheckBox
+    private lateinit var chooseChannelCheck: CheckBox
     private lateinit var monitorButton: MaterialButton
     private lateinit var photoButton: MaterialButton
     private lateinit var timeButton: MaterialButton
@@ -125,6 +126,7 @@ class MainActivity : AppCompatActivity() {
         sendButton = findViewById(R.id.sendButton)
         commandInput = findViewById(R.id.commandInput)
         frameCheck = findViewById(R.id.frameCheck)
+        chooseChannelCheck = findViewById(R.id.chooseChannelCheck)
         quietCheck = findViewById(R.id.quietCheck)
         hexCheck = findViewById(R.id.hexCheck)
         pauseButton = findViewById(R.id.pauseButton)
@@ -872,22 +874,37 @@ class MainActivity : AppCompatActivity() {
         if (bytes.size >= 2) {
             awaiting = Triple(bytes[0].toInt() and 0xFF, bytes[1].toInt() and 0xFF, label)
         }
+        // The ring only ever listens on one channel, so asking every time is noise. The other
+        // five stay reachable behind a tickbox for anyone deliberately probing them.
+        val usual = writable[COMMAND_CHANNEL]
+        if (!chooseChannelCheck.isChecked && usual != null) {
+            deliver(active, usual, frame, label)
+            return
+        }
         val targets = writable.keys.toTypedArray()
         val preferred = targets.indexOf(COMMAND_CHANNEL).coerceAtLeast(0)
         AlertDialog.Builder(this)
             .setTitle(label)
             .setSingleChoiceItems(targets, preferred) { dialog, which ->
                 dialog.dismiss()
-                val channel = writable.getValue(targets[which])
-                enqueue {
-                    val sent = write(active, channel, frame)
-                    append("\n${clock.format(Date())} SEND $label -> ${shortUuid(channel.uuid)}: " +
-                        "${frame.toHex()}${if (sent) "" else "  [REFUSED by radio]"}\n")
-                    sent
-                }
+                deliver(active, writable.getValue(targets[which]), frame, label)
             }
             .setNegativeButton("Cancel", null)
             .show()
+    }
+
+    private fun deliver(
+        gatt: BluetoothGatt,
+        channel: BluetoothGattCharacteristic,
+        frame: ByteArray,
+        label: String
+    ) {
+        enqueue {
+            val sent = write(gatt, channel, frame)
+            append("\n${clock.format(Date())} SEND $label -> ${shortUuid(channel.uuid)}: " +
+                "${frame.toHex()}${if (sent) "" else "  [REFUSED by radio]"}\n")
+            sent
+        }
     }
 
     private fun confirmThenSend(command: RingCommand) {
