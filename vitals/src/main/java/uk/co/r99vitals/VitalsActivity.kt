@@ -46,7 +46,10 @@ class VitalsActivity : AppCompatActivity() {
     private lateinit var oxygenButton: MaterialButton
     private lateinit var pressureButton: MaterialButton
     private lateinit var historyButton: MaterialButton
+    private lateinit var intervalButton: MaterialButton
+    private var interval = 5
     private lateinit var heartTrend: TextView
+    private lateinit var heartChart: TrendView
     private lateinit var history: History
 
     private val handler = Handler(Looper.getMainLooper())
@@ -102,13 +105,16 @@ class VitalsActivity : AppCompatActivity() {
         oxygenButton = findViewById(R.id.oxygenButton)
         pressureButton = findViewById(R.id.pressureButton)
         historyButton = findViewById(R.id.historyButton)
+        intervalButton = findViewById(R.id.intervalButton)
         heartTrend = findViewById(R.id.heartTrend)
+        heartChart = findViewById(R.id.heartChart)
         history = History(this)
         applyInsets()
         heartButton.setOnClickListener { measure(Ring.HEART, "heart rate") }
         oxygenButton.setOnClickListener { measure(Ring.OXYGEN, "blood oxygen") }
         pressureButton.setOnClickListener { measure(Ring.PRESSURE, "blood pressure") }
         historyButton.setOnClickListener { showHistory() }
+        intervalButton.setOnClickListener { chooseInterval() }
         showTrend()
         if (BuildConfig.DEBUG) {
             ContextCompat.registerReceiver(
@@ -194,9 +200,40 @@ class VitalsActivity : AppCompatActivity() {
         pressureButton.isEnabled = enabled
     }
 
+    /**
+     * How often the ring measures on its own. The ring does this whether or not the app is open,
+     * which is what fills the chart overnight; the app only has to ask once.
+     */
+    private fun chooseInterval() {
+        val choices = intArrayOf(0, 5, 15, 30, 60)
+        val labels = arrayOf("Off", "Every 5 minutes", "Every 15 minutes", "Every 30 minutes", "Every hour")
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Automatic readings")
+            .setSingleChoiceItems(labels, choices.indexOf(interval).coerceAtLeast(0)) { dialog, which ->
+                dialog.dismiss()
+                interval = choices[which]
+                applyInterval()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun applyInterval() {
+        intervalButton.text = if (interval == 0) {
+            "Automatic readings: off"
+        } else "Automatic readings: every $interval min"
+        if (command == null) { linkState.text = "Not connected yet"; return }
+        Ring.automaticMonitoring(interval > 0, if (interval > 0) interval else 5)
+            .forEach { frame -> enqueue { write(frame) } }
+    }
+
     private fun showTrend() {
         val since = System.currentTimeMillis() - 24 * 60 * 60 * 1000
-        heartTrend.text = "Last 24 hours: " + history.summary("heart", since)
+        heartTrend.text = "Last 24 hours · " + history.summary("heart", since)
+        heartChart.show(
+            history.all().filter { it.kind == "heart" && it.at.time >= since }.map { it.value },
+            ContextCompat.getColor(this, R.color.heart)
+        )
     }
 
     private fun showHistory() {
@@ -254,7 +291,8 @@ class VitalsActivity : AppCompatActivity() {
                 // The clock is deliberately left alone: writing it makes the ring abandon a
                 // running sleep session, which its own log reports as "exit sleep because time
                 // change". Sleep data matters more than a few seconds of drift.
-                Ring.automaticMonitoring(true).forEach { frame -> enqueue { write(frame) } }
+                Ring.automaticMonitoring(interval > 0, if (interval > 0) interval else 5)
+                    .forEach { frame -> enqueue { write(frame) } }
                 enqueue { linkState.text = "Your ring"; false }
             }
         }
@@ -305,6 +343,7 @@ class VitalsActivity : AppCompatActivity() {
             is Ring.Reading.Heart -> {
                 heartValue.text = reading.bpm.toString()
                 history.record("heart", reading.bpm)
+                showTrend()
             }
             is Ring.Reading.Oxygen -> {
                 oxygenValue.text = "${reading.percent}%"

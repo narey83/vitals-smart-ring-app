@@ -86,6 +86,12 @@
                 android:textColor="@color/muted"
                 android:textSize="13sp" />
 
+            <uk.co.r99vitals.TrendView
+                android:id="@+id/heartChart"
+                android:layout_width="match_parent"
+                android:layout_height="96dp"
+                android:layout_marginTop="14dp" />
+
             <TextView
                 android:id="@+id/heartTrend"
                 android:layout_width="match_parent"
@@ -246,6 +252,17 @@
                 android:textColor="@color/canvas"
                 app:cornerRadius="27dp" />
         </LinearLayout>
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/intervalButton"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="match_parent"
+            android:layout_height="52dp"
+            android:layout_marginTop="10dp"
+            android:text="Automatic readings: every 5 min"
+            android:textColor="@color/text"
+            app:cornerRadius="26dp"
+            app:strokeColor="@color/hairline" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/historyButton"
