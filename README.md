@@ -1,8 +1,26 @@
-# R99 Companion (Android)
+# R99 Ring Debugger (Android)
 
-A free, local-first starter companion for the generic **R99 / SmartHealth** health ring. It does not contain analytics, advertising, accounts, or a subscription.
+A Bluetooth protocol console for the generic **R99** health ring, which reports itself
+internally as **R11M**. This is a debugging tool, not a health app: it exists to drive the ring
+directly, read what it will tell you, and show the wire traffic while it happens. It has no
+analytics, advertising, accounts, subscription, and no network access of any kind.
 
-## What this first version does
+The protocol was recovered by capture and replay rather than documentation. See
+[PROTOCOL.md](PROTOCOL.md) for the wire format and what has been verified against hardware, and
+[COMMANDS.md](COMMANDS.md) for the vendor SDK's full 329-command table.
+
+## What it does
+
+- connects straight to a paired ring by address, since a paired ring stops advertising;
+- shows link state, firmware version, battery, and live sensor values as they arrive;
+- triggers heart rate, blood oxygen and blood pressure measurements on demand;
+- reads and writes ring settings: automatic monitoring, the clock, step goal, wearer details;
+- exposes **all 329 SDK commands**, searchable, with the destructive ones marked and confirmed;
+- pulls the ring's own internal firmware log, which carries sleep staging, charge cycles and
+  power events that no health app surfaces;
+- logs every frame, decoded where known and raw where not, to screen and to a file.
+
+## What the older version did
 
 - asks only for Bluetooth permissions;
 - scans for nearby Bluetooth Low Energy devices, closest first;

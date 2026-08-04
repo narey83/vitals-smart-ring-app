@@ -14,7 +14,7 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="R99 Companion"
+            android:text="R99 Ring Debugger"
             android:textColor="@color/ink"
             android:textSize="28sp"
             android:textStyle="bold" />
@@ -23,7 +23,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
-            android:text="Your ring data, stored on your phone."
+            android:text="Bluetooth protocol console for the R99 / R11M ring."
             android:textColor="@color/ink"
             android:textSize="16sp" />
 
@@ -40,9 +40,19 @@
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="Live readings"
+                android:text="Device state"
                 android:textColor="@color/forest"
                 android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/valueLink"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
+                android:fontFamily="monospace"
+                android:text="Link — disconnected"
+                android:textColor="@color/ink"
+                android:textSize="15sp" />
 
             <TextView
                 android:id="@+id/valueHeart"

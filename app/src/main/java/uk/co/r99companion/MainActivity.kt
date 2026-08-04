@@ -69,6 +69,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var valuePressure: TextView
     private lateinit var valueSteps: TextView
     private lateinit var valueBattery: TextView
+    private lateinit var valueLink: TextView
+    private var linkMtu = 0
 
     private lateinit var pauseButton: MaterialButton
     private lateinit var quietCheck: CheckBox
@@ -162,6 +164,7 @@ class MainActivity : AppCompatActivity() {
         valuePressure = findViewById(R.id.valuePressure)
         valueSteps = findViewById(R.id.valueSteps)
         valueBattery = findViewById(R.id.valueBattery)
+        valueLink = findViewById(R.id.valueLink)
         monitorButton.setOnClickListener { setAutomaticMonitoring(!monitoring) }
         photoButton.setOnClickListener { setShutterMode(!shutterMode) }
         timeButton.setOnClickListener { setRingClock() }
@@ -346,11 +349,14 @@ class MainActivity : AppCompatActivity() {
         override fun onConnectionStateChange(gatt: BluetoothGatt, statusCode: Int, state: Int) {
             runOnUiThread {
                 if (state == BluetoothProfile.STATE_CONNECTED) {
+                    valueLink.text = "Link — connected to $RING_ADDRESS"
                     showStatus("Connected. Reading ring Bluetooth services…")
                     append("Connected; discovering services\n")
                     gatt.discoverServices()
                 } else {
                     clearSteps()
+                    linkMtu = 0
+                    valueLink.text = "Link — disconnected (status $statusCode)"
                     showStatus("Ring disconnected.")
                     append("Disconnected (status $statusCode)\n")
                 }
@@ -423,7 +429,11 @@ class MainActivity : AppCompatActivity() {
         }
 
         override fun onMtuChanged(gatt: BluetoothGatt, mtu: Int, statusCode: Int) {
-            runOnUiThread { append("MTU now $mtu bytes (status $statusCode)\n") }
+            runOnUiThread {
+                linkMtu = mtu
+                valueLink.text = "Link — connected to $RING_ADDRESS, MTU $mtu"
+                append("MTU now $mtu bytes (status $statusCode)\n")
+            }
             stepComplete()
         }
     }
