@@ -503,16 +503,59 @@ class MainActivity : AppCompatActivity() {
         if (marker == 0x01) deviceLog.setLength(0)
         readable(payload.drop(1)).let { if (it.isNotEmpty()) deviceLog.append(it).append("\n") }
         if (marker == 0xFF || marker == 0x01 && payload.size <= 2) {
-            if (deviceLog.isNotEmpty()) {
-                AlertDialog.Builder(this)
-                    .setTitle("The ring's internal log")
-                    .setMessage(deviceLog.toString())
-                    .setPositiveButton("Close", null)
-                    .show()
-            }
+            if (deviceLog.isNotEmpty()) showDeviceLog(formatDeviceLog(deviceLog.toString()))
             awaiting = null
         }
         return true
+    }
+
+    /**
+     * The firmware packs several entries into each frame and repeats its version on every one,
+     * which reads as one unbroken block. Split it back into an entry per line, grouped by day,
+     * with the repeated version prefix dropped.
+     */
+    private fun formatDeviceLog(raw: String): String {
+        val entry = Regex(
+            """Log\s+(\d+):\s*<([\d-]+)\s+([\d:]+)>\s*(?:\[[^\]]*])?\s*(.*?)(?=Log\s+\d+:|$)""",
+            RegexOption.DOT_MATCHES_ALL
+        )
+        val out = StringBuilder()
+        var day = ""
+        for (match in entry.findAll(raw)) {
+            val (number, date, time, message) = match.destructured
+            if (date != day) {
+                if (out.isNotEmpty()) out.append('\n')
+                out.append(date).append('\n')
+                day = date
+            }
+            out.append(time).append("  ")
+                .append(message.trim().replace(Regex("\\s+"), " "))
+                .append("   #").append(number).append('\n')
+        }
+        return if (out.isEmpty()) raw else out.toString().trimEnd()
+    }
+
+    private fun showDeviceLog(text: String) {
+        val view = TextView(this).apply {
+            setText(text)
+            setTextIsSelectable(true)
+            typeface = android.graphics.Typeface.MONOSPACE
+            textSize = 11f
+            setPadding(36, 24, 36, 24)
+            setTextColor(ContextCompat.getColor(this@MainActivity, R.color.ink))
+        }
+        AlertDialog.Builder(this)
+            .setTitle("The ring's internal log")
+            .setView(ScrollView(this).apply { addView(view) })
+            .setPositiveButton("Close", null)
+            .setNeutralButton("Share") { _, _ ->
+                startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_SUBJECT, "R99 ring internal log")
+                    putExtra(Intent.EXTRA_TEXT, text)
+                }, "Share the ring's log"))
+            }
+            .show()
     }
 
     private fun logNotification(characteristic: BluetoothGattCharacteristic, value: ByteArray) {
