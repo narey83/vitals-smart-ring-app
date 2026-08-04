@@ -35,6 +35,9 @@ class CollectorService : Service() {
     private lateinit var history: History
     private var gatt: BluetoothGatt? = null
     private var backoff = 0L
+    private var steps = 0
+    private var distance = 0
+    private var calories = 0
     private var latest = "Waiting for the first reading"
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -68,12 +71,19 @@ class CollectorService : Service() {
             this, 0, Intent(this, VitalsActivity::class.java),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
+        // Steps lead, the way a step counter should read at a glance on the lock screen.
+        val title = if (steps > 0) "%,d steps".format(steps) else "Collecting from your ring"
+        val detail = if (steps > 0) "$distance m · $calories kcal · $latest" else latest
         return Notification.Builder(this, channel())
-            .setContentTitle("Collecting from your ring")
-            .setContentText(latest)
-            .setSmallIcon(android.R.drawable.stat_notify_sync)
+            .setContentTitle(title)
+            .setContentText(detail)
+            .setSmallIcon(android.R.drawable.ic_menu_compass)
             .setContentIntent(open)
             .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setShowWhen(false)
+            // Readable on the lock screen without unlocking, which is the point of it.
+            .setVisibility(Notification.VISIBILITY_PUBLIC)
             .build()
     }
 
@@ -154,7 +164,9 @@ class CollectorService : Service() {
         if (characteristic.uuid == Ring.ACTIVITY) {
             Ring.readActivity(value)?.let {
                 history.record("steps", it.steps, it.calories)
-                latest = "${it.steps} steps today"
+                steps = it.steps
+                distance = it.distance
+                calories = it.calories
                 refresh()
             }
             return
