@@ -211,6 +211,7 @@ class VitalsActivity : AppCompatActivity() {
             .setItems(labels) { _, which ->
                 ringAddress = choices[which].first
                 connect()
+                CollectorService.start(this)
             }
             .setNegativeButton("Cancel", null)
             .show()
@@ -450,6 +451,8 @@ class VitalsActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
+        // Collection continues with the app closed; starting it here is idempotent.
+        if (ringAddress != null) CollectorService.start(this)
         if (command == null && ringAddress != null) askThenConnect()
         showTrend()
     }
