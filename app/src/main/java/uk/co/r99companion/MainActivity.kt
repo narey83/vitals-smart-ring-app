@@ -957,8 +957,12 @@ class MainActivity : AppCompatActivity() {
             // The ring's two refusals. Without these the app looked like it did nothing at all.
             payload.size == 1 && payload[0] == 0xFC.toByte() ->
                 "this firmware does not implement that command"
+            // Most of the table takes arguments this app cannot guess: of the vendor SDK's 186
+            // calls, 154 build their payload from parameters. Browsing to a command and sending
+            // it bare gets this, and the way out is the SDK rather than trying bytes.
             payload.size == 1 && payload[0] == 0xFE.toByte() ->
-                "the ring rejected that — it wants an argument"
+                "the ring rejected that — it wants an argument. Look the command up in the " +
+                    "vendor's YCBTClient for the exact bytes, then type them in the hex box"
             payload.size == 1 && payload[0] == 0xFB.toByte() ->
                 "refused — OpenFactory answers this, so the mode is presumably locked"
             // The firmware's own debug log. Byte 0 is a chunk marker, not text.
@@ -1196,6 +1200,10 @@ class MainActivity : AppCompatActivity() {
         (0x02 to 0x29) to byteArrayOf(0x47, 0x46),   // "GF"  GetAlgorithmicLicense
         (0x02 to 0x2A) to byteArrayOf(0x47, 0x46),   // "GF"  GetTerminalConf
         (0x02 to 0x2B) to byteArrayOf(0x47, 0x43),   // "GC"  GetSunGoldConf
+        (0x02 to 0x14) to byteArrayOf(0x01),         //       getScheduleInfo
+        (0x02 to 0x1A) to byteArrayOf(0x01),         //       getEventReminderInfo
+        (0x01 to 0x01) to byteArrayOf(0x00),         //       settingGetAllAlarm
+        (0x09 to 0x03) to byteArrayOf(0x00),         //       watchDialInfo
         // settingRestoreFactory needs "RSYS"; deliberately not listed, so a wipe cannot be a
         // single mistaken tap. Type 52535953 by hand if you ever genuinely want it — that does
         // work: the ring answers 00 and reboots, where an empty payload answers 01 and nothing
