@@ -1256,10 +1256,29 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun confirmThenSend(command: RingCommand) {
-        val payload = parseHex(commandInput.text.toString())
+        val typed = parseHex(commandInput.text.toString())
+        val payload = typed
             ?: defaultPayloads[command.group to command.command]
             ?: byteArrayOf()
         val bytes = byteArrayOf(command.group.toByte(), command.command.toByte()) + payload
+        // Sent bare, a command that wants arguments answers FE and says nothing about what it
+        // wanted. Say it here instead, while there is still something to type.
+        val expects = COMMAND_ARGUMENTS[command.group to command.command]
+        if (typed == null && payload.isEmpty() && expects != null) {
+            val (count, sdk) = expects
+            AlertDialog.Builder(this)
+                .setTitle(command.name)
+                .setMessage(
+                    "The vendor SDK sends $count payload byte${if (count == 1) "" else "s"} " +
+                        "with this, built from arguments this app cannot guess. Sent empty, as " +
+                        "${asFrame(bytes).toHex()}, the ring will answer FE.\n\n" +
+                        "Read $sdk in YCBTClient for what the bytes are, then type them above."
+                )
+                .setPositiveButton("Send empty anyway") { _, _ -> dispatch(bytes, command.name) }
+                .setNegativeButton("Cancel", null)
+                .show()
+            return
+        }
         if (!command.risky) { dispatch(bytes, command.name); return }
         AlertDialog.Builder(this)
             .setTitle(command.name)

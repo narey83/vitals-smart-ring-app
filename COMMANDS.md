@@ -21,6 +21,12 @@ Decompiled copies are on GitHub (`auroraphtgrp01/ble-sleeping`), or run `jadx` o
 APK. Look a command up there before sending it — guessing arguments wastes hours and the ring
 answers refusals that read like data.
 
+The debugger carries the byte counts, extracted from that source into `CommandArguments.kt`:
+browse to a command whose payload it cannot supply and it says how many bytes the SDK sends and
+which method to read, rather than firing a bare frame and leaving you with `FE`. It covers the
+102 commands whose payload is a literal array; those built by a helper, `SettingTime` among
+them, are absent, so silence there means unknown rather than "takes nothing".
+
 Groups: 01 settings, 02 queries, 03 app->ring actions, 04 ring->app events,
 05 stored history, 06 ring->app live data, 07 raw collection, 09 watch faces,
 0A firmware OTA, 0E factory/diagnostics.
