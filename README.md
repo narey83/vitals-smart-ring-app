@@ -47,10 +47,15 @@ PROTOCOL.md needs proving again. Its output is evidence.
 
 What you leave installed. It assumes the protocol is known and gets on with recording.
 
-- **Today**, then a tab each for heart rate, SpO₂, blood pressure, steps and workouts;
+- **Today**, then a tab each for heart rate, SpO₂, blood pressure, steps, sleep and workouts;
 - each vital tab carries its own chart, statistics and day-by-day history;
 - steps are drawn as 24 hourly bars against a clock, and listed hour by hour underneath, each
   hour opening to show the quarter hours inside it;
+- **sleep**: the ring stages its own nights and hands them over only when asked, so the app asks
+  on every connection — the night is drawn as a hypnogram, scored out of a hundred against the
+  wearer's own bedtime and wake time, and summarised by week and by month;
+- an optional bedtime reminder, and a sleep report when the phone is first unlocked in the
+  morning — both off until switched on, and the only things the app ever interrupts anyone with;
 - a settings page for who is wearing the ring — name, sex, age, height and weight, which the
   ring itself uses to work out distance and calories — plus the step goal and reading interval;
 - metric or imperial, though the ring is always told metric;

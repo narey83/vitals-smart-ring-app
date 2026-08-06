@@ -55,7 +55,7 @@ private fun tint(code: Int) = when (code) {
 }
 
 @Composable
-fun SleepPage(recorded: List<Sleep.Night>) {
+fun SleepPage(recorded: List<Sleep.Night>, target: Int = SleepInsight.TARGET_ASLEEP) {
     // The ring splits a broken night into two records; they are one night to the wearer.
     val nights = SleepInsight.merge(recorded)
     Column(
@@ -93,7 +93,7 @@ fun SleepPage(recorded: List<Sleep.Night>) {
         }
 
         val last = nights.last()
-        val (score, parts) = SleepInsight.score(last)
+        val (score, parts) = SleepInsight.score(last, target)
         Spacer(Modifier.height(10.dp))
         Text(whenItWas(last), color = Ink.muted, fontSize = 13.sp)
         Spacer(Modifier.height(2.dp))
@@ -144,7 +144,7 @@ fun SleepPage(recorded: List<Sleep.Night>) {
         WeekCard(nights)
 
         Spacer(Modifier.height(14.dp))
-        MonthCard(nights)
+        MonthCard(nights, target)
 
         Spacer(Modifier.height(14.dp))
         TipsCard(nights)
@@ -413,8 +413,8 @@ private fun WeekCard(nights: List<Sleep.Night>) {
 
 /** The month so far: what a night usually is, and the two that stood out. */
 @Composable
-private fun MonthCard(nights: List<Sleep.Night>) {
-    val month = SleepInsight.month(nights)
+private fun MonthCard(nights: List<Sleep.Night>, target: Int) {
+    val month = SleepInsight.month(nights, target = target)
     Card(
         shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(containerColor = Ink.card),
@@ -438,10 +438,10 @@ private fun MonthCard(nights: List<Sleep.Night>) {
                     Text("a night, on average", color = Ink.muted, fontSize = 13.sp, modifier = Modifier.padding(bottom = 6.dp))
                 }
                 Spacer(Modifier.height(12.dp))
-                month.best?.let { StandoutRow("Best", it, Ink.sleep) }
+                month.best?.let { StandoutRow("Best", it, target, Ink.sleep) }
                 month.worst?.let {
                     Spacer(Modifier.height(6.dp))
-                    StandoutRow("Worst", it, Ink.muted)
+                    StandoutRow("Worst", it, target, Ink.muted)
                 }
             }
             Spacer(Modifier.height(12.dp))
@@ -454,13 +454,13 @@ private fun MonthCard(nights: List<Sleep.Night>) {
 }
 
 @Composable
-private fun StandoutRow(label: String, night: Sleep.Night, accent: androidx.compose.ui.graphics.Color) {
+private fun StandoutRow(label: String, night: Sleep.Night, target: Int, accent: androidx.compose.ui.graphics.Color) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text(label, color = accent, fontSize = 13.sp, modifier = Modifier.width(56.dp))
         Text(shortDay.format(SleepInsight.day(night)), color = Ink.text, fontSize = 13.sp)
         Spacer(Modifier.weight(1f))
         Text(
-            "${Sleep.spell(night.asleep)} · ${SleepInsight.score(night).first}",
+            "${Sleep.spell(night.asleep)} · ${SleepInsight.score(night, target).first}",
             color = Ink.muted, fontSize = 13.sp
         )
     }

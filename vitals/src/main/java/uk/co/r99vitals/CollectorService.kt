@@ -13,12 +13,15 @@ import android.bluetooth.BluetoothGattDescriptor
 import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothProfile
 import android.bluetooth.BluetoothStatusCodes
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import androidx.core.content.ContextCompat
 
 /**
  * Keeps the ring's readings arriving while the app is closed.
@@ -37,6 +40,17 @@ class CollectorService : Service() {
 
     /** A night arrives split across frames; this holds them until the record is whole. */
     private var sleepReader = SleepReader()
+
+    /**
+     * The morning report waits for the phone to be picked up.
+     *
+     * Registered here rather than in the manifest because unlocking is not a broadcast an app may
+     * sit waiting for from cold — but this service is already running, holding the ring, which is
+     * exactly the thing that knows how the night went.
+     */
+    private val unlocked = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) = reportOnWaking()
+    }
     private var gatt: BluetoothGatt? = null
     private var backoff = 0L
     private var steps = 0
@@ -59,6 +73,10 @@ class CollectorService : Service() {
         // start — a phantom reading every time the app was opened.
         lastHeart = history.latest("heart")?.value ?: 0
         startForeground(NOTIFICATION, notification())
+        ContextCompat.registerReceiver(
+            this, unlocked, IntentFilter(Intent.ACTION_USER_PRESENT), ContextCompat.RECEIVER_NOT_EXPORTED
+        )
+        Bedtime.apply(this)
         connect()
     }
 
@@ -267,8 +285,27 @@ class CollectorService : Service() {
         }
     }
 
+    /**
+     * Phone unlocked: ask the ring for the night before saying anything about it, because the
+     * record is often written only as the wearer gets up, and then report if there is something
+     * worth reporting.
+     */
+    private fun reportOnWaking() {
+        val plan = SleepPlan.read(this)
+        if (!plan.report) return
+        gatt?.let { askForNights(it) }
+        handler.postDelayed({
+            val night = SleepInsight.merge(nights.all()).lastOrNull()
+            val reported = getSharedPreferences("ring", Context.MODE_PRIVATE).getLong("reportedNight", 0L)
+            if (SleepReport.due(plan, night, System.currentTimeMillis(), reported)) {
+                SleepReport.post(this, night!!, plan)
+            }
+        }, 6_000)
+    }
+
     @SuppressLint("MissingPermission")
     override fun onDestroy() {
+        runCatching { unregisterReceiver(unlocked) }
         handler.removeCallbacksAndMessages(null)
         gatt?.disconnect()
         gatt?.close()

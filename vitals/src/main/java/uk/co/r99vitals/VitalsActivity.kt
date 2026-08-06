@@ -70,6 +70,7 @@ class VitalsActivity : AppCompatActivity() {
     private var settingsOpen by mutableStateOf(false)
     private var nightMode by mutableStateOf(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
     private var profile by mutableStateOf(Profile())
+    private var plan by mutableStateOf(SleepPlan())
     private val saved by lazy { getSharedPreferences("ring", MODE_PRIVATE) }
     private var ringAddress: String?
         get() = saved.getString("address", null)
@@ -110,6 +111,11 @@ class VitalsActivity : AppCompatActivity() {
                     "pressure" -> measure(Ring.PRESSURE, "blood pressure")
                     "workout" -> startWorkout("Walk")
                     "stopworkout" -> stopWorkout()
+                    // The morning report is posted on unlocking, which cannot be faked from a
+                    // shell — this shows the same notification for the last night held, so its
+                    // wording can be read without waiting for tomorrow morning.
+                    "report" -> SleepInsight.merge(nights.all()).lastOrNull()
+                        ?.let { SleepReport.post(this@VitalsActivity, it, plan) }
                 }
             }
         }
@@ -120,7 +126,13 @@ class VitalsActivity : AppCompatActivity() {
 
     private val permissions = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
-    ) { result -> if (result.values.all { it }) connect() else ui = ui.copy(link = "Bluetooth access needed") }
+    ) { result ->
+        // Only the Bluetooth answers decide this. Notifications are asked for in the same
+        // breath, and refusing them must not stop the ring being read — that would trade the
+        // whole app for a reminder nobody wanted.
+        val bluetooth = result.filterKeys { it != Manifest.permission.POST_NOTIFICATIONS }
+        if (bluetooth.values.all { it }) connect() else ui = ui.copy(link = "Bluetooth access needed")
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -141,6 +153,7 @@ class VitalsActivity : AppCompatActivity() {
             pressure = saved.getBoolean("monitorPressure", false)
         )
         profile = Profile.read(saved)
+        plan = SleepPlan.read(saved)
         ui = ui.copy(
             interval = interval,
             stepGoal = saved.getInt("goal", 10_000),
@@ -148,6 +161,7 @@ class VitalsActivity : AppCompatActivity() {
             monitors = monitors,
             celebrate = birthdayGreeting()
         )
+        if (intent?.getStringExtra("tab") == "sleep") tab = Tab.Sleep
         setContent {
             VitalsSheet(
                 sheet = sheet,
@@ -168,6 +182,14 @@ class VitalsActivity : AppCompatActivity() {
                     // Typing writes to the phone on every keystroke, which is cheap. The ring is
                     // only told once, on the way out, rather than a frame per character.
                     nightMode = nightMode,
+                    plan = plan,
+                    onPlan = {
+                        plan = it
+                        it.write(saved)
+                        // Booked straight away: a reminder the wearer has just switched on and
+                        // that only starts working after the next restart is a broken switch.
+                        Bedtime.apply(this, it)
+                    },
                     onProfile = {
                         profile = it
                         it.write(saved)
@@ -218,6 +240,7 @@ class VitalsActivity : AppCompatActivity() {
                     },
                     onSettings = { settingsOpen = true },
                     onLink = { if (command == null) askThenConnect() },
+                    sleepTarget = plan.target,
                     onStartWorkout = { startWorkout(it) },
                     onStopWorkout = { stopWorkout() },
                     dayFor = { pageFor(it) }
@@ -234,6 +257,12 @@ class VitalsActivity : AppCompatActivity() {
         askThenConnect()
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        // Tapping the morning report while the app is already open should still land on Sleep.
+        if (intent.getStringExtra("tab") == "sleep") { tab = Tab.Sleep; dayOffset = 0 }
+    }
+
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         outState.putBoolean("settings", settingsOpen)
@@ -241,7 +270,15 @@ class VitalsActivity : AppCompatActivity() {
 
     private fun askThenConnect() {
         val needed = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
+            // Notifications are asked for here too: the bedtime reminder and the morning report
+            // are the only things this app ever interrupts anyone with, and both are off until
+            // switched on, so asking once alongside Bluetooth is the whole of it.
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                arrayOf(
+                    Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT,
+                    Manifest.permission.POST_NOTIFICATIONS
+                )
+            } else arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
         } else arrayOf(Manifest.permission.ACCESS_FINE_LOCATION)
         if (needed.all { ContextCompat.checkSelfPermission(this, it) == PackageManager.PERMISSION_GRANTED }) connect()
         else permissions.launch(needed)

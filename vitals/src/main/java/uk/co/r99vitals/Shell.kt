@@ -60,6 +60,7 @@ fun Shell(
     onLink: () -> Unit,
     onStartWorkout: (String) -> Unit,
     onStopWorkout: () -> Unit,
+    sleepTarget: Int,
     dayFor: @Composable (Tab) -> VitalDay
 ) {
     Scaffold(
@@ -91,7 +92,7 @@ fun Shell(
             when (tab) {
                 Tab.Today -> VitalsScreen(state, onMeasure, onSettings, onLink)
                 Tab.Workout -> WorkoutPage(state, onStartWorkout, onStopWorkout)
-                Tab.Sleep -> SleepPage(state.nights)
+                Tab.Sleep -> SleepPage(state.nights, sleepTarget)
                 else -> VitalPage(
                     day = dayFor(tab),
                     dayOffset = dayOffset,

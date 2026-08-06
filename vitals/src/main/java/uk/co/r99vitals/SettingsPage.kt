@@ -141,6 +141,8 @@ fun SettingsPage(
     firmware: String?,
     ringAddress: String?,
     nightMode: Int,
+    plan: SleepPlan,
+    onPlan: (SleepPlan) -> Unit,
     onProfile: (Profile) -> Unit,
     onNightMode: (Int) -> Unit,
     onGoal: (Int) -> Unit,
@@ -158,6 +160,8 @@ fun SettingsPage(
         editing = editing,
         profile = profile,
         stepGoal = state.stepGoal,
+        plan = plan,
+        onPlan = onPlan,
         onProfile = onProfile,
         onGoal = onGoal,
         onDismiss = { editing = Editing.None }
@@ -228,6 +232,27 @@ fun SettingsPage(
             Value("Daily steps", "%,d".format(state.stepGoal)) { editing = Editing.Goal }
         }
         Note("Set on the ring as well as here, so both agree about the day.")
+
+        Section("SLEEP")
+        Panel {
+            Value("Bedtime", clockOf(plan.bedtime)) { editing = Editing.Bedtime }
+            Divider()
+            Value("Wake time", clockOf(plan.wake)) { editing = Editing.WakeTime }
+            Divider()
+            Pick("Remind me ${plan.lead} minutes before bedtime", plan.remind) {
+                onPlan(plan.copy(remind = !plan.remind))
+            }
+            Divider()
+            Pick("Sleep report when I unlock in the morning", plan.report) {
+                onPlan(plan.copy(report = !plan.report))
+            }
+        }
+        Note(
+            "Those hours are what a night is scored against — ${Sleep.spell(plan.target)} between " +
+                "them — so the score follows your schedule rather than a number this app picked. " +
+                "The report waits until you pick the phone up, since a notification at " +
+                "${clockOf(plan.wake)} would arrive while you were still asleep."
+        )
 
         Section("THE RING")
         Panel {
@@ -357,7 +382,7 @@ private fun Field(label: String, value: String, onChange: (String) -> Unit) {
 }
 
 /** Which value a wheel is currently being shown for, if any. */
-private enum class Editing { None, Birthday, Height, Weight, Goal }
+private enum class Editing { None, Birthday, Height, Weight, Goal, Bedtime, WakeTime }
 
 private val birthdayFormat = java.time.format.DateTimeFormatter.ofPattern("d MMMM yyyy")
 private val monthNames = listOf(
@@ -412,6 +437,8 @@ private fun WheelSheet(
     editing: Editing,
     profile: Profile,
     stepGoal: Int,
+    plan: SleepPlan,
+    onPlan: (SleepPlan) -> Unit,
     onProfile: (Profile) -> Unit,
     onGoal: (Int) -> Unit,
     onDismiss: () -> Unit
@@ -466,6 +493,8 @@ private fun WheelSheet(
                     Editing.Birthday -> "Birthday"
                     Editing.Height -> "Height"
                     Editing.Weight -> "Weight"
+                    Editing.Bedtime -> "Bedtime"
+                    Editing.WakeTime -> "Wake time"
                     else -> "Daily step goal"
                 },
                 color = Ink.text, fontSize = 22.sp, fontWeight = FontWeight.Medium
@@ -548,6 +577,29 @@ private fun WheelSheet(
                             onProfile(profile.copy(weightKg = it))
                         }
                     }
+                }
+                // Hours and minutes as two wheels, the same as feet and inches: two numbers.
+                // Five-minute steps, because nobody means twenty-three minutes past eleven.
+                Editing.Bedtime, Editing.WakeTime -> {
+                    val minutes = if (editing == Editing.Bedtime) plan.bedtime else plan.wake
+                    fun set(value: Int) = onPlan(
+                        if (editing == Editing.Bedtime) plan.copy(bedtime = value)
+                        else plan.copy(wake = value)
+                    )
+                    Row(horizontalArrangement = Arrangement.Center) {
+                        Picker(minutes / 60, 0..23, { "%02d".format(it) }, Modifier.width(110.dp)) {
+                            set(it * 60 + minutes % 60)
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Picker(minutes % 60, 0..55 step 5, { "%02d".format(it) }, Modifier.width(110.dp)) {
+                            set((minutes / 60) * 60 + it)
+                        }
+                    }
+                    Spacer(Modifier.height(14.dp))
+                    Text(
+                        "${clockOf(plan.bedtime)} to ${clockOf(plan.wake)} · ${Sleep.spell(plan.target)}",
+                        color = Ink.muted, fontSize = 14.sp
+                    )
                 }
                 // Whole hundreds: nobody sets a goal of 10,137.
                 else -> Picker(stepGoal, 1_000..30_000 step 500, { "%,d".format(it) }, Modifier.width(180.dp)) {

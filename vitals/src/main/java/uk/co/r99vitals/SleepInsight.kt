@@ -20,8 +20,12 @@ object SleepInsight {
     /** Records this close together are the same night, interrupted, not two nights. */
     private const val SAME_NIGHT = 3_600_000L
 
-    /** What a night is measured against. Not medical targets — the usual advice, no more. */
-    private const val TARGET_ASLEEP = 7 * 3600
+    /**
+     * What a night is measured against when the wearer has not said. Not a medical target — the
+     * usual advice, no more; once a bedtime and wake time are set, their own hours are used
+     * instead. See [SleepPlan.target].
+     */
+    const val TARGET_ASLEEP = 7 * 3600
     private val DEEP_BAND = 0.13f..0.23f
     private val REM_BAND = 0.20f..0.25f
 
@@ -73,9 +77,10 @@ object SleepInsight {
      * the rest. Every part is shown in the app beside the total, so the number can be argued with
      * rather than believed.
      */
-    fun score(night: Sleep.Night): Pair<Int, List<Part>> {
+    fun score(night: Sleep.Night, target: Int = TARGET_ASLEEP): Pair<Int, List<Part>> {
         val asleep = night.asleep
-        val length = (50f * (asleep.toFloat() / TARGET_ASLEEP)).coerceIn(0f, 50f)
+        val wanted = if (target in 3 * 3600..12 * 3600) target else TARGET_ASLEEP
+        val length = (50f * (asleep.toFloat() / wanted)).coerceIn(0f, 50f)
         val deep = band(night.seconds(Sleep.DEEP), asleep, DEEP_BAND, 20f)
         val rem = band(night.seconds(Sleep.REM), asleep, REM_BAND, 20f)
         val wakings = night.stages.count { it.code == Sleep.AWAKE }
@@ -139,7 +144,7 @@ object SleepInsight {
     )
 
     /** The calendar month [within] falls in, fragments left out of everything but the count. */
-    fun month(nights: List<Sleep.Night>, within: Date = Date()): Month {
+    fun month(nights: List<Sleep.Night>, within: Date = Date(), target: Int = TARGET_ASLEEP): Month {
         val edge = Calendar.getInstance().apply {
             time = within
             set(Calendar.DAY_OF_MONTH, 1)
@@ -153,8 +158,8 @@ object SleepInsight {
         val proper = inMonth.filterNot { isFragment(it) }
         return Month(
             average = if (proper.isEmpty()) 0 else proper.sumOf { it.asleep } / proper.size,
-            best = proper.maxByOrNull { score(it).first },
-            worst = if (proper.size > 1) proper.minByOrNull { score(it).first } else null,
+            best = proper.maxByOrNull { score(it, target).first },
+            worst = if (proper.size > 1) proper.minByOrNull { score(it, target).first } else null,
             recorded = inMonth.size,
             ofDays = days
         )
