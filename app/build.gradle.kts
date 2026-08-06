@@ -44,4 +44,6 @@ dependencies {
     implementation("com.google.android.material:material:1.14.0")
     implementation("androidx.constraintlayout:constraintlayout:2.2.2")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.11.0")
+    // The sleep record is pure bytes, so it can be checked on the JVM without a ring.
+    testImplementation("junit:junit:4.13.2")
 }

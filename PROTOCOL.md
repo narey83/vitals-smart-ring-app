@@ -230,7 +230,46 @@ there is data the ring follows up by pushing `Health_HistoryBlock` (`05 80`) unp
 
 `Health_HistorySport` and `Health_HistorySleep` answered `00 00` — zero records — on both this
 app and the vendor's. The ring reports `Sleep` as a supported feature, so this is an empty
-store rather than an unsupported query: nothing had been recorded yet.
+store rather than an unsupported query: nothing had been recorded yet. Sleep has since filled
+in and is decoded below; sport is still empty.
+
+### Stored sleep — verified
+
+`Health_HistorySleep` (`05 04`) answers with a count and then pushes the nights under `05 13`,
+the same query-then-push shape as heart (`05 06` → `05 15`) and pressure (`05 08` → `05 17`).
+
+It is the only history here that is **not fixed-width records**. Each night is a 20-byte header
+carrying its own total size, then one 8-byte entry per stage:
+
+| offset | size | field |
+|---|---|---|
+| 0 | 2 | unknown, `AF FA` in the capture |
+| 2 | 2 | total size of this record, header included |
+| 4 | 4 | night started, seconds from 2000-01-01 |
+| 8 | 4 | night ended |
+| 12 | 2 | deep-sleep count, or `FFFF` to mark the newer header |
+| 14 | 2 | REM seconds if `FFFF`, otherwise the light-sleep count |
+| 16 | 2 | deep total — seconds if `FFFF`, otherwise minutes |
+| 18 | 2 | light total, same units as deep |
+| 20… | 8 each | stage entries: type (1), started (4), length in seconds (3) |
+
+Stage types: `F1` deep, `F2` light, `F3` REM, `F4` awake. `F4` is the SDK's own — `DataUnpack`
+counts it as a waking — and the other three were pinned by arithmetic rather than by guessing:
+summing the entries of each type reproduced the header's three totals exactly.
+
+A night is bigger than one BLE frame and is **cut mid-entry**, so the frames must be joined
+before parsing. The first night this ring gave up, on 2026-08-05:
+
+```
+--> 05 04 06 00 …                                      Health_HistorySleep
+<-- 05 13 B6 00 AF FA DC 00 24 62 05 32 9F AA 05 32 …  first 176 bytes of a 220-byte record
+<-- 05 13 32 00 32 E8 00 00 F2 74 93 05 32 B5 06 00 …  the remaining 44, starting mid-entry
+<-- 05 80 0C 00 02 00 DC 00 00 8C 39 B1                2 packets, 220 bytes in total
+```
+
+Which decodes as 02:53:24 to 08:02:39 UTC, 25 stages, deep 43m, light 3h05m, REM 1h20m — and
+the ring's own log describes the same night as `sleep size=284,items=1,packets==2` with
+`forms: 33`, which is 20 + 33 × 8. Two independent descriptions of the same layout.
 
 ## The ring's internal log — verified
 

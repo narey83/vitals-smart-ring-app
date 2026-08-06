@@ -85,7 +85,8 @@ private data class Palette(
     val heart: Color,
     val oxygen: Color,
     val pressure: Color,
-    val motion: Color
+    val motion: Color,
+    val sleep: Color
 )
 
 private val darkInk = Palette(
@@ -96,7 +97,8 @@ private val darkInk = Palette(
     heart = Color(0xFFFF3D71),
     oxygen = Color(0xFF00D1FF),
     pressure = Color(0xFFB57BFF),
-    motion = Color(0xFF2DE59B)
+    motion = Color(0xFF2DE59B),
+    sleep = Color(0xFF6E8BFF)
 )
 
 private val lightInk = Palette(
@@ -107,7 +109,8 @@ private val lightInk = Palette(
     heart = Color(0xFFD11E4E),
     oxygen = Color(0xFF00718F),
     pressure = Color(0xFF6D3BC7),
-    motion = Color(0xFF067A4E)
+    motion = Color(0xFF067A4E),
+    sleep = Color(0xFF3D4FB8)
 )
 
 object Ink {
@@ -122,6 +125,7 @@ object Ink {
     val oxygen: Color @Composable get() = now.oxygen
     val pressure: Color @Composable get() = now.pressure
     val motion: Color @Composable get() = now.motion
+    val sleep: Color @Composable get() = now.sleep
 }
 
 data class VitalsState(
@@ -145,6 +149,7 @@ data class VitalsState(
     val workoutSince: Long = 0L,
     val workoutBeats: List<Int> = emptyList(),
     val pastWorkouts: List<Workouts.Session> = emptyList(),
+    val nights: List<Sleep.Night> = emptyList(),
     val stepGoal: Int = 10_000,
     val firmware: String? = null,
     val metric: Boolean = true,

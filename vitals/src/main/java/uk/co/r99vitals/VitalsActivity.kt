@@ -60,6 +60,10 @@ class VitalsActivity : AppCompatActivity() {
     private val health by lazy { HealthExport(this) }
     private lateinit var history: History
     private lateinit var workouts: Workouts
+    private lateinit var nights: Nights
+
+    /** Holds the frames of a night together until the record inside them is whole. */
+    private val sleepReader = SleepReader()
 
     private var interval = 15   // minutes; 0 means off
     private var monitors = Ring.Monitors()
@@ -122,6 +126,7 @@ class VitalsActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         history = History(this)
         workouts = Workouts(this)
+        nights = Nights(this)
         // Set before anything is drawn. AppCompatDelegate rather than a flag Compose reads,
         // because it switches the whole configuration: the status bar icons come from
         // values-night, and a palette the app picked on its own would leave them wrong.
@@ -220,7 +225,7 @@ class VitalsActivity : AppCompatActivity() {
             }
         }
         showTrend()
-        ui = ui.copy(pastWorkouts = workouts.all())
+        ui = ui.copy(pastWorkouts = workouts.all(), nights = nights.all())
         if (BuildConfig.DEBUG) {
             ContextCompat.registerReceiver(
                 this, overAdb, IntentFilter("uk.co.r99vitals.RUN"), ContextCompat.RECEIVER_EXPORTED
@@ -664,6 +669,12 @@ class VitalsActivity : AppCompatActivity() {
                 enqueue { write(Ring.storedHeart()) }
                 enqueue { write(Ring.storedPressure()) }
                 enqueue { write(Ring.storedOxygen()) }
+                // Nights, which are only ever a backfill: the ring stages sleep by itself and
+                // hands the record over when asked, never while it is happening.
+                // ponytail: asked here and not by the collector, which sends nothing and only
+                // listens. The ring holds several nights, so opening the app every few days is
+                // enough; give the collector a command channel if that stops being true.
+                enqueue { write(Ring.storedSleep()) }
                 // The clock is deliberately left alone: writing it makes the ring abandon a
                 // running sleep session, which its own log reports as "exit sleep because time
                 // change". Sleep data matters more than a few seconds of drift.
@@ -714,6 +725,13 @@ class VitalsActivity : AppCompatActivity() {
         }
         if (characteristic.uuid == Ring.HEART_RATE) {
             Ring.readStandardHeartRate(value)?.let { ui = ui.copy(heart = it) }
+            return
+        }
+        // A night arrives in pieces, so this reader answers with nothing until it holds a whole
+        // record and then with every night in it at once.
+        sleepReader.accept(value).takeIf { it.isNotEmpty() }?.let { fresh ->
+            nights.save(fresh)
+            ui = ui.copy(nights = nights.all())
             return
         }
         // The stored records, arriving in reply to the history queries sent on connecting. Each

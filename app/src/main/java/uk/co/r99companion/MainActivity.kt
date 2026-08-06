@@ -568,7 +568,7 @@ class MainActivity : AppCompatActivity() {
         var seconds = 0L
         for (i in 3 downTo 0) seconds = (seconds shl 8) or (record[i].toLong() and 0xFF)
         val epoch2000 = 946_684_800_000L
-        return sessionClock.format(Date(epoch2000 + seconds * 1000L))
+        return clock(epoch2000 + seconds * 1000L)
     }
 
     private fun readable(bytes: List<Byte>) =
@@ -949,8 +949,10 @@ class MainActivity : AppCompatActivity() {
                 payload.toList().chunked(8).filter { it.size == 8 }.joinToString("\n") {
                     "${stamp(it)}  ${it[5].toInt() and 0xFF}/${it[6].toInt() and 0xFF}"
                 }
+            // Stored sleep, the one history that is not fixed-width records. See Sleep.kt.
+            group == 0x05 && command == 0x13 -> describeSleep(payload)
             // Only the queries answer with a count; the pushes above carry data.
-            group == 0x05 && command !in setOf(0x15, 0x17) && payload.size >= 2 -> {
+            group == 0x05 && command !in setOf(0x13, 0x15, 0x17) && payload.size >= 2 -> {
                 val count = byte(0) or (byte(1) shl 8)
                 if (count == 0) "no records stored" else "$count record${if (count == 1) "" else "s"} stored"
             }
@@ -970,6 +972,33 @@ class MainActivity : AppCompatActivity() {
             else -> null
         }
     }
+
+    /**
+     * A night per header line, a stage per line under it. The header's own totals are printed
+     * beside the stages that should add up to them, which is what pins the stage codes to the
+     * right names — see [sleepStageName].
+     */
+    private fun describeSleep(payload: ByteArray): String {
+        val nights = sleepFrames.accept(payload)
+        if (nights.isEmpty()) return "part of a night, waiting for the rest of it"
+        return nights.joinToString("\n") { night ->
+            buildString {
+                append("${clock(night.startedAt)} to ${clock(night.endedAt)}  ")
+                append("deep ${spell(night.deepSeconds)}, light ${spell(night.lightSeconds)}")
+                if (night.remSeconds > 0) append(", REM ${spell(night.remSeconds)}")
+                for (stage in night.stages) {
+                    append("\n  ${clock(stage.startedAt)}  ${sleepStageName(stage.code)} ${spell(stage.seconds)}")
+                }
+            }
+        }
+    }
+
+    private val sleepFrames = SleepFrames()
+
+    private fun clock(millis: Long) = sessionClock.format(Date(millis))
+
+    private fun spell(seconds: Int) =
+        if (seconds >= 3600) "${seconds / 3600}h ${(seconds % 3600) / 60}m" else "${seconds / 60}m"
 
     private fun measurementName(type: Int) = when (type) {
         0x00 -> "heart rate"

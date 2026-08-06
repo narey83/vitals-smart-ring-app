@@ -166,6 +166,8 @@ object Ring {
      * accepts and never answers.
      */
     fun storedHeart() = frame(0x05, 0x06)
+    /** Nights, which the ring stages itself and never volunteers. Read them with [SleepReader]. */
+    fun storedSleep() = frame(0x05, 0x04)
     fun storedPressure() = frame(0x05, 0x08)
     fun storedOxygen() = frame(0x05, 0x09)
 

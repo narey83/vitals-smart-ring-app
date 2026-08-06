@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.Bloodtype
 import androidx.compose.material.icons.rounded.DirectionsWalk
 import androidx.compose.material.icons.rounded.FitnessCenter
@@ -28,6 +29,7 @@ enum class Tab(val label: String, val icon: ImageVector) {
     Oxygen("SpO₂", Icons.Rounded.Bloodtype),
     Pressure("BP", Icons.Rounded.MonitorHeart),
     Steps("Steps", Icons.Rounded.DirectionsWalk),
+    Sleep("Sleep", Icons.Rounded.Bedtime),
     Workout("Workout", Icons.Rounded.FitnessCenter)
 }
 
@@ -38,6 +40,7 @@ val Tab.accent: Color
         Tab.Heart -> Ink.heart
         Tab.Oxygen -> Ink.oxygen
         Tab.Pressure -> Ink.pressure
+        Tab.Sleep -> Ink.sleep
         Tab.Steps, Tab.Workout -> Ink.motion
     }
 
@@ -88,6 +91,7 @@ fun Shell(
             when (tab) {
                 Tab.Today -> VitalsScreen(state, onMeasure, onSettings, onLink)
                 Tab.Workout -> WorkoutPage(state, onStartWorkout, onStopWorkout)
+                Tab.Sleep -> SleepPage(state.nights)
                 else -> VitalPage(
                     day = dayFor(tab),
                     dayOffset = dayOffset,
