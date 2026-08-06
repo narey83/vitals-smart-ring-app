@@ -33,6 +33,10 @@ class CollectorService : Service() {
 
     private val handler = Handler(Looper.getMainLooper())
     private lateinit var history: History
+    private lateinit var nights: Nights
+
+    /** A night arrives split across frames; this holds them until the record is whole. */
+    private var sleepReader = SleepReader()
     private var gatt: BluetoothGatt? = null
     private var backoff = 0L
     private var steps = 0
@@ -48,6 +52,7 @@ class CollectorService : Service() {
     override fun onCreate() {
         super.onCreate()
         history = History(this)
+        nights = Nights(this)
         // Carried over from what is already written down rather than starting at nothing. The
         // ring re-notifies the reading it holds as soon as anything connects, so a service that
         // began each time not knowing the last value wrote that stale number down once per
@@ -131,15 +136,27 @@ class CollectorService : Service() {
         override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
             if (status != BluetoothGatt.GATT_SUCCESS) return
             // Subscribe and then stay quiet: the ring pushes on its own schedule.
-            gatt.services.flatMap { it.characteristics }
+            val notifying = gatt.services.flatMap { it.characteristics }
                 .filter {
                     it.properties and (BluetoothGattCharacteristic.PROPERTY_NOTIFY or
                         BluetoothGattCharacteristic.PROPERTY_INDICATE) != 0
                 }
-                .forEachIndexed { index, characteristic ->
-                    // Spaced out because the radio carries one request at a time.
-                    handler.postDelayed({ subscribe(gatt, characteristic) }, index * 350L)
-                }
+            notifying.forEachIndexed { index, characteristic ->
+                // Spaced out because the radio carries one request at a time.
+                handler.postDelayed({ subscribe(gatt, characteristic) }, index * 350L)
+            }
+            // Sleep is the one thing that has to be asked for. The ring stages a night by itself,
+            // says nothing, and drops the record within about a day — so a collector that only
+            // listens loses every night the wearer does not happen to open the app for.
+            //
+            // The room has to be asked for first: the default 20-byte payload is far smaller than
+            // a night, and without this the ring answers with a count and the record never comes.
+            sleepReader = SleepReader()
+            handler.postDelayed({ requestRoomForANight(gatt) }, notifying.size * 350L + 500L)
+        }
+
+        override fun onMtuChanged(gatt: BluetoothGatt, mtu: Int, status: Int) {
+            askForNights(gatt)
         }
 
         @Deprecated("Superseded on Android 13")
@@ -150,6 +167,28 @@ class CollectorService : Service() {
 
         override fun onCharacteristicChanged(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, value: ByteArray) {
             store(characteristic, value)
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun requestRoomForANight(gatt: BluetoothGatt) {
+        // If the request itself fails there is no callback to carry on from, so ask anyway and
+        // let the reader drop what does not fit rather than never asking at all.
+        if (!gatt.requestMtu(517)) askForNights(gatt)
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun askForNights(gatt: BluetoothGatt) {
+        val channel = gatt.services.firstNotNullOfOrNull {
+            it.getCharacteristic(Ring.COMMAND_CHANNEL)
+        } ?: return
+        val frame = Ring.storedSleep()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            gatt.writeCharacteristic(channel, frame, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT)
+        } else {
+            @Suppress("DEPRECATION") channel.value = frame
+            @Suppress("DEPRECATION") channel.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+            @Suppress("DEPRECATION") gatt.writeCharacteristic(channel)
         }
     }
 
@@ -195,6 +234,11 @@ class CollectorService : Service() {
                 latest = "$it bpm"
                 refresh()
             }
+            return
+        }
+        // The nights, in reply to the query sent on connecting.
+        sleepReader.accept(value).takeIf { it.isNotEmpty() }?.let {
+            nights.save(it)
             return
         }
         when (val reading = Ring.read(value)) {
