@@ -37,11 +37,20 @@ object Sleep {
      * sends both and they agree, so keeping one of them is a file that cannot contradict itself.
      */
     data class Night(val startedAt: Long, val stages: List<Stage>) {
-        val endedAt get() = stages.lastOrNull()?.let { it.startedAt + it.seconds * 1000L } ?: startedAt
+        // The latest stage to finish, not the last one in the list: records can arrive out of
+        // order, and a night that claimed to end before its own stages had run would report more
+        // sleep than time in bed.
+        val endedAt get() = stages.maxOfOrNull { it.startedAt + it.seconds * 1000L } ?: startedAt
         fun seconds(code: Int) = stages.filter { it.code == code }.sumOf { it.seconds }
         /** Time asleep, which is not time in bed: the wakings in between are not sleep. */
         val asleep get() = stages.filter { it.code != AWAKE }.sumOf { it.seconds }
         val inBed get() = ((endedAt - startedAt) / 1000).toInt()
+    }
+
+    /** Hours and minutes, or minutes alone below the hour, which is how a night is spoken. */
+    fun spell(seconds: Int): String {
+        val minutes = seconds / 60
+        return if (minutes >= 60) "${minutes / 60}h ${"%02d".format(minutes % 60)}m" else "${minutes}m"
     }
 
     fun name(code: Int) = when (code) {

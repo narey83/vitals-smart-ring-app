@@ -6,6 +6,7 @@ import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.BloodPressureRecord
 import androidx.health.connect.client.records.HeartRateRecord
 import androidx.health.connect.client.records.OxygenSaturationRecord
+import androidx.health.connect.client.records.SleepSessionRecord
 import androidx.health.connect.client.records.StepsRecord
 import androidx.health.connect.client.records.metadata.Device
 import androidx.health.connect.client.records.metadata.Metadata
@@ -28,7 +29,8 @@ class HealthExport(private val context: Context) {
         HealthPermission.getWritePermission(HeartRateRecord::class),
         HealthPermission.getWritePermission(OxygenSaturationRecord::class),
         HealthPermission.getWritePermission(BloodPressureRecord::class),
-        HealthPermission.getWritePermission(StepsRecord::class)
+        HealthPermission.getWritePermission(StepsRecord::class),
+        HealthPermission.getWritePermission(SleepSessionRecord::class)
     )
 
     // The ring took these readings itself, so they are attributed to it rather than to the phone.
@@ -80,6 +82,40 @@ class HealthExport(private val context: Context) {
         if (records.isEmpty()) return 0
         // Health Connect refuses very large writes, so send them in batches.
         records.chunked(400).forEach { connect.insertRecords(it) }
+        return records.size
+    }
+
+    /**
+     * Nights, with the stages inside them, so anything else on the phone reads the same sleep this
+     * app shows rather than a total it has to guess the shape of.
+     *
+     * Fragments go across as well: it is not this app's business to decide that half an hour the
+     * ring recorded did not happen. What it does decide — scores, averages — stays here.
+     */
+    suspend fun sendSleep(nights: List<Sleep.Night>): Int {
+        val connect = client ?: return 0
+        val zone = ZoneId.systemDefault().rules.getOffset(Instant.now())
+        val records = nights.filter { it.stages.isNotEmpty() }.map { night ->
+            SleepSessionRecord(
+                startTime = Instant.ofEpochMilli(night.startedAt), startZoneOffset = zone,
+                endTime = Instant.ofEpochMilli(night.endedAt), endZoneOffset = zone,
+                stages = night.stages.map { stage ->
+                    SleepSessionRecord.Stage(
+                        startTime = Instant.ofEpochMilli(stage.startedAt),
+                        endTime = Instant.ofEpochMilli(stage.startedAt + stage.seconds * 1000L),
+                        stage = when (stage.code) {
+                            Sleep.DEEP -> SleepSessionRecord.STAGE_TYPE_DEEP
+                            Sleep.LIGHT -> SleepSessionRecord.STAGE_TYPE_LIGHT
+                            Sleep.REM -> SleepSessionRecord.STAGE_TYPE_REM
+                            else -> SleepSessionRecord.STAGE_TYPE_AWAKE
+                        }
+                    )
+                },
+                metadata = ring
+            )
+        }
+        if (records.isEmpty()) return 0
+        connect.insertRecords(records)
         return records.size
     }
 

@@ -580,7 +580,8 @@ class VitalsActivity : AppCompatActivity() {
         lifecycleScope.launch {
             val outcome = runCatching {
                 val entries = history.all()
-                health.send(entries) + health.sendSteps(entries)
+                health.send(entries) + health.sendSteps(entries) +
+                    health.sendSleep(SleepInsight.merge(nights.all()))
             }
             healthLabel = outcome.fold(
                 onSuccess = { if (it == 0) "Nothing to send yet" else "Sent $it records to Health Connect" },
