@@ -20,6 +20,9 @@ object SleepInsight {
     /** Records this close together are the same night, interrupted, not two nights. */
     private const val SAME_NIGHT = 3_600_000L
 
+    /** A hole in the record longer than this was time awake, whatever the ring called it. */
+    private const val BREAK = 5 * 60 * 1000L
+
     /**
      * What a night is measured against when the wearer has not said. Not a medical target — the
      * usual advice, no more; once a bedtime and wake time are set, their own hours are used
@@ -66,6 +69,7 @@ object SleepInsight {
 
     /** A scrap is shown, but never averaged: one 32-minute record would sink a month. */
     fun isFragment(night: Sleep.Night) = night.asleep < FRAGMENT
+    fun isFragment(day: Day) = day.asleep < FRAGMENT
 
     data class Part(val label: String, val detail: String, val got: Int, val of: Int)
 
@@ -77,22 +81,39 @@ object SleepInsight {
      * the rest. Every part is shown in the app beside the total, so the number can be argued with
      * rather than believed.
      */
-    fun score(night: Sleep.Night, target: Int = TARGET_ASLEEP): Pair<Int, List<Part>> {
-        val asleep = night.asleep
+    fun score(
+        asleep: Int,
+        deepSeconds: Int,
+        remSeconds: Int,
+        wakings: Int,
+        target: Int = TARGET_ASLEEP
+    ): Pair<Int, List<Part>> {
         val wanted = if (target in 3 * 3600..12 * 3600) target else TARGET_ASLEEP
         val length = (50f * (asleep.toFloat() / wanted)).coerceIn(0f, 50f)
-        val deep = band(night.seconds(Sleep.DEEP), asleep, DEEP_BAND, 20f)
-        val rem = band(night.seconds(Sleep.REM), asleep, REM_BAND, 20f)
-        val wakings = night.stages.count { it.code == Sleep.AWAKE }
+        val deep = band(deepSeconds, asleep, DEEP_BAND, 20f)
+        val rem = band(remSeconds, asleep, REM_BAND, 20f)
         val unbroken = (10f - wakings * 2.5f).coerceIn(0f, 10f)
         val parts = listOf(
             Part("Length", Sleep.spell(asleep), length.toInt(), 50),
-            Part("Deep", "${share(night.seconds(Sleep.DEEP), asleep)}%", deep.toInt(), 20),
-            Part("REM", "${share(night.seconds(Sleep.REM), asleep)}%", rem.toInt(), 20),
-            Part("Unbroken", if (wakings == 0) "no wakings" else "$wakings waking${if (wakings == 1) "" else "s"}", unbroken.toInt(), 10)
+            Part("Deep", "${share(deepSeconds, asleep)}%", deep.toInt(), 20),
+            Part("REM", "${share(remSeconds, asleep)}%", rem.toInt(), 20),
+            Part(
+                "Unbroken",
+                if (wakings == 0) "no wakings" else "$wakings waking${if (wakings == 1) "" else "s"}",
+                unbroken.toInt(), 10
+            )
         )
         return parts.sumOf { it.got } to parts
     }
+
+    fun score(night: Sleep.Night, target: Int = TARGET_ASLEEP) = score(
+        night.asleep, night.seconds(Sleep.DEEP), night.seconds(Sleep.REM),
+        night.stages.count { it.code == Sleep.AWAKE }, target
+    )
+
+    fun score(day: Day, target: Int = TARGET_ASLEEP) = score(
+        day.asleep, day.seconds(Sleep.DEEP), day.seconds(Sleep.REM), day.wakings, target
+    )
 
     /**
      * Where the bands sit is set by length, because length dominates the score. A night with
@@ -118,12 +139,47 @@ object SleepInsight {
 
     private fun share(seconds: Int, asleep: Int) = if (asleep <= 0) 0 else seconds * 100 / asleep
 
-    /** One day of the week strip: the night that ended on it, if any. */
-    data class Day(val at: Date, val night: Sleep.Night?)
+    /**
+     * A day's sleep: every session the ring closed that day, whatever hour they fell at.
+     *
+     * This ring does not record a night as one thing. A single night came back as four separate
+     * records — 21:01, 00:24, 01:15 and 05:54 — because it drops out of sleep tracking and picks
+     * it up again. Showing the last of those as "last night" is how five hours of sleep read as
+     * ninety minutes. Whatever it recorded and closed on one day belongs to that day, including
+     * an afternoon nap: it is sleep, and the wearer had it.
+     */
+    data class Day(val at: Date, val sessions: List<Sleep.Night>) {
+        val asleep get() = sessions.sumOf { it.asleep }
+        val inBed get() = sessions.sumOf { it.inBed }
+        val stages get() = sessions.flatMap { it.stages }
+        fun seconds(code: Int) = sessions.sumOf { it.seconds(code) }
+        val from get() = sessions.minOf { it.startedAt }
+        val to get() = sessions.maxOf { it.endedAt }
+
+        /**
+         * Wakings the ring marked, plus every real break in the record — between sessions or
+         * inside one. A night the ring stopped and restarted four times is a broken night, and
+         * counting only the stages it labelled "awake" would score it as though it were not.
+         */
+        val wakings get() = sessions.sumOf { session ->
+            session.stages.count { it.code == Sleep.AWAKE }
+        } + stages.sortedBy { it.startedAt }.zipWithNext().count { (before, after) ->
+            after.startedAt - (before.startedAt + before.seconds * 1000L) >= BREAK
+        }
+    }
+
+    /** Every day that has any sleep on it, oldest first. */
+    fun days(nights: List<Sleep.Night>): List<Day> = merge(nights)
+        .groupBy { day(it).time }
+        .map { (at, sessions) -> Day(Date(at), sessions.sortedBy { it.startedAt }) }
+        .sortedBy { it.at }
+
+    /** One slot of the week strip: the day, and the sleep that landed on it. */
+    data class Slot(val at: Date, val day: Day?)
 
     /** The last seven days ending today, so the strip always has seven slots and visible gaps. */
-    fun week(nights: List<Sleep.Night>, today: Date = Date()): List<Day> {
-        val byDay = merge(nights).associateBy { day(it).time }
+    fun week(nights: List<Sleep.Night>, today: Date = Date()): List<Slot> {
+        val byDay = days(nights).associateBy { it.at.time }
         val midnight = Calendar.getInstance().apply {
             time = today
             set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0)
@@ -131,14 +187,14 @@ object SleepInsight {
         }
         return (6 downTo 0).map { back ->
             val at = (midnight.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, -back) }.time
-            Day(at, byDay[at.time])
+            Slot(at, byDay[at.time])
         }
     }
 
     data class Month(
         val average: Int,
-        val best: Sleep.Night?,
-        val worst: Sleep.Night?,
+        val best: Day?,
+        val worst: Day?,
         val recorded: Int,
         val ofDays: Int
     )
@@ -154,7 +210,7 @@ object SleepInsight {
         val from = edge.timeInMillis
         val to = (edge.clone() as Calendar).apply { add(Calendar.MONTH, 1) }.timeInMillis
         val days = Calendar.getInstance().apply { time = within }.getActualMaximum(Calendar.DAY_OF_MONTH)
-        val inMonth = merge(nights).filter { day(it).time in from until to }
+        val inMonth = days(nights).filter { it.at.time in from until to }
         val proper = inMonth.filterNot { isFragment(it) }
         return Month(
             average = if (proper.isEmpty()) 0 else proper.sumOf { it.asleep } / proper.size,
@@ -175,16 +231,16 @@ object SleepInsight {
     const val ENOUGH = 5
 
     fun patterns(nights: List<Sleep.Night>): List<String> {
-        val proper = merge(nights).filterNot { isFragment(it) }
+        val proper = days(nights).filterNot { isFragment(it) }
         if (proper.size < ENOUGH) return emptyList()
         val found = mutableListOf<String>()
 
         // Bedtime against how long the night lasted, split at the wearer's own median rather than
         // at some hour decided here: "late" only means late for them.
-        val bedtimes = proper.map { minutesPastNoon(it.startedAt) }.sorted()
+        val bedtimes = proper.map { minutesPastNoon(it.from) }.sorted()
         val median = bedtimes[bedtimes.size / 2]
-        val early = proper.filter { minutesPastNoon(it.startedAt) <= median }
-        val late = proper.filter { minutesPastNoon(it.startedAt) > median }
+        val early = proper.filter { minutesPastNoon(it.from) <= median }
+        val late = proper.filter { minutesPastNoon(it.from) > median }
         if (early.isNotEmpty() && late.isNotEmpty()) {
             val gap = early.sumOf { it.asleep } / early.size - late.sumOf { it.asleep } / late.size
             if (gap >= 20 * 60) {
@@ -205,7 +261,7 @@ object SleepInsight {
                 "A steadier one is the single change most likely to help."
         }
 
-        val wakings = proper.sumOf { night -> night.stages.count { it.code == Sleep.AWAKE } } / proper.size
+        val wakings = proper.sumOf { it.wakings } / proper.size
         if (wakings >= 2) found += "You wake about $wakings times a night on average."
 
         val short = proper.count { it.asleep < 6 * 3600 }

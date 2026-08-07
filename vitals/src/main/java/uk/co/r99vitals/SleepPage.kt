@@ -40,7 +40,6 @@ import java.util.Locale
  * not a number that goes up and down like a heart rate. A total of four hours deep says nothing
  * about whether it came in one block or in twenty broken minutes, and the shape is the point.
  */
-private val nightStamp = SimpleDateFormat("EEEE d MMMM", Locale.UK)
 private val nightClock = SimpleDateFormat("HH:mm", Locale.UK)
 
 /** Top to bottom, lightest sleep first, so the line falls as sleep deepens. */
@@ -55,9 +54,21 @@ private fun tint(code: Int) = when (code) {
 }
 
 @Composable
-fun SleepPage(recorded: List<Sleep.Night>, target: Int = SleepInsight.TARGET_ASLEEP) {
-    // The ring splits a broken night into two records; they are one night to the wearer.
-    val nights = SleepInsight.merge(recorded)
+fun SleepPage(
+    recorded: List<Sleep.Night>,
+    target: Int = SleepInsight.TARGET_ASLEEP,
+    dayOffset: Int = 0,
+    onDay: (Int) -> Unit = {}
+) {
+    // Sleep is grouped by the day it ended on, not by record: this ring hands one night back in
+    // several pieces, and an afternoon nap is sleep the same day too.
+    val days = SleepInsight.days(recorded)
+    val chosen = java.util.Calendar.getInstance().apply {
+        add(java.util.Calendar.DAY_OF_YEAR, dayOffset)
+        set(java.util.Calendar.HOUR_OF_DAY, 0); set(java.util.Calendar.MINUTE, 0)
+        set(java.util.Calendar.SECOND, 0); set(java.util.Calendar.MILLISECOND, 0)
+    }.timeInMillis
+    val today = days.firstOrNull { it.at.time == chosen }
     Column(
         Modifier
             .fillMaxSize()
@@ -71,104 +82,128 @@ fun SleepPage(recorded: List<Sleep.Night>, target: Int = SleepInsight.TARGET_ASL
             fontWeight = FontWeight.Bold, letterSpacing = 1.8.sp
         )
 
-        if (nights.isEmpty()) {
+        Spacer(Modifier.height(14.dp))
+        DayPicker(dayOffset, onDay)
+
+        if (days.isEmpty()) {
             Spacer(Modifier.height(16.dp))
+            Note(
+                "The ring works out its own sleep stages overnight and keeps them to itself. " +
+                    "Wear it to bed and they are collected the next time it is connected — not " +
+                    "while you are asleep."
+            )
+            return@Column
+        }
+
+        if (today == null) {
+            Spacer(Modifier.height(18.dp))
+            Text(
+                if (dayOffset == 0) "Nothing recorded yet today." else "Nothing recorded that day.",
+                color = Ink.muted, fontSize = 15.sp
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "The ring only files a session once it has ended, and it does not record every " +
+                    "hour spent in bed.",
+                color = Ink.muted.copy(alpha = 0.75f), fontSize = 12.sp, lineHeight = 17.sp
+            )
+        } else {
+            val (score, parts) = SleepInsight.score(today, target)
+            Spacer(Modifier.height(16.dp))
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text(Sleep.spell(today.asleep), color = Ink.text, fontSize = 56.sp, fontWeight = FontWeight.Light)
+                Spacer(Modifier.width(10.dp))
+                Text("asleep", color = Ink.muted, fontSize = 17.sp, modifier = Modifier.padding(bottom = 12.dp))
+            }
+            Text(
+                "${nightClock.format(Date(today.from))} – ${nightClock.format(Date(today.to))}" +
+                    if (today.sessions.size > 1) " · ${today.sessions.size} sessions" else "",
+                color = Ink.muted, fontSize = 14.sp
+            )
+
+            Spacer(Modifier.height(18.dp))
+            if (SleepInsight.isFragment(today)) {
+                Note(
+                    "Too short to score — the ring caught only part of this day's sleep, so it is " +
+                        "left out of your averages."
+                )
+            } else {
+                ScoreCard(score, parts)
+            }
+
+            Spacer(Modifier.height(14.dp))
             Card(
                 shape = RoundedCornerShape(24.dp),
                 colors = CardDefaults.cardColors(containerColor = Ink.card),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Column(Modifier.padding(20.dp)) {
-                    Text("No nights yet", color = Ink.text, fontSize = 19.sp)
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        "The ring works out its own sleep stages overnight and keeps them to " +
-                            "itself. Wear it to bed, then open this app while it is connected — " +
-                            "the night is collected then, not while you are asleep.",
-                        color = Ink.muted, fontSize = 13.sp, lineHeight = 19.sp
-                    )
+                Column(Modifier.padding(vertical = 20.dp, horizontal = 16.dp)) {
+                    Hypnogram(today.stages, today.from, today.to, Modifier.fillMaxWidth().height(132.dp))
+                    Spacer(Modifier.height(10.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text(nightClock.format(Date(today.from)), color = Ink.muted, fontSize = 11.sp)
+                        Text(nightClock.format(Date(today.to)), color = Ink.muted, fontSize = 11.sp)
+                    }
+                    Spacer(Modifier.height(16.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        LANES.reversed().forEach { code -> Portion(today, code) }
+                    }
                 }
             }
-            return@Column
-        }
 
-        val last = nights.last()
-        val (score, parts) = SleepInsight.score(last, target)
-        Spacer(Modifier.height(10.dp))
-        Text(whenItWas(last), color = Ink.muted, fontSize = 13.sp)
-        Spacer(Modifier.height(2.dp))
-        Row(verticalAlignment = Alignment.Bottom) {
-            Text(Sleep.spell(last.asleep), color = Ink.text, fontSize = 56.sp, fontWeight = FontWeight.Light)
-            Spacer(Modifier.width(10.dp))
-            Text("asleep", color = Ink.muted, fontSize = 17.sp, modifier = Modifier.padding(bottom = 12.dp))
-        }
-        Text(
-            "${nightClock.format(Date(last.startedAt))} – ${nightClock.format(Date(last.endedAt))}" +
-                " · ${Sleep.spell(last.inBed)} in bed",
-            color = Ink.muted, fontSize = 14.sp
-        )
-
-        Spacer(Modifier.height(18.dp))
-        if (SleepInsight.isFragment(last)) {
-            // Saying "Poor" about half an hour the ring happened to catch would be a judgement on
-            // sleep that was never recorded.
-            Note(
-                "Too short to score — the ring recorded only part of this night, so it is left " +
-                    "out of your averages."
-            )
-            Spacer(Modifier.height(14.dp))
-        } else {
-            ScoreCard(score, parts)
-            Spacer(Modifier.height(14.dp))
-        }
-        Card(
-            shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(containerColor = Ink.card),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(Modifier.padding(vertical = 20.dp, horizontal = 16.dp)) {
-                Hypnogram(last, Modifier.fillMaxWidth().height(132.dp))
-                Spacer(Modifier.height(10.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text(nightClock.format(Date(last.startedAt)), color = Ink.muted, fontSize = 11.sp)
-                    Text(nightClock.format(Date(last.endedAt)), color = Ink.muted, fontSize = 11.sp)
-                }
-                Spacer(Modifier.height(16.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    LANES.reversed().forEach { code -> Portion(last, code) }
+            // The pieces themselves, because a night in four records is worth seeing as four —
+            // it is the difference between sleeping badly and the ring losing the thread.
+            if (today.sessions.size > 1) {
+                Spacer(Modifier.height(14.dp))
+                Card(
+                    shape = RoundedCornerShape(24.dp),
+                    colors = CardDefaults.cardColors(containerColor = Ink.card),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(Modifier.padding(20.dp)) {
+                        Text(
+                            "RECORDED IN ${today.sessions.size} PIECES", color = Ink.muted, fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        today.sessions.forEach { session ->
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text(
+                                    "${nightClock.format(Date(session.startedAt))} – " +
+                                        nightClock.format(Date(session.endedAt)),
+                                    color = Ink.text, fontSize = 14.sp
+                                )
+                                Text(Sleep.spell(session.asleep), color = Ink.muted, fontSize = 14.sp)
+                            }
+                            Spacer(Modifier.height(6.dp))
+                        }
+                        Text(
+                            "The ring stops and restarts its own sleep tracking, so one night " +
+                                "arrives in pieces. They are added together above.",
+                            color = Ink.muted.copy(alpha = 0.75f), fontSize = 12.sp, lineHeight = 17.sp
+                        )
+                    }
                 }
             }
         }
 
         Spacer(Modifier.height(22.dp))
-        WeekCard(nights)
+        WeekCard(recorded)
 
         Spacer(Modifier.height(14.dp))
-        MonthCard(nights, target)
+        MonthCard(recorded, target)
 
         Spacer(Modifier.height(14.dp))
-        TipsCard(nights)
-
-        if (nights.size > 1) {
-            Spacer(Modifier.height(22.dp))
-            Text(
-                "EARLIER", color = Ink.muted, fontSize = 11.sp,
-                fontWeight = FontWeight.Bold, letterSpacing = 1.6.sp
-            )
-            Spacer(Modifier.height(12.dp))
-            nights.dropLast(1).asReversed().take(25).forEach { night ->
-                EarlierNight(night)
-                Spacer(Modifier.height(10.dp))
-            }
-        }
+        TipsCard(recorded)
     }
 }
 
-/** One stage's share of the night, named and timed, under the colour it is drawn in. */
+/** A plain statement in a card, for the times there is nothing to draw. */
+/** One stage's share of the day's sleep, named and timed, under the colour it is drawn in. */
 @Composable
-private fun Portion(night: Sleep.Night, code: Int) {
-    val seconds = night.seconds(code)
-    val share = if (night.inBed > 0) seconds * 100 / night.inBed else 0
+private fun Portion(day: SleepInsight.Day, code: Int) {
+    val seconds = day.seconds(code)
+    val share = if (day.asleep > 0) seconds * 100 / day.asleep else 0
     val colour = tint(code)
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -183,34 +218,37 @@ private fun Portion(night: Sleep.Night, code: Int) {
 }
 
 /**
- * The night as a shape: one lane per stage, each block as wide as the time it lasted.
+ * The sleep as a shape: one lane per stage, each block as wide as the time it lasted.
  *
- * Gaps are left as gaps. The ring sometimes stages a night with a minute missing between two
- * entries, and drawing a continuous line across it would invent sleep it never recorded.
+ * Drawn from [from] to [to] across all of the day's sessions, so the hours the ring recorded
+ * nothing are visible as the holes they are. Filling them in would invent sleep.
  */
 @Composable
-private fun Hypnogram(night: Sleep.Night, modifier: Modifier = Modifier) {
+private fun Hypnogram(
+    stages: List<Sleep.Stage>,
+    from: Long,
+    to: Long,
+    modifier: Modifier = Modifier
+) {
     val colours = LANES.map { it to tint(it) }
-    val span = (night.endedAt - night.startedAt).toFloat().coerceAtLeast(1f)
+    val span = (to - from).toFloat().coerceAtLeast(1f)
     Canvas(modifier) {
         val laneHeight = size.height / LANES.size
         val barHeight = laneHeight * 0.62f
         colours.forEachIndexed { lane, (code, colour) ->
             val top = lane * laneHeight + (laneHeight - barHeight) / 2f
-            // The lane's own faint rule, so an empty stage still reads as a stage with nothing in
-            // it rather than as blank card.
             drawRoundRect(
                 color = colour.copy(alpha = 0.10f),
                 topLeft = Offset(0f, top + barHeight / 2f - 0.75f),
                 size = Size(size.width, 1.5f),
                 cornerRadius = CornerRadius(1f, 1f)
             )
-            night.stages.filter { it.code == code }.forEach { stage ->
-                val from = ((stage.startedAt - night.startedAt) / span) * size.width
+            stages.filter { it.code == code }.forEach { stage ->
+                val left = ((stage.startedAt - from) / span) * size.width
                 val width = ((stage.seconds * 1000f) / span) * size.width
                 drawRoundRect(
                     color = colour,
-                    topLeft = Offset(from, top),
+                    topLeft = Offset(left, top),
                     size = Size(width.coerceAtLeast(2f), barHeight),
                     cornerRadius = CornerRadius(barHeight / 3f, barHeight / 3f)
                 )
@@ -219,42 +257,6 @@ private fun Hypnogram(night: Sleep.Night, modifier: Modifier = Modifier) {
     }
 }
 
-/** A finished night, small: the date, the total, and the shape it had. */
-@Composable
-private fun EarlierNight(night: Sleep.Night) {
-    Card(
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = Ink.card),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(Modifier.padding(18.dp)) {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                // The morning it ended, which is the day the rest of the page files it under.
-                Text(nightStamp.format(SleepInsight.day(night)), color = Ink.text, fontSize = 16.sp)
-                Text(Sleep.spell(night.asleep), color = Ink.text, fontSize = 16.sp)
-            }
-            Spacer(Modifier.height(2.dp))
-            Text(
-                "${nightClock.format(Date(night.startedAt))} – " +
-                    "${nightClock.format(Date(night.endedAt))} · " +
-                    "deep ${Sleep.spell(night.seconds(Sleep.DEEP))} · " +
-                    "REM ${Sleep.spell(night.seconds(Sleep.REM))}",
-                color = Ink.muted, fontSize = 12.sp
-            )
-            Spacer(Modifier.height(12.dp))
-            Hypnogram(night, Modifier.fillMaxWidth().height(56.dp))
-        }
-    }
-}
-
-/** "Last night" while it still is one; after that the day it was. */
-private fun whenItWas(night: Sleep.Night): String {
-    val ago = System.currentTimeMillis() - night.endedAt
-    return if (ago < 30 * 60 * 60 * 1000L) "Last night" else nightStamp.format(SleepInsight.day(night))
-}
-
-
-/** A plain statement in a card, for the times there is nothing to draw. */
 @Composable
 private fun Note(text: String) {
     Card(
@@ -324,7 +326,7 @@ private fun WeekCard(nights: List<Sleep.Night>) {
     val week = SleepInsight.week(nights)
     // Fragments are drawn — they happened — but kept out of the average, as they are out of the
     // month's. An average that counted half an hour the ring caught would be a lie about the week.
-    val slept = week.mapNotNull { day -> day.night?.takeUnless { SleepInsight.isFragment(it) }?.asleep }
+    val slept = week.mapNotNull { slot -> slot.day?.takeUnless { SleepInsight.isFragment(it) }?.asleep }
     val deep = tint(Sleep.DEEP)
     val light = tint(Sleep.LIGHT)
     val rem = tint(Sleep.REM)
@@ -352,9 +354,9 @@ private fun WeekCard(nights: List<Sleep.Night>) {
             Canvas(Modifier.fillMaxWidth().height(120.dp)) {
                 val slot = size.width / 7f
                 val barWidth = slot * 0.52f
-                week.forEachIndexed { index, day ->
+                week.forEachIndexed { index, entry ->
                     val left = index * slot + (slot - barWidth) / 2f
-                    val night = day.night
+                    val night = entry.day
                     if (night == null) {
                         // An empty day is drawn as an empty day. Skipping it would let a gap read
                         // as a week of solid sleep.
@@ -390,10 +392,10 @@ private fun WeekCard(nights: List<Sleep.Night>) {
             }
             Spacer(Modifier.height(8.dp))
             Row(Modifier.fillMaxWidth()) {
-                week.forEach { day ->
+                week.forEach { slot ->
                     Text(
-                        weekdayLetter.format(day.at),
-                        color = if (day.night == null) Ink.muted.copy(alpha = 0.5f) else Ink.muted,
+                        weekdayLetter.format(slot.at),
+                        color = if (slot.day == null) Ink.muted.copy(alpha = 0.5f) else Ink.muted,
                         fontSize = 11.sp,
                         textAlign = TextAlign.Center,
                         modifier = Modifier.weight(1f)
@@ -401,9 +403,9 @@ private fun WeekCard(nights: List<Sleep.Night>) {
                 }
             }
             Spacer(Modifier.height(10.dp))
-            val fragments = week.count { it.night != null && SleepInsight.isFragment(it.night) }
+            val fragments = week.count { it.day != null && SleepInsight.isFragment(it.day) }
             Text(
-                "${week.count { it.night != null }} of 7 nights recorded" +
+                "${week.count { it.day != null }} of 7 nights recorded" +
                     if (fragments > 0) " · $fragments too short to count" else "",
                 color = Ink.muted, fontSize = 12.sp
             )
@@ -454,13 +456,13 @@ private fun MonthCard(nights: List<Sleep.Night>, target: Int) {
 }
 
 @Composable
-private fun StandoutRow(label: String, night: Sleep.Night, target: Int, accent: androidx.compose.ui.graphics.Color) {
+private fun StandoutRow(label: String, day: SleepInsight.Day, target: Int, accent: androidx.compose.ui.graphics.Color) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text(label, color = accent, fontSize = 13.sp, modifier = Modifier.width(56.dp))
-        Text(shortDay.format(SleepInsight.day(night)), color = Ink.text, fontSize = 13.sp)
+        Text(shortDay.format(day.at), color = Ink.text, fontSize = 13.sp)
         Spacer(Modifier.weight(1f))
         Text(
-            "${Sleep.spell(night.asleep)} · ${SleepInsight.score(night, target).first}",
+            "${Sleep.spell(day.asleep)} · ${SleepInsight.score(day, target).first}",
             color = Ink.muted, fontSize = 13.sp
         )
     }
@@ -493,7 +495,7 @@ private fun TipsCard(nights: List<Sleep.Night>) {
                 Spacer(Modifier.height(8.dp))
             }
             if (found.isEmpty()) {
-                val proper = SleepInsight.merge(nights).count { !SleepInsight.isFragment(it) }
+                val proper = SleepInsight.days(nights).count { !SleepInsight.isFragment(it) }
                 Spacer(Modifier.height(4.dp))
                 Text(
                     "$proper of the ${SleepInsight.ENOUGH} nights needed before this can say " +

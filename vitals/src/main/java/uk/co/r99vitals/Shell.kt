@@ -92,7 +92,7 @@ fun Shell(
             when (tab) {
                 Tab.Today -> VitalsScreen(state, onMeasure, onSettings, onLink)
                 Tab.Workout -> WorkoutPage(state, onStartWorkout, onStopWorkout)
-                Tab.Sleep -> SleepPage(state.nights, sleepTarget)
+                Tab.Sleep -> SleepPage(state.nights, sleepTarget, dayOffset, onDay)
                 else -> VitalPage(
                     day = dayFor(tab),
                     dayOffset = dayOffset,

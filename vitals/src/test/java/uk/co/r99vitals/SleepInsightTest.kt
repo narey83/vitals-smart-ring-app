@@ -94,7 +94,7 @@ class SleepInsightTest {
     @Test fun `the week keeps a slot for every day including the empty ones`() {
         val week = SleepInsight.week(listOf(goodNight(5), goodNight(3)), onDay(6))
         assertEquals(7, week.size)
-        assertEquals(2, week.count { it.night != null })
+        assertEquals(2, week.count { it.day != null })
         assertEquals(onDay(6).date, week.last().at.date)
     }
 
@@ -104,12 +104,12 @@ class SleepInsightTest {
         assertTrue(SleepInsight.isFragment(scrap))
         assertEquals(goodNight(5).asleep, month.average)
         assertEquals(2, month.recorded)
-        assertEquals(at(4, 23), month.best?.startedAt)
+        assertEquals(at(4, 23), month.best?.from)
     }
 
     @Test fun `one good night is a best and not also a worst`() {
         val month = SleepInsight.month(listOf(goodNight(5)), onDay(6))
-        assertEquals(at(4, 23), month.best?.startedAt)
+        assertEquals(at(4, 23), month.best?.from)
         assertEquals(null, month.worst)
     }
 
@@ -145,6 +145,39 @@ class SleepInsightTest {
         val merged = SleepInsight.merge(listOf(once, once)).single()
         assertEquals(once.asleep, merged.asleep)
         assertEquals(once.stages.size, merged.stages.size)
+    }
+
+    /**
+     * The one that started all this: a real night came off the ring in four records, hours apart,
+     * and the page showed the last of them as the whole night.
+     */
+    @Test fun `a night the ring recorded in four pieces is one day's sleep`() {
+        val pieces = listOf(
+            night(at(6, 21, 1), Sleep.LIGHT to 119, Sleep.DEEP to 53, Sleep.REM to 28),
+            night(at(7, 0, 24), Sleep.LIGHT to 27, Sleep.DEEP to 5, Sleep.REM to 6),
+            night(at(7, 1, 15), Sleep.LIGHT to 44, Sleep.DEEP to 15, Sleep.REM to 10),
+            // Three and a half hours after the previous piece ended: awake, or the ring losing
+            // the thread. Either way it is the same night's sleep.
+            night(at(7, 5, 54), Sleep.LIGHT to 48, Sleep.DEEP to 29, Sleep.REM to 21, Sleep.AWAKE to 1)
+        )
+        val days = SleepInsight.days(pieces)
+        assertEquals("all four belong to the one day", 1, days.size)
+        val friday = days.single()
+        assertEquals(onDay(7).date, friday.at.date)
+        assertEquals(6 * 3600 + 45 * 60, friday.asleep)
+        assertEquals(at(6, 21, 1), friday.from)
+        // Every break between pieces counts against the night, as does the ring's own waking.
+        assertTrue("expected the breaks to count as wakings", friday.wakings >= 3)
+    }
+
+    @Test fun `an afternoon nap belongs to the same day as that morning's sleep`() {
+        val morning = night(at(7, 1), Sleep.LIGHT to 240, Sleep.DEEP to 60, Sleep.REM to 60)
+        val nap = night(at(7, 15), Sleep.LIGHT to 40, Sleep.DEEP to 10)
+        val day = SleepInsight.days(listOf(morning, nap)).single()
+        assertEquals(2, day.sessions.size)
+        assertEquals(6 * 3600 + 50 * 60, day.asleep)
+        // Time in bed is the sessions added up, not the span: the afternoon between is not bed.
+        assertEquals(day.sessions.sumOf { it.inBed }, day.inBed)
     }
 
     @Test fun `there is always something to show when there is nothing to say`() {

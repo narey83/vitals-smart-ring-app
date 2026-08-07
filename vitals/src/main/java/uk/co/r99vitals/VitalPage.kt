@@ -276,7 +276,7 @@ private fun ReadingRow(row: Reading, accent: Color) {
 }
 
 @Composable
-private fun DayPicker(offset: Int, onDay: (Int) -> Unit) {
+internal fun DayPicker(offset: Int, onDay: (Int) -> Unit) {
     val when_ = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, offset) }
     Row(
         Modifier.fillMaxWidth(),
