@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -31,6 +32,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.Bedtime
 import androidx.compose.material.icons.rounded.Bloodtype
 import androidx.compose.material.icons.rounded.Battery1Bar
 import androidx.compose.material.icons.rounded.BatteryChargingFull
@@ -41,8 +43,6 @@ import androidx.compose.material.icons.rounded.DirectionsWalk
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.MonitorHeart
 import androidx.compose.material.icons.rounded.Settings
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -161,10 +161,14 @@ data class VitalsState(
 @Composable
 fun VitalsScreen(
     state: VitalsState,
-    onMeasure: (Int) -> Unit,
     onSettings: () -> Unit,
-    onLink: () -> Unit
+    onLink: () -> Unit,
+    sleepTarget: Int = SleepInsight.TARGET_ASLEEP
 ) {
+    // Sleep is grouped by the day it ended on and can arrive in several pieces, same as the
+    // Sleep tab itself; the most recent one is whichever of those day-groups is newest, not
+    // necessarily last night if nothing has synced yet today.
+    val recentSleep = SleepInsight.days(state.nights).maxByOrNull { it.at.time }
     Column(
         Modifier
             .fillMaxSize()
@@ -181,29 +185,34 @@ fun VitalsScreen(
         Spacer(Modifier.height(22.dp))
         HeartCard(state)
         Spacer(Modifier.height(12.dp))
-        Row(Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
             SmallCard(
                 "BLOOD OXYGEN", state.oxygen?.let { "$it%" }, Ink.oxygen,
-                Modifier.weight(1f), icon = Icons.Rounded.Bloodtype
+                Modifier.weight(1f).fillMaxHeight(), icon = Icons.Rounded.Bloodtype
             )
             Spacer(Modifier.width(12.dp))
             SmallCard(
                 "PRESSURE",
                 state.systolic?.let { "$it/${state.diastolic}" }, Ink.pressure,
-                Modifier.weight(1f), footnote = "estimated", icon = Icons.Rounded.MonitorHeart
+                Modifier.weight(1f).fillMaxHeight(), footnote = "estimated", icon = Icons.Rounded.MonitorHeart
             )
         }
         Spacer(Modifier.height(12.dp))
-        MovementCard(state)
-        Spacer(Modifier.height(20.dp))
-        Row(Modifier.fillMaxWidth()) {
-            Pill("Heart", Ink.heart, state.measuring == null, Modifier.weight(1f), Icons.Rounded.Favorite) { onMeasure(Ring.HEART) }
-            Spacer(Modifier.width(10.dp))
-            Pill("SpO₂", Ink.oxygen, state.measuring == null, Modifier.weight(1f), Icons.Rounded.Bloodtype) { onMeasure(Ring.OXYGEN) }
-            Spacer(Modifier.width(10.dp))
-            Pill("BP", Ink.pressure, state.measuring == null, Modifier.weight(1f), Icons.Rounded.MonitorHeart) { onMeasure(Ring.PRESSURE) }
+        Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
+            MovementCard(state, Modifier.weight(1f).fillMaxHeight())
+            // A fragment (a nap, a doze the ring barely caught) is not scored anywhere else
+            // either, so it is left out here too rather than showing a number nobody would
+            // stand behind. Movement then simply takes the full row on its own.
+            recentSleep?.takeUnless { SleepInsight.isFragment(it) }?.let { night ->
+                Spacer(Modifier.width(12.dp))
+                val (score, _) = SleepInsight.score(night, sleepTarget)
+                SmallCard(
+                    "SLEEP", score.toString(), Ink.sleep, Modifier.weight(1f).fillMaxHeight(),
+                    footnote = SleepInsight.verdict(score), icon = Icons.Rounded.Bedtime
+                )
+            }
         }
-        Spacer(Modifier.height(10.dp))
+        Spacer(Modifier.height(12.dp))
         // Settings is the gear in the header now. What is worth saying here is only what the
         // ring is currently doing, which is a fact rather than a button.
         Text(
@@ -488,11 +497,11 @@ private fun SmallCard(
 }
 
 @Composable
-private fun MovementCard(state: VitalsState) {
+private fun MovementCard(state: VitalsState, modifier: Modifier = Modifier.fillMaxWidth()) {
     Card(
         shape = RoundedCornerShape(26.dp),
         colors = CardDefaults.cardColors(containerColor = Ink.card),
-        modifier = Modifier.fillMaxWidth()
+        modifier = modifier
     ) {
         Column(Modifier.padding(22.dp)) {
             Label("MOVEMENT", Ink.motion, Icons.Rounded.DirectionsWalk)
@@ -546,34 +555,6 @@ private fun Label(text: String, accent: Color, icon: ImageVector? = null) {
     }
 }
 
-@Composable
-private fun Pill(
-    text: String,
-    accent: Color,
-    enabled: Boolean,
-    modifier: Modifier,
-    icon: ImageVector? = null,
-    onClick: () -> Unit
-) {
-    Button(
-        onClick = onClick,
-        enabled = enabled,
-        shape = CircleShape,
-        colors = ButtonDefaults.buttonColors(
-            containerColor = accent,
-            contentColor = Ink.canvas,
-            disabledContainerColor = accent.copy(alpha = 0.3f),
-            disabledContentColor = Ink.canvas.copy(alpha = 0.6f)
-        ),
-        modifier = modifier.height(54.dp)
-    ) {
-        icon?.let {
-            Icon(it, contentDescription = null, modifier = Modifier.size(17.dp))
-            Spacer(Modifier.width(6.dp))
-        }
-        Text(text, fontSize = 15.sp, fontWeight = FontWeight.Medium)
-    }
-}
 
 @Composable
 private fun Quiet(text: String, onClick: () -> Unit) {

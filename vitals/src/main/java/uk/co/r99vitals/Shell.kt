@@ -90,7 +90,7 @@ fun Shell(
         // windowInsetsPadding on top counted the status bar twice and left a dead band.
         Column(Modifier.fillMaxSize().padding(padding)) {
             when (tab) {
-                Tab.Today -> VitalsScreen(state, onMeasure, onSettings, onLink)
+                Tab.Today -> VitalsScreen(state, onSettings, onLink, sleepTarget)
                 Tab.Workout -> WorkoutPage(state, onStartWorkout, onStopWorkout)
                 Tab.Sleep -> SleepPage(state.nights, sleepTarget, dayOffset, onDay)
                 else -> VitalPage(
