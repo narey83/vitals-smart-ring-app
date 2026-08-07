@@ -19,6 +19,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ChevronLeft
 import androidx.compose.material.icons.rounded.ChevronRight
+import androidx.compose.material.icons.rounded.ExpandLess
+import androidx.compose.material.icons.rounded.ExpandMore
 import androidx.compose.material.icons.rounded.Timer
 import androidx.compose.material.icons.rounded.TouchApp
 import androidx.compose.material3.Button
@@ -28,6 +30,10 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -221,13 +227,30 @@ fun VitalPage(
 
         if (day.rows.isNotEmpty()) {
             Spacer(Modifier.height(26.dp))
-            Text(
-                "READINGS", color = Ink.muted, fontSize = 11.sp,
-                fontWeight = FontWeight.Bold, letterSpacing = 1.6.sp
-            )
-            Spacer(Modifier.height(4.dp))
-            // Newest first: the recent ones are the ones being looked for.
-            day.rows.asReversed().forEach { ReadingRow(it, day.accent) }
+            // Shut to begin with, and shut again when the day changes. A day of automatic
+            // readings is dozens of rows, and the chart above already says what they say — the
+            // list is for looking something up, not for scrolling past every time.
+            var open by remember(day.title, dayOffset) { mutableStateOf(false) }
+            Row(
+                Modifier.fillMaxWidth().clickableNoRippleShared { open = !open },
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    "READINGS · ${day.rows.size}", color = Ink.muted, fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold, letterSpacing = 1.6.sp
+                )
+                Icon(
+                    if (open) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                    if (open) "Hide the readings" else "Show all ${day.rows.size} readings",
+                    tint = Ink.muted, modifier = Modifier.size(20.dp)
+                )
+            }
+            if (open) {
+                Spacer(Modifier.height(4.dp))
+                // Newest first: the recent ones are the ones being looked for.
+                day.rows.asReversed().forEach { ReadingRow(it, day.accent) }
+            }
         }
     }
 }
