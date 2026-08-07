@@ -757,7 +757,16 @@ class VitalsActivity : AppCompatActivity() {
     private fun show(characteristic: BluetoothGattCharacteristic, value: ByteArray) {
         if (characteristic.uuid == Ring.ACTIVITY) {
             Ring.readActivity(value)?.let {
-                ui = ui.copy(steps = it.steps, distance = it.distance, calories = it.calories)
+                // This is a bare live mirror of the ring's counter, so it is just as liable as
+                // History to catch the ring's stale, not-yet-reset total right after midnight.
+                // History already tracks whether that reset has happened; ask it rather than
+                // trusting the raw push as today's count.
+                val last = history.latest("steps")
+                val stillYesterday = last != null && it.steps >= last.value &&
+                    !History.sameDay(last.at.time, System.currentTimeMillis())
+                if (!stillYesterday) {
+                    ui = ui.copy(steps = it.steps, distance = it.distance, calories = it.calories)
+                }
             }
             return
         }

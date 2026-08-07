@@ -3,6 +3,7 @@ package uk.co.r99vitals
 import android.content.Context
 import java.io.File
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
@@ -36,9 +37,18 @@ class History(private val file: File) {
         val manual: Boolean = false
     )
 
-    private companion object {
+    companion object {
         /** Readings closer together than this belong to the same measurement. */
-        const val BURST = 90_000L
+        private const val BURST = 90_000L
+
+        /** Whether two moments fall on the same calendar day, in the device's own timezone. */
+        fun sameDay(a: Long, b: Long): Boolean {
+            val cal = Calendar.getInstance()
+            cal.timeInMillis = a
+            val y = cal.get(Calendar.YEAR); val d = cal.get(Calendar.DAY_OF_YEAR)
+            cal.timeInMillis = b
+            return y == cal.get(Calendar.YEAR) && d == cal.get(Calendar.DAY_OF_YEAR)
+        }
 
         /**
          * Held across the whole process while the file is rewritten.
@@ -52,7 +62,7 @@ class History(private val file: File) {
          *
          * The lock lives on the companion because the two writers are separate instances.
          */
-        val writing = Any()
+        private val writing = Any()
     }
 
     /**
@@ -73,12 +83,21 @@ class History(private val file: File) {
                 // interleaves activity frames between readings, so two heart readings are never
                 // adjacent and comparing against the previous line would never match.
                 val previous = lines.indexOfLast { it.split(",").getOrNull(1) == kind }
+                val previousLine = lines.getOrNull(previous)?.split(",")
+                val previousAt = previousLine?.get(0)?.toLongOrNull() ?: 0L
                 // A row dated in the future is never the burst this reading belongs to. The ring
                 // stamps its stored records from a clock that can be stopped or plainly wrong,
                 // and one backfilled row an hour ahead would otherwise swallow every reading
                 // taken until the clock caught up, each one replacing the last.
-                val since = now - (lines.getOrNull(previous)?.split(",")?.get(0)?.toLongOrNull() ?: 0L)
-                val within = previous >= 0 && since in 0 until burst
+                val since = now - previousAt
+                // Steps are a running total that resets at midnight on the ring's own clock, not
+                // the phone's — the two don't tick over at the same instant. A push that lands
+                // just after the phone's midnight but hasn't actually dropped in value is still
+                // yesterday's count arriving late, and belongs with yesterday, not inflating a
+                // fresh row for today.
+                val stillYesterday = kind == "steps" && previousLine != null &&
+                    (previousLine.getOrNull(2)?.toIntOrNull() ?: 0) <= value && !sameDay(previousAt, now)
+                val within = previous >= 0 && (since in 0 until burst || stillYesterday)
                 // Keep the burst's original timestamp when replacing. Updating it to now would slide
                 // the window forward with every reading, so a continuous stream would collapse into a
                 // single row that is rewritten for ever and never allowed to start a new one.
