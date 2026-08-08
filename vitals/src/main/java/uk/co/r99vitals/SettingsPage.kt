@@ -319,9 +319,10 @@ fun SettingsPage(
                 "whether readings actually arrive."
         )
 
-        // Deliberately no "set the ring's clock" action here. Writing the clock wipes the
-        // ring's stored records, and the ring sets its own clock at midnight anyway, so the
-        // button would only ever cost you a day's history.
+        // Deliberately no manual "set the ring's clock" action here: VitalsActivity and
+        // CollectorService already self-heal a stopped clock on every connection — see
+        // Ring.clockLooksStopped — so a button would only ever fire on ordinary drift a
+        // person cannot usefully judge, at the cost of a day's steps for no reason.
         Panel {
             Action("Forget this ring and pick another") { onRepair() }
         }

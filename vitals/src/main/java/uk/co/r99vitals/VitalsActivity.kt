@@ -108,6 +108,9 @@ class VitalsActivity : AppCompatActivity() {
     /** Set while a measurement the wearer tapped for is running, so its readings are marked. */
     private var userAsked = false
 
+    /** At most one clock-resync attempt per connection — see resyncClockIfStopped. */
+    private var clockSyncedThisConnect = false
+
     /**
      * Debug-only control over adb, so the app can be driven without tapping:
      *
@@ -464,6 +467,18 @@ class VitalsActivity : AppCompatActivity() {
 
     private fun finish(which: Int) { if (which == step) runNext() }
     private fun done() { handler.post { finish(step) } }
+
+    /**
+     * Self-heals a stopped or un-reset ring clock using timestamps already arriving on the
+     * connections every open of this app makes — no extra command needed, since the ring has
+     * no "what time is it" query to ask instead (see PROTOCOL.md). Once per connection: firing
+     * again on the next kind of record to arrive would needlessly cost another day of steps.
+     */
+    private fun resyncClockIfStopped(ringTimestamps: List<Long>) {
+        if (clockSyncedThisConnect || !Ring.clockLooksStopped(ringTimestamps)) return
+        clockSyncedThisConnect = true
+        enqueue { write(Ring.setClock()) }
+    }
 
     @SuppressLint("MissingPermission")
     private fun write(bytes: ByteArray): Boolean {
@@ -850,6 +865,7 @@ class VitalsActivity : AppCompatActivity() {
                     return@runOnUiThread
                 }
                 verifying = false
+                clockSyncedThisConnect = false
                 // The name it actually answers to, rather than a placeholder — read once, here,
                 // because this is the one moment already gated on the ring having proved itself.
                 ringName = runCatching { gatt.device.name }.getOrNull()
@@ -868,9 +884,11 @@ class VitalsActivity : AppCompatActivity() {
                 // listens. The ring holds several nights, so opening the app every few days is
                 // enough; give the collector a command channel if that stops being true.
                 enqueue { write(Ring.storedSleep()) }
-                // The clock is deliberately left alone: writing it makes the ring abandon a
+                // The clock itself is left alone here: writing it makes the ring abandon a
                 // running sleep session, which its own log reports as "exit sleep because time
-                // change". Sleep data matters more than a few seconds of drift.
+                // change". resyncClockIfStopped only fires once the ring's own timestamps prove
+                // the clock is stuck, not on ordinary drift, so a real sleep session is never at
+                // risk — see PROTOCOL.md's "The ring's clock stops".
                 Ring.automaticMonitoring(chosenMonitors(), if (interval > 0) interval else 15)
                     .forEach { frame -> enqueue { write(frame) } }
                 enqueue { ui = ui.copy(link = greeting()); false }
@@ -923,6 +941,7 @@ class VitalsActivity : AppCompatActivity() {
         sleepReader.accept(value).takeIf { it.isNotEmpty() }?.let { fresh ->
             nights.save(fresh)
             ui = ui.copy(nights = nights.all())
+            resyncClockIfStopped(fresh.map { it.startedAt })
             return
         }
         // The stored records, arriving in reply to the history queries sent on connecting. Each
@@ -933,6 +952,7 @@ class VitalsActivity : AppCompatActivity() {
             "pressure" to Ring.readStoredPressure(value)
         ).firstOrNull { it.second.isNotEmpty() }?.let { (kind, readings) ->
             history.backfill(kind, readings)
+            resyncClockIfStopped(readings.map { it.first })
             return
         }
         when (val reading = Ring.read(value)) {

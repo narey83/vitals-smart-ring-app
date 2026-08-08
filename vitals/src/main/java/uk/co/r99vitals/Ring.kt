@@ -126,9 +126,47 @@ object Ring {
         )
     )
 
-    // No setClock here on purpose. Writing the ring's clock erases its stored records, and the
-    // ring sets its own at midnight, so a vitals app can only lose data by sending it. The
-    // command itself is documented in PROTOCOL.md and exposed, marked risky, by the debugger.
+    /**
+     * SettingTime. Costs only the day's step count — the ring zeroes that at midnight anyway —
+     * and leaves stored records alone; see PROTOCOL.md's "Setting the clock does not erase the
+     * readings", which corrected an earlier, wrong belief that this command was destructive.
+     *
+     * Sent in UTC: the ring keeps UTC internally regardless of the wearer's time zone — see
+     * PROTOCOL.md's "Send UTC, not local time".
+     *
+     * Not called routinely — only once [clockLooksStopped] says the ring's own timestamps have
+     * drifted for real, not for the few seconds of normal radio-and-scheduling slop.
+     */
+    fun setClock(): ByteArray {
+        val now = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"))
+        val year = now.get(java.util.Calendar.YEAR)
+        return frame(
+            0x01, 0x00,
+            byteArrayOf(
+                year.toByte(), (year shr 8).toByte(),
+                (now.get(java.util.Calendar.MONTH) + 1).toByte(),
+                now.get(java.util.Calendar.DAY_OF_MONTH).toByte(),
+                now.get(java.util.Calendar.HOUR_OF_DAY).toByte(),
+                now.get(java.util.Calendar.MINUTE).toByte(),
+                now.get(java.util.Calendar.SECOND).toByte(),
+                0x00
+            )
+        )
+    }
+
+    /**
+     * A ring timestamp this far from the phone's own clock means the RTC has stopped or was
+     * left at its post-factory-reset default of 2020-01-01 — see PROTOCOL.md's "The ring's
+     * clock stops, and every later record inherits the stopped time". A day's slack means
+     * ordinary drift, a genuinely slow radio link, or a night that simply ran past midnight
+     * never trips this by accident.
+     */
+    fun clockLooksStopped(ringTimestamps: List<Long>): Boolean {
+        val newest = ringTimestamps.maxOrNull() ?: return false
+        return kotlin.math.abs(System.currentTimeMillis() - newest) > CLOCK_STALE_THRESHOLD
+    }
+
+    private const val CLOCK_STALE_THRESHOLD = 24 * 60 * 60 * 1000L
 
     /**
      * settingSkin: one byte, the vendor's own six-level scale, lightest to darkest — see

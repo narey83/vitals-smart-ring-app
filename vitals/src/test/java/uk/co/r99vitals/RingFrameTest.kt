@@ -139,4 +139,31 @@ class RingFrameTest {
         assertEquals(emptyList<Triple<Long, Int, Int>>(), Ring.readStoredOxygen(pressure))
         assertEquals(1, Ring.readStoredPressure(pressure).size)
     }
+
+    /** SettingTime, and the UTC moment it carries — see PROTOCOL.md's "Send UTC, not local time". */
+    @Test fun `setClock frames as SettingTime with the current UTC moment`() {
+        val now = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC"))
+        val frame = Ring.setClock()
+        assertEquals(0x01, frame[0].toInt() and 0xFF)
+        assertEquals(0x00, frame[1].toInt() and 0xFF)
+        val payload = frame.copyOfRange(4, frame.size - 2)
+        val year = (payload[0].toInt() and 0xFF) or ((payload[1].toInt() and 0xFF) shl 8)
+        assertEquals(now.get(java.util.Calendar.YEAR), year)
+        assertEquals(now.get(java.util.Calendar.MONTH) + 1, payload[2].toInt() and 0xFF)
+        assertEquals(now.get(java.util.Calendar.DAY_OF_MONTH), payload[3].toInt() and 0xFF)
+    }
+
+    /** A few minutes either side is normal radio-and-scheduling slop, not a stopped clock. */
+    @Test fun `clockLooksStopped ignores ordinary drift`() {
+        assertEquals(false, Ring.clockLooksStopped(listOf(System.currentTimeMillis() - 60_000)))
+    }
+
+    /** This is the actual failure mode: a factory reset left the RTC days behind reality. */
+    @Test fun `clockLooksStopped catches a ring stuck days behind the phone`() {
+        assertEquals(true, Ring.clockLooksStopped(listOf(System.currentTimeMillis() - 2 * 24 * 60 * 60 * 1000L)))
+    }
+
+    @Test fun `clockLooksStopped has nothing to judge with no timestamps`() {
+        assertEquals(false, Ring.clockLooksStopped(emptyList()))
+    }
 }

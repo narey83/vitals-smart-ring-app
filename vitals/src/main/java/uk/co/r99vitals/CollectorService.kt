@@ -61,6 +61,9 @@ class CollectorService : Service() {
     /** The last heart rate written down, so a value merely being repeated is not a measurement. */
     private var lastHeart = 0
 
+    /** At most one clock-resync attempt per connection — see resyncClockIfStopped. */
+    private var clockSyncedThisConnect = false
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
@@ -212,6 +215,7 @@ class CollectorService : Service() {
             // The room has to be asked for first: the default 20-byte payload is far smaller than
             // a night, and without this the ring answers with a count and the record never comes.
             sleepReader = SleepReader()
+            clockSyncedThisConnect = false
             handler.postDelayed({ requestRoomForANight(gatt) }, notifying.size * 350L + 500L)
         }
 
@@ -238,11 +242,27 @@ class CollectorService : Service() {
     }
 
     @SuppressLint("MissingPermission")
-    private fun askForNights(gatt: BluetoothGatt) {
+    private fun askForNights(gatt: BluetoothGatt) = writeCommand(gatt, Ring.storedSleep())
+
+    /**
+     * Self-heals a stopped or un-reset ring clock, using the sleep timestamps this service
+     * already asks for on every connection — this is the collector's only source of ring-side
+     * timestamps, since it otherwise only listens rather than requesting history. See
+     * VitalsActivity's resyncClockIfStopped for the foreground counterpart and why once per
+     * connection is enough.
+     */
+    @SuppressLint("MissingPermission")
+    private fun resyncClockIfStopped(gatt: BluetoothGatt, ringTimestamps: List<Long>) {
+        if (clockSyncedThisConnect || !Ring.clockLooksStopped(ringTimestamps)) return
+        clockSyncedThisConnect = true
+        writeCommand(gatt, Ring.setClock())
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun writeCommand(gatt: BluetoothGatt, frame: ByteArray) {
         val channel = gatt.services.firstNotNullOfOrNull {
             it.getCharacteristic(Ring.COMMAND_CHANNEL)
         } ?: return
-        val frame = Ring.storedSleep()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             gatt.writeCharacteristic(channel, frame, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT)
         } else {

@@ -446,10 +446,16 @@ class MainActivity : AppCompatActivity() {
                     append("Listening for live notifications…\n")
                     false
                 }
-                // Deliberately NOT setting the clock here. The ring abandons a running sleep
-                // session when its clock moves ("exit sleep because time change" in its own
-                // log), so setting it on every connection destroys sleep tracking. Use the
-                // button, when awake and not wearing it.
+                // Deliberately NOT setting the clock on every connection. The ring abandons a
+                // running sleep session when its clock moves ("exit sleep because time change"
+                // in its own log), so setting it every time would destroy sleep tracking. Use
+                // the button, when awake and not wearing it — except right after a factory
+                // reset, which needs it unconditionally and is easy to forget: see
+                // pendingClockResync.
+                if (pendingClockResync) {
+                    pendingClockResync = false
+                    setRingClock()
+                }
             }
         }
 
@@ -821,6 +827,14 @@ class MainActivity : AppCompatActivity() {
      * The ring echoes group and command, so the reply is matched on those.
      */
     private var awaiting: Triple<Int, Int, String>? = null
+
+    /**
+     * Set right before a factory reset is sent, honoured once the ring reconnects — see
+     * onServicesDiscovered. A factory reset resets the RTC to 2020-01-01 (PROTOCOL.md), and
+     * this is the exact step that got left undone twice running, leaving the ring stamping
+     * everything 2020 until someone noticed and fixed it by hand.
+     */
+    private var pendingClockResync = false
 
     /**
      * A command with no connection behind it used to fail into the status line, far up the page
@@ -1309,13 +1323,18 @@ class MainActivity : AppCompatActivity() {
             return
         }
         if (!command.risky) { dispatch(bytes, command.name); return }
+        val isFactoryReset = command.group == 0x01 && command.command == 0x0E
         AlertDialog.Builder(this)
             .setTitle(command.name)
             .setMessage(
                 "This command can erase stored data, reset the ring, or start a firmware " +
-                    "transfer. It will be sent as ${asFrame(bytes).toHex()}.\n\nSend it?"
+                    "transfer. It will be sent as ${asFrame(bytes).toHex()}.\n\nSend it?" +
+                    if (isFactoryReset) "\n\nThe clock will be set again automatically once it reconnects." else ""
             )
-            .setPositiveButton("Send anyway") { _, _ -> dispatch(bytes, command.name) }
+            .setPositiveButton("Send anyway") { _, _ ->
+                if (isFactoryReset) pendingClockResync = true
+                dispatch(bytes, command.name)
+            }
             .setNegativeButton("Cancel", null)
             .show()
     }
