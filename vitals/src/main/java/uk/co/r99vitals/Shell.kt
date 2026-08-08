@@ -60,6 +60,7 @@ fun Shell(
     onLink: () -> Unit,
     onStartWorkout: (String) -> Unit,
     onStopWorkout: () -> Unit,
+    onCalibrate: () -> Unit,
     sleepTarget: Int,
     dayFor: @Composable (Tab) -> VitalDay
 ) {
@@ -107,7 +108,8 @@ fun Shell(
                                 else -> Ring.HEART
                             }
                         )
-                    }
+                    },
+                    onCalibrate = if (tab == Tab.Pressure) onCalibrate else null
                 )
             }
         }

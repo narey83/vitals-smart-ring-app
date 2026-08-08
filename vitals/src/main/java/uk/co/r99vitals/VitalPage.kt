@@ -88,7 +88,8 @@ fun VitalPage(
     streaming: Boolean = false,
     onDay: (Int) -> Unit,
     onMeasure: () -> Unit,
-    onStream: (() -> Unit)? = null
+    onStream: (() -> Unit)? = null,
+    onCalibrate: (() -> Unit)? = null
 ) {
     Column(
         Modifier
@@ -124,6 +125,14 @@ fun VitalPage(
         if (day.diastolic.isNotEmpty() && day.readings.isNotEmpty()) {
             Spacer(Modifier.height(14.dp))
             PressureVerdict(day.readings.last(), day.diastolic.last())
+            onCalibrate?.let {
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    "Calibrate against a cuff reading",
+                    color = day.accent, fontSize = 13.sp,
+                    modifier = Modifier.clickableNoRippleShared(it)
+                )
+            }
         }
 
         if (day.readings.size > 1) {

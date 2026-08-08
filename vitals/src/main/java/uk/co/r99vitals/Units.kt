@@ -20,6 +20,14 @@ import kotlin.math.roundToInt
  */
 enum class WeightUnit { Kg, Stones, Pounds }
 
+/**
+ * The vendor SDK's own skin-tone scale (`SkinColor` in `Constants.java`), lightest first,
+ * `code` matching the byte the ring expects. Used to calibrate the optical sensor, not shown
+ * as a body measurement — no unit conversion involved, which is why it lives here rather than
+ * as another field [Units] converts.
+ */
+enum class SkinTone(val code: Int) { Lightest(0), Light(1), Medium(2), Tan(3), Brown(4), Deepest(5) }
+
 object Units {
 
     private const val CM_PER_INCH = 2.54

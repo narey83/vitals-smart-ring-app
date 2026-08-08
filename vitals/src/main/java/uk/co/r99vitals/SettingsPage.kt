@@ -86,7 +86,9 @@ data class Profile(
     /** Which units to show. Height and weight are stored in metric either way. */
     val metric: Boolean = true,
     /** Read separately from [metric]: feet and inches alongside kilos is a real preference. */
-    val weightUnit: WeightUnit = WeightUnit.Stones
+    val weightUnit: WeightUnit = WeightUnit.Stones,
+    /** Unset until chosen — see [Ring.setSkinTone]. Nothing is sent to the ring until it is. */
+    val skinTone: SkinTone? = null
 ) {
     companion object {
         fun read(prefs: SharedPreferences) = Profile(
@@ -105,7 +107,9 @@ data class Profile(
                     prefs.getBoolean("metric", true) -> WeightUnit.Kg
                     prefs.getBoolean("stones", true) -> WeightUnit.Stones
                     else -> WeightUnit.Pounds
-                }
+                },
+            skinTone = prefs.getString("skinTone", null)
+                ?.let { name -> runCatching { SkinTone.valueOf(name) }.getOrNull() }
         )
     }
 
@@ -131,6 +135,7 @@ data class Profile(
         .putInt("weight", weightKg)
         .putBoolean("metric", metric)
         .putString("weightUnit", weightUnit.name)
+        .putString("skinTone", skinTone?.name)
         .apply()
 }
 
@@ -221,10 +226,21 @@ fun SettingsPage(
             Value("Weight", Units.weight(profile.weightKg, profile.weightUnit)) {
                 editing = Editing.Weight
             }
+            Divider()
+            SettingRow("Skin tone") {
+                Row {
+                    SkinTone.entries.forEachIndexed { i, tone ->
+                        if (i > 0) Spacer(Modifier.width(6.dp))
+                        Swatch(tone, profile.skinTone == tone) { onProfile(profile.copy(skinTone = tone)) }
+                    }
+                }
+            }
         }
         Note(
-            "The ring works out distance and calories from these, so they change what it reports. " +
-                "It is always told metric; imperial is only how they are shown here."
+            "The ring works out distance and calories from height and weight, so they change " +
+                "what it reports. Skin tone calibrates its optical sensor instead — heart rate, " +
+                "oxygen and blood pressure all read less reliably on darker skin without it. " +
+                "Everything here is always told metric; imperial is only how it is shown."
         )
 
         Section("GOALS")
@@ -625,7 +641,7 @@ private fun WheelSheet(
  * The platform already has one that scrolls and reads correctly, so it is used as it is.
  */
 @Composable
-private fun Picker(
+internal fun Picker(
     value: Int,
     range: IntProgression,
     format: (Int) -> String,
@@ -662,6 +678,30 @@ private fun Picker(
             val index = choices.indexOfFirst { it >= value }.takeIf { it >= 0 } ?: choices.lastIndex
             if (picker.value != index) picker.value = index
         }
+    )
+}
+
+/** Fitzpatrick-scale swatches, the same reference points as the ring's own six-level setting. */
+private val skinSwatches = mapOf(
+    SkinTone.Lightest to Color(0xFFFFDBAC),
+    SkinTone.Light to Color(0xFFF1C27D),
+    SkinTone.Medium to Color(0xFFE0AC69),
+    SkinTone.Tan to Color(0xFFC68642),
+    SkinTone.Brown to Color(0xFF8D5524),
+    SkinTone.Deepest to Color(0xFF4A2C17)
+)
+
+@Composable
+private fun Swatch(tone: SkinTone, chosen: Boolean, onPick: () -> Unit) {
+    Box(
+        Modifier
+            .size(30.dp)
+            .clip(CircleShape)
+            .background(if (chosen) Ink.motion else Color.Transparent)
+            .padding(3.dp)
+            .clip(CircleShape)
+            .background(skinSwatches.getValue(tone))
+            .clickableNoRippleShared(onPick)
     )
 }
 

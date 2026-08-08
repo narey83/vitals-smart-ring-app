@@ -170,6 +170,7 @@ class VitalsActivity : AppCompatActivity() {
                 onShare = { shareReadings(); sheet = Sheet.None },
                 onHealth = { sendToHealthConnect() },
                 healthLabel = healthLabel,
+                onCalibrate = { systolic, diastolic -> calibratePressure(systolic, diastolic) },
                 onDismiss = { sheet = Sheet.None }
             )
             BackHandler(settingsOpen) { closeSettings() }
@@ -243,6 +244,7 @@ class VitalsActivity : AppCompatActivity() {
                     sleepTarget = plan.target,
                     onStartWorkout = { startWorkout(it) },
                     onStopWorkout = { stopWorkout() },
+                    onCalibrate = { sheet = Sheet.Calibrate },
                     dayFor = { pageFor(it) }
                 )
             }
@@ -395,6 +397,13 @@ class VitalsActivity : AppCompatActivity() {
         enqueue { write(Ring.startMeasuring(type)) }
     }
 
+    /** A real cuff reading, sent once to correct the ring's own pulse-wave estimate. */
+    private fun calibratePressure(systolic: Int, diastolic: Int) {
+        sheet = Sheet.None
+        if (command == null) { ui = ui.copy(link = "Not connected yet"); connect(); return }
+        enqueue { write(Ring.calibratePressure(systolic, diastolic)) }
+    }
+
     /**
      * Continuous tracking, for a walk or a workout. The ring keeps sending until told to stop,
      * so readings are kept every fifteen seconds rather than collapsed to one per measurement:
@@ -482,6 +491,7 @@ class VitalsActivity : AppCompatActivity() {
         enqueue {
             write(Ring.setUserInfo(profile.male, profile.age, profile.heightCm, profile.weightKg))
         }
+        profile.skinTone?.let { tone -> enqueue { write(Ring.setSkinTone(tone)) } }
     }
 
     /** Readings already recorded stay put; this forgets the ring, not the history. */
@@ -814,6 +824,9 @@ class VitalsActivity : AppCompatActivity() {
                 link = "Your ring", battery = reading.percent, charging = reading.charging,
                 firmware = reading.firmware
             )
+            // Pushed on its own schedule, ahead of the next poll — see the Battery doc comment
+            // in Ring.kt for why the poll stays in place alongside it regardless.
+            is Ring.Reading.Battery -> ui = ui.copy(battery = reading.percent)
             is Ring.Reading.Finished -> {
                 setButtonsEnabled(true)
                 userAsked = false

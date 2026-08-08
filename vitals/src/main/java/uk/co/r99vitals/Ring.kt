@@ -127,6 +127,22 @@ object Ring {
     // ring sets its own at midnight, so a vitals app can only lose data by sending it. The
     // command itself is documented in PROTOCOL.md and exposed, marked risky, by the debugger.
 
+    /**
+     * settingSkin: one byte, the vendor's own six-level scale, lightest to darkest — see
+     * [SkinTone]. Optical sensors (heart rate, oxygen, blood pressure) read less reliably on
+     * darker skin without it.
+     */
+    fun setSkinTone(tone: SkinTone) = frame(0x01, 0x15, byteArrayOf(tone.code.toByte()))
+
+    /**
+     * AppBloodCalibration: two bytes, systolic then diastolic. Sent once, from a real cuff
+     * reading, so the ring can calibrate its own pulse-wave estimate against it.
+     */
+    fun calibratePressure(systolic: Int, diastolic: Int) = frame(
+        0x03, 0x03,
+        byteArrayOf(systolic.coerceIn(60, 250).toByte(), diastolic.coerceIn(40, 150).toByte())
+    )
+
     sealed interface Reading {
         data class Heart(val bpm: Int) : Reading
         data class Oxygen(val percent: Int) : Reading
@@ -134,6 +150,18 @@ object Ring {
         data class Pressure(val systolic: Int, val diastolic: Int) : Reading
         data class Motion(val steps: Int, val distance: Int, val calories: Int) : Reading
         data class Power(val percent: Int, val charging: Boolean, val firmware: String) : Reading
+        /**
+         * Real_UploadBatteryLevel, pushed on its own rather than in reply to [deviceInfo].
+         *
+         * **The single-byte layout is inferred, not verified** — by analogy with every other
+         * live push in this group (`06 01`/`02`/`03` are one or two bytes, no envelope), since
+         * the vendor SDK source available for this ring does not cover this command's reply
+         * shape. `deviceInfo()` stays polled alongside this as the confirmed fallback for
+         * charging state and firmware, which this push does not carry either way. If the
+         * percentage reads oddly, check `files/protocol-log.txt` for what `06 15` actually
+         * contains — see PROTOCOL.md.
+         */
+        data class Battery(val percent: Int) : Reading
         data class Finished(val type: Int) : Reading
     }
 
@@ -146,6 +174,7 @@ object Ring {
             0x06 to 0x01 -> payload.takeIf { it.isNotEmpty() }?.let { Reading.Heart(at(0)) }
             0x06 to 0x02 -> payload.takeIf { it.isNotEmpty() }?.let { Reading.Oxygen(at(0)) }
             0x06 to 0x03 -> payload.takeIf { it.size >= 2 }?.let { Reading.Pressure(at(0), at(1)) }
+            0x06 to 0x15 -> payload.takeIf { it.isNotEmpty() }?.let { Reading.Battery(at(0)) }
             0x04 to 0x0E -> payload.takeIf { it.isNotEmpty() }?.let { Reading.Finished(at(0)) }
             0x02 to 0x00 -> payload.takeIf { it.size >= 6 }?.let {
                 Reading.Power(at(5), at(4) != 0, "V${at(3)}.${at(2)}")

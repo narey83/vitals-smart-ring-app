@@ -23,6 +23,10 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -32,7 +36,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /** Which sheet is open, if any. */
-enum class Sheet { None, Export }
+enum class Sheet { None, Export, Calibrate }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -43,12 +47,13 @@ fun VitalsSheet(
     onShare: () -> Unit,
     onHealth: () -> Unit,
     healthLabel: String,
+    onCalibrate: (Int, Int) -> Unit = { _, _ -> },
     onDismiss: () -> Unit
 ) {
     if (sheet == Sheet.None) return
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = sheet == Sheet.Export),
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = sheet != Sheet.Calibrate),
         containerColor = Ink.card,
         dragHandle = {
             Box(Modifier.fillMaxWidth().padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
@@ -75,10 +80,34 @@ fun VitalsSheet(
                     Choice("Export as a spreadsheet", false, Ink.oxygen) { onShare() }
                     Choice(healthLabel, false, Ink.motion) { onHealth() }
                 }
+                Sheet.Calibrate -> CalibrateSheet(state, onCalibrate)
                 Sheet.None -> Unit
             }
         }
     }
+}
+
+/**
+ * A real cuff reading, entered once, so the ring can calibrate its own pulse-wave estimate
+ * against it — see [Ring.calibratePressure]. Seeded from the last reading shown rather than
+ * blank, since that is the number closest to hand to correct.
+ */
+@Composable
+private fun CalibrateSheet(state: VitalsState, onCalibrate: (Int, Int) -> Unit) {
+    var systolic by remember { mutableStateOf(state.systolic ?: 120) }
+    var diastolic by remember { mutableStateOf(state.diastolic ?: 80) }
+    Title("Calibrate blood pressure")
+    Note(
+        "Take a reading with a real cuff, then enter it here. The ring uses it to correct its " +
+            "own pulse-wave estimate — this is not itself a measurement."
+    )
+    Row(horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.Bottom) {
+        Picker(systolic, 60..250, { "$it" }, Modifier.width(110.dp)) { systolic = it }
+        Text("/", color = Ink.muted, fontSize = 22.sp, modifier = Modifier.padding(horizontal = 4.dp))
+        Picker(diastolic, 40..150, { "$it" }, Modifier.width(110.dp)) { diastolic = it }
+    }
+    Spacer(Modifier.height(18.dp))
+    Choice("Save calibration", false, Ink.pressure) { onCalibrate(systolic, diastolic) }
 }
 
 @Composable
