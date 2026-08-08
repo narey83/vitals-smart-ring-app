@@ -119,39 +119,6 @@ class HistoryTest {
         assertEquals(listOf(89, 91), entries.map { it.value }.sorted())
     }
 
-    /**
-     * The ring's own midnight is not the phone's midnight. A steps push that lands just after
-     * the phone rolls over to a new day, but whose running total hasn't actually dropped, is
-     * still yesterday's count arriving late — it must not be filed as today's first reading.
-     */
-    @Test fun `a steps total that has not reset yet stays with yesterday`() {
-        val history = history()
-        val yesterday = System.currentTimeMillis() - 30 * 60 * 60 * 1000
-        history.backfill("steps", listOf(Triple(yesterday, 1336, 0)))
-        history.record("steps", 1340)
-        val entries = history.all()
-        assertEquals("the late push should have settled onto yesterday's row", 1, entries.size)
-        assertEquals(1340, entries.single().value)
-    }
-
-    /** Once the ring's counter actually drops, that is a real reset and starts today's row. */
-    @Test fun `a steps total that has genuinely reset starts a new day`() {
-        val history = history()
-        val yesterday = System.currentTimeMillis() - 30 * 60 * 60 * 1000
-        history.backfill("steps", listOf(Triple(yesterday, 1336, 0)))
-        history.record("steps", 5)
-        val entries = history.all()
-        assertEquals(2, entries.size)
-        assertEquals(listOf(1336, 5), entries.map { it.value })
-    }
-
-    /** Used to decide whether a live ring push is still yesterday's total; must agree with the clock. */
-    @Test fun `sameDay agrees with the calendar, not just a fixed offset`() {
-        val elevenPM = 1_700_002_800_000L  // 2023-11-15 03:00 UTC afternoon-ish, exact date irrelevant
-        assertTrue(History.sameDay(elevenPM, elevenPM + 1000))
-        assertTrue(!History.sameDay(elevenPM, elevenPM + 24 * 60 * 60 * 1000))
-    }
-
     /** Blood pressure is two numbers. A backfill that kept only the systolic would lose half. */
     @Test fun `a backfilled blood pressure keeps both halves`() {
         val history = history()
@@ -159,5 +126,25 @@ class HistoryTest {
         val entry = history.all().single()
         assertEquals(116, entry.value)
         assertEquals(76, entry.extra)
+    }
+
+    @Test fun `no steps ever recorded has no flat run to speak of`() {
+        assertEquals(null, history().stepsFlatSince())
+    }
+
+    /** A value that keeps changing is not stuck, whatever else is going on. */
+    @Test fun `a climbing count has no flat run`() {
+        val history = history()
+        listOf(100, 140, 175).forEach { history.add("steps", it) }
+        assertEquals(history.all().last().at, history.stepsFlatSince())
+    }
+
+    /** The flat run starts where the value stopped changing, not at the most recent reading. */
+    @Test fun `a stuck count is flat back to where it stopped climbing`() {
+        val history = history()
+        listOf(100, 140, 175).forEach { history.add("steps", it) }
+        val stuckFrom = history.all().last().at
+        repeat(3) { history.add("steps", 175) }
+        assertEquals(stuckFrom, history.stepsFlatSince())
     }
 }

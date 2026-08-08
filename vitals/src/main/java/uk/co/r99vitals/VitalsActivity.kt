@@ -175,7 +175,7 @@ class VitalsActivity : AppCompatActivity() {
         ui = ui.copy(
             interval = interval,
             stepGoal = saved.getInt("goal", 10_000),
-            metric = profile.metric,
+            distanceMetric = profile.distanceMetric,
             monitors = monitors,
             celebrate = birthdayGreeting(),
             ringName = ringName
@@ -266,6 +266,7 @@ class VitalsActivity : AppCompatActivity() {
                     onStartWorkout = { startWorkout(it) },
                     onStopWorkout = { stopWorkout() },
                     onCalibrate = { sheet = Sheet.Calibrate },
+                    onRefreshSteps = { refreshSteps() },
                     dayFor = { pageFor(it) }
                 )
             }
@@ -299,7 +300,7 @@ class VitalsActivity : AppCompatActivity() {
         profile = next
         next.write(saved)
         ui = ui.copy(
-            metric = next.metric, celebrate = birthdayGreeting(),
+            distanceMetric = next.distanceMetric, celebrate = birthdayGreeting(),
             // A name typed in while the ring is already connected should show up in the
             // greeting straight away, not only after the next reconnect.
             link = if (command != null) greeting() else ui.link
@@ -487,6 +488,29 @@ class VitalsActivity : AppCompatActivity() {
         enqueue { write(Ring.startMeasuring(type)) }
     }
 
+    /**
+     * Shared by the passive ACTIVITY push and an explicit GetNowStep reply — same shape, same
+     * write. The ring reports a running total rather than a daily one, so what is shown is that
+     * total minus whatever it already read before today began — see Steps.hours for why a ring
+     * whose own clock never rolls over still needs this.
+     */
+    private fun showSteps(motion: Ring.Reading.Motion, manual: Boolean) {
+        val baseline = history.latestBefore("steps", History.startOfToday())
+        history.record("steps", motion.steps, motion.calories, manual = manual)
+        ui = ui.copy(
+            steps = (motion.steps - (baseline?.value ?: 0)).coerceAtLeast(0),
+            distance = motion.distance,
+            calories = (motion.calories - (baseline?.extra ?: 0)).coerceAtLeast(0)
+        )
+    }
+
+    /** Asks the ring for its running step total right now, instead of waiting for the next push. */
+    private fun refreshSteps() {
+        if (command == null) { ui = ui.copy(link = "Not connected yet"); connect(); return }
+        userAsked = true
+        enqueue { write(Ring.getNowStep()) }
+    }
+
     /** A real cuff reading, sent once to correct the ring's own pulse-wave estimate. */
     private fun calibratePressure(systolic: Int, diastolic: Int) {
         sheet = Sheet.None
@@ -638,14 +662,19 @@ class VitalsActivity : AppCompatActivity() {
                 rows = rows(entries) { "${it.value}/${it.extra}" }
             )
             Tab.Steps -> {
+                // What the counter read when today began — the day's own first reading, on a
+                // ring whose clock rolls over at midnight. On one that does not, this is still
+                // whatever total was left over from before, and steps taken today are counted
+                // from there rather than from zero.
+                val baseline = history.latestBefore("steps", start)?.value ?: 0
                 // The ring reports a running total, so both the bars and the rows below them are
                 // differences between totals. Steps works that out once, for each quarter hour,
                 // and the hours are the sums of those.
-                val hours = Steps.hours(entries)
+                val hours = Steps.hours(entries, baseline)
                 VitalDay(
                     "Movement", "steps", Ink.motion,
                     Icons.Rounded.DirectionsWalk,
-                    Steps.total(entries).takeIf { it > 0 }?.let { "%,d".format(it) },
+                    Steps.total(entries, baseline).takeIf { it > 0 }?.let { "%,d".format(it) },
                     hours.map { it.steps }, entries,
                     canMeasure = false, asBars = true,
                     // A quarter hour the ring never reported on is not the same as one spent
@@ -882,23 +911,7 @@ class VitalsActivity : AppCompatActivity() {
 
     private fun show(characteristic: BluetoothGattCharacteristic, value: ByteArray) {
         if (characteristic.uuid == Ring.ACTIVITY) {
-            Ring.readActivity(value)?.let {
-                // This is a bare live mirror of the ring's counter, so it is just as liable as
-                // History to catch the ring's stale, not-yet-reset total right after midnight.
-                // History already tracks whether that reset has happened; ask it rather than
-                // trusting the raw push as today's count.
-                val last = history.latest("steps")
-                val stillYesterday = last != null && it.steps >= last.value &&
-                    !History.sameDay(last.at.time, System.currentTimeMillis())
-                // Without this, History's own "steps" row never advances while the app is in the
-                // foreground — only the background collector wrote it — so the row above stays
-                // pinned to yesterday and stillYesterday flips permanently true the moment today's
-                // count catches up to it.
-                history.record("steps", it.steps, it.calories)
-                if (!stillYesterday) {
-                    ui = ui.copy(steps = it.steps, distance = it.distance, calories = it.calories)
-                }
-            }
+            Ring.readActivity(value)?.let { showSteps(it, manual = false) }
             return
         }
         if (characteristic.uuid == Ring.HEART_RATE) {
@@ -940,6 +953,12 @@ class VitalsActivity : AppCompatActivity() {
             is Ring.Reading.Pressure -> {
                 ui = ui.copy(systolic = reading.systolic, diastolic = reading.diastolic)
                 history.record("pressure", reading.systolic, reading.diastolic, manual = userAsked)
+            }
+            // GetNowStep's reply. No Finished event follows a single request/reply command like
+            // this one, so the manual flag is cleared here rather than left for that event.
+            is Ring.Reading.Motion -> {
+                showSteps(reading, manual = userAsked)
+                userAsked = false
             }
             is Ring.Reading.Power -> ui = ui.copy(
                 link = greeting(), battery = reading.percent, charging = reading.charging,
@@ -991,6 +1010,6 @@ class VitalsActivity : AppCompatActivity() {
 
     companion object {
         /** Bumped so an existing install sees the onboarding once more; never for anything else. */
-        private const val ONBOARDING_VERSION = 1
+        private const val ONBOARDING_VERSION = 2
     }
 }

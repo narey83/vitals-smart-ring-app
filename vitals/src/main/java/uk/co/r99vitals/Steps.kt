@@ -33,12 +33,13 @@ object Steps {
      * where it had reached by the end of that quarter hour. The difference from the last bucket
      * that held a reading is what was walked in between.
      *
-     * The first reading of the day carries everything since midnight, because that is genuinely
-     * all the ring tells us — a total of 500 at 08:00 says 500 steps happened, not when. It
-     * lands in the bucket where it was observed rather than being spread over hours that may
-     * have been spent asleep.
+     * The first reading of the day carries everything since [baseline], which is the counter's
+     * value when today began — the last total the ring reported yesterday, on a ring whose clock
+     * actually rolls over at midnight. Not every ring's does: one with a stopped clock never
+     * zeroes the counter on its own, so without a baseline its whole leftover total would land
+     * in the first bucket of every day it is read in, as if it had all been walked at once.
      */
-    fun hours(entries: List<History.Entry>): List<Hour> {
+    fun hours(entries: List<History.Entry>, baseline: Int = 0): List<Hour> {
         // The peak total seen in each quarter hour, or null where the ring said nothing.
         val peaks = arrayOfNulls<Int>(BUCKETS)
         val when_ = Calendar.getInstance()
@@ -48,7 +49,7 @@ object Steps {
             peaks[bucket] = maxOf(peaks[bucket] ?: 0, entry.value)
         }
 
-        var carried = 0
+        var carried = baseline
         val slots = peaks.mapIndexed { bucket, peak ->
             if (peak == null) null
             else {
@@ -67,6 +68,7 @@ object Steps {
     }
 
     /** The day's total, which is the last running count seen rather than a sum of differences. */
-    fun total(entries: List<History.Entry>): Int =
-        entries.filter { it.kind == "steps" }.maxOfOrNull { it.value } ?: 0
+    fun total(entries: List<History.Entry>, baseline: Int = 0): Int =
+        ((entries.filter { it.kind == "steps" }.maxOfOrNull { it.value } ?: baseline) - baseline)
+            .coerceAtLeast(0)
 }

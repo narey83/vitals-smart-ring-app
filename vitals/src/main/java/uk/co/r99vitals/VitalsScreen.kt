@@ -152,7 +152,7 @@ data class VitalsState(
     val nights: List<Sleep.Night> = emptyList(),
     val stepGoal: Int = 10_000,
     val firmware: String? = null,
-    val metric: Boolean = true,
+    val distanceMetric: Boolean = false,
     val monitors: Ring.Monitors = Ring.Monitors(),
     /** Set only on the wearer's birthday, and already worded. */
     val celebrate: String? = null,
@@ -515,7 +515,7 @@ private fun MovementCard(state: VitalsState, modifier: Modifier = Modifier.fillM
             )
             Text(
                 if (state.steps == null) "steps today"
-                else "steps today · ${Units.distance(state.distance, state.metric)} · ${state.calories} kcal",
+                else "steps today · ${Units.distance(state.distance, state.distanceMetric)} · ${state.calories} kcal",
                 color = Ink.muted, fontSize = 13.sp
             )
             state.steps?.let { walked ->

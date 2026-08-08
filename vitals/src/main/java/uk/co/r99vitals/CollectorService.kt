@@ -122,6 +122,48 @@ class CollectorService : Service() {
         getSystemService(NotificationManager::class.java).notify(NOTIFICATION, notification())
     }
 
+    private fun problemChannel(): String {
+        val manager = getSystemService(NotificationManager::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            manager.createNotificationChannel(
+                NotificationChannel(PROBLEM_CHANNEL, "Ring problems", NotificationManager.IMPORTANCE_DEFAULT)
+                    .apply { description = "Warns when a reading looks stuck rather than just quiet" }
+            )
+        }
+        return PROBLEM_CHANNEL
+    }
+
+    /**
+     * A ring whose clock has stopped ticking never resets its step counter either — the running
+     * total just sits there, exactly as it would if the wearer genuinely had not moved. Hours
+     * past a point where that stops being the likely story, so this says so once, rather than
+     * only being found by chance days later. See History.stepsFlatSince and PROTOCOL.md's "the
+     * clock does not tick" for the hardware fault behind it.
+     */
+    private fun checkStepsStuck() {
+        val flatSince = history.stepsFlatSince() ?: return
+        val stuckFor = System.currentTimeMillis() - flatSince.time
+        if (stuckFor < STUCK_THRESHOLD) return
+        val prefs = getSharedPreferences("ring", Context.MODE_PRIVATE)
+        // One notification per stuck spell, not one per reading — the flat run's own start time
+        // is the run's identity, so a repeat of it means nothing has changed since the last alert.
+        if (prefs.getLong("stepsStuckAlertedFor", 0L) == flatSince.time) return
+        prefs.edit().putLong("stepsStuckAlertedFor", flatSince.time).apply()
+        val open = PendingIntent.getActivity(
+            this, 2, Intent(this, VitalsActivity::class.java),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        val hours = stuckFor / (60 * 60 * 1000)
+        val notification = Notification.Builder(this, problemChannel())
+            .setContentTitle("Steps look stuck")
+            .setContentText("The ring's step count hasn't moved in over ${hours}h — might need a restart.")
+            .setSmallIcon(android.R.drawable.ic_menu_compass)
+            .setContentIntent(open)
+            .setAutoCancel(true)
+            .build()
+        getSystemService(NotificationManager::class.java).notify(PROBLEM_NOTIFICATION, notification)
+    }
+
     @SuppressLint("MissingPermission")
     private fun connect() {
         val address = getSharedPreferences("ring", Context.MODE_PRIVATE).getString("address", null)
@@ -228,11 +270,13 @@ class CollectorService : Service() {
     private fun store(characteristic: BluetoothGattCharacteristic, value: ByteArray) {
         if (characteristic.uuid == Ring.ACTIVITY) {
             Ring.readActivity(value)?.let {
+                val baseline = history.latestBefore("steps", History.startOfToday())
                 history.record("steps", it.steps, it.calories)
-                steps = it.steps
+                steps = (it.steps - (baseline?.value ?: 0)).coerceAtLeast(0)
                 distance = it.distance
-                calories = it.calories
+                calories = (it.calories - (baseline?.extra ?: 0)).coerceAtLeast(0)
                 refresh()
+                checkStepsStuck()
             }
             return
         }
@@ -315,6 +359,9 @@ class CollectorService : Service() {
     companion object {
         private const val CHANNEL = "readings"
         private const val NOTIFICATION = 1
+        private const val PROBLEM_CHANNEL = "problems"
+        private const val PROBLEM_NOTIFICATION = 2
+        private const val STUCK_THRESHOLD = 3 * 60 * 60 * 1000L
 
         fun start(context: Context) {
             val intent = Intent(context, CollectorService::class.java)

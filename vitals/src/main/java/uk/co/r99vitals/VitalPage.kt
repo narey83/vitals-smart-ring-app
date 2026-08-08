@@ -89,176 +89,200 @@ fun VitalPage(
     onDay: (Int) -> Unit,
     onMeasure: () -> Unit,
     onStream: (() -> Unit)? = null,
-    onCalibrate: (() -> Unit)? = null
+    onCalibrate: (() -> Unit)? = null,
+    /** Steps have no measuring cycle of their own — just a running total to ask the ring for. */
+    onRefreshSteps: (() -> Unit)? = null
 ) {
-    Column(
-        Modifier
-            .fillMaxSize()
-            .background(Ink.canvas)
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 20.dp)
-            .padding(top = 12.dp, bottom = 28.dp)
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(day.icon, null, tint = day.accent, modifier = Modifier.size(18.dp))
-            Spacer(Modifier.width(8.dp))
-            Text(
-                day.title.uppercase(), color = day.accent, fontSize = 12.sp,
-                fontWeight = FontWeight.Bold, letterSpacing = 1.8.sp
-            )
-        }
-
-        Spacer(Modifier.height(14.dp))
-        DayPicker(dayOffset, onDay)
-
-        Spacer(Modifier.height(18.dp))
-        Row(verticalAlignment = Alignment.Bottom) {
-            Text(
-                day.value ?: "––", color = Ink.text, fontSize = 72.sp, fontWeight = FontWeight.Light
-            )
-            Spacer(Modifier.width(10.dp))
-            Text(day.unit, color = Ink.muted, fontSize = 18.sp, modifier = Modifier.padding(bottom = 16.dp))
-        }
-        day.note?.let { Text(it, color = Ink.muted, fontSize = 13.sp) }
-
-        // Blood pressure is the one vital where the number alone is not the answer.
-        if (day.diastolic.isNotEmpty() && day.readings.isNotEmpty()) {
-            Spacer(Modifier.height(14.dp))
-            PressureVerdict(day.readings.last(), day.diastolic.last())
-            onCalibrate?.let {
-                Spacer(Modifier.height(10.dp))
+    Column(Modifier.fillMaxSize().background(Ink.canvas)) {
+        Column(
+            Modifier
+                .weight(1f)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp)
+                .padding(top = 12.dp, bottom = 16.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(day.icon, null, tint = day.accent, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(8.dp))
                 Text(
-                    "Calibrate against a cuff reading",
-                    color = day.accent, fontSize = 13.sp,
-                    modifier = Modifier.clickableNoRippleShared(it)
+                    day.title.uppercase(), color = day.accent, fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold, letterSpacing = 1.8.sp
                 )
             }
-        }
 
-        if (day.readings.size > 1) {
-            Spacer(Modifier.height(20.dp))
-            Card(
-                shape = RoundedCornerShape(24.dp),
-                colors = CardDefaults.cardColors(containerColor = Ink.card),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(Modifier.padding(vertical = 20.dp, horizontal = 16.dp)) {
-                    if (day.diastolic.isNotEmpty() && day.diastolic.size == day.readings.size) {
-                        PressureChart(
-                            day.readings, day.diastolic, day.positions,
-                            Modifier.fillMaxWidth().height(190.dp)
-                        )
-                        if (day.positions.size == day.readings.size) HourAxis(SCALE_GUTTER)
-                        Spacer(Modifier.height(10.dp))
-                        PressureKey()
-                    } else if (day.asBars) {
-                        BarChart(day.readings, day.accent, Modifier.fillMaxWidth().height(150.dp))
-                        HourAxis()
-                    } else {
-                        TrendChart(
-                            day.readings, day.accent,
-                            Modifier.fillMaxWidth().height(150.dp),
-                            positions = day.positions
-                        )
-                        // Only honest when the line is drawn against time rather than evenly.
-                        if (day.positions.size == day.readings.size) HourAxis(SCALE_GUTTER)
-                    }
-                    Spacer(Modifier.height(14.dp))
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        if (day.diastolic.size == day.readings.size && day.diastolic.isNotEmpty()) {
-                            // Each half is summarised on its own: the day's highest systolic and
-                            // its highest diastolic rarely belong to the same reading.
-                            fun pair(pick: List<Int>.() -> Int) =
-                                "${day.readings.pick()}/${day.diastolic.pick()}"
-                            Stat("LOW", pair { min() }, day.accent)
-                            Stat("AVERAGE", pair { average().toInt() }, day.accent)
-                            Stat("HIGH", pair { max() }, day.accent)
-                            Stat("READINGS", day.readings.size.toString(), day.accent)
-                        } else if (day.asBars) {
-                            Stat("TOTAL", "%,d".format(day.readings.sum()), day.accent)
-                            Stat("BUSIEST", day.readings.max().toString(), day.accent)
-                            Stat("ACTIVE HOURS", day.readings.count { it > 0 }.toString(), day.accent)
-                        } else {
-                            Stat("LOW", day.readings.min().toString(), day.accent)
-                            Stat("AVERAGE", day.readings.average().toInt().toString(), day.accent)
-                            Stat("HIGH", day.readings.max().toString(), day.accent)
-                            Stat("READINGS", day.readings.size.toString(), day.accent)
-                        }
-                    }
-                }
+            Spacer(Modifier.height(14.dp))
+            DayPicker(dayOffset, onDay)
+
+            Spacer(Modifier.height(18.dp))
+            Row(verticalAlignment = Alignment.Bottom) {
+                Text(
+                    day.value ?: "––", color = Ink.text, fontSize = 72.sp, fontWeight = FontWeight.Light
+                )
+                Spacer(Modifier.width(10.dp))
+                Text(day.unit, color = Ink.muted, fontSize = 18.sp, modifier = Modifier.padding(bottom = 16.dp))
             }
-        } else if (day.readings.isEmpty()) {
-            Spacer(Modifier.height(20.dp))
-            Text(
-                if (dayOffset == 0) "No readings yet today." else "Nothing recorded that day.",
-                color = Ink.muted, fontSize = 14.sp
-            )
-        } else {
-            // One reading is a reading, not an empty day; it just cannot be drawn as a trend.
-            Spacer(Modifier.height(16.dp))
-            Text("One reading so far today.", color = Ink.muted, fontSize = 14.sp)
-        }
+            day.note?.let { Text(it, color = Ink.muted, fontSize = 13.sp) }
 
-        if (day.canMeasure && dayOffset == 0) {
-            Spacer(Modifier.height(20.dp))
-            Button(
-                onClick = onMeasure,
-                enabled = !busy,
-                shape = CircleShape,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = day.accent,
-                    contentColor = Ink.canvas,
-                    disabledContainerColor = day.accent.copy(alpha = 0.3f)
-                ),
-                modifier = Modifier.fillMaxWidth().height(56.dp)
-            ) { Text(if (busy) "Measuring…" else "Measure now", fontSize = 16.sp) }
-
-            // Continuous streaming, for a walk or a workout: readings keep arriving until it is
-            // turned off, rather than one measurement at a time.
-            onStream?.let { toggle ->
-                Spacer(Modifier.height(10.dp))
-                Button(
-                    onClick = toggle,
-                    shape = CircleShape,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (streaming) day.accent.copy(alpha = 0.22f) else Color.Transparent,
-                        contentColor = day.accent
-                    ),
-                    modifier = Modifier.fillMaxWidth().height(52.dp)
-                ) {
+            // Blood pressure is the one vital where the number alone is not the answer.
+            if (day.diastolic.isNotEmpty() && day.readings.isNotEmpty()) {
+                Spacer(Modifier.height(14.dp))
+                PressureVerdict(day.readings.last(), day.diastolic.last())
+                onCalibrate?.let {
+                    Spacer(Modifier.height(10.dp))
                     Text(
-                        if (streaming) "Stop continuous tracking" else "Track continuously",
-                        fontSize = 15.sp
+                        "Calibrate against a cuff reading",
+                        color = day.accent, fontSize = 13.sp,
+                        modifier = Modifier.clickableNoRippleShared(it)
                     )
                 }
             }
+
+            if (day.readings.size > 1) {
+                Spacer(Modifier.height(20.dp))
+                Card(
+                    shape = RoundedCornerShape(24.dp),
+                    colors = CardDefaults.cardColors(containerColor = Ink.card),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(Modifier.padding(vertical = 20.dp, horizontal = 16.dp)) {
+                        if (day.diastolic.isNotEmpty() && day.diastolic.size == day.readings.size) {
+                            PressureChart(
+                                day.readings, day.diastolic, day.positions,
+                                Modifier.fillMaxWidth().height(190.dp)
+                            )
+                            if (day.positions.size == day.readings.size) HourAxis(SCALE_GUTTER)
+                            Spacer(Modifier.height(10.dp))
+                            PressureKey()
+                        } else if (day.asBars) {
+                            BarChart(day.readings, day.accent, Modifier.fillMaxWidth().height(150.dp))
+                            HourAxis()
+                        } else {
+                            TrendChart(
+                                day.readings, day.accent,
+                                Modifier.fillMaxWidth().height(150.dp),
+                                positions = day.positions
+                            )
+                            // Only honest when the line is drawn against time rather than evenly.
+                            if (day.positions.size == day.readings.size) HourAxis(SCALE_GUTTER)
+                        }
+                        Spacer(Modifier.height(14.dp))
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            if (day.diastolic.size == day.readings.size && day.diastolic.isNotEmpty()) {
+                                // Each half is summarised on its own: the day's highest systolic and
+                                // its highest diastolic rarely belong to the same reading.
+                                fun pair(pick: List<Int>.() -> Int) =
+                                    "${day.readings.pick()}/${day.diastolic.pick()}"
+                                Stat("LOW", pair { min() }, day.accent)
+                                Stat("AVERAGE", pair { average().toInt() }, day.accent)
+                                Stat("HIGH", pair { max() }, day.accent)
+                                Stat("READINGS", day.readings.size.toString(), day.accent)
+                            } else if (day.asBars) {
+                                Stat("TOTAL", "%,d".format(day.readings.sum()), day.accent)
+                                Stat("BUSIEST", day.readings.max().toString(), day.accent)
+                                Stat("ACTIVE HOURS", day.readings.count { it > 0 }.toString(), day.accent)
+                            } else {
+                                Stat("LOW", day.readings.min().toString(), day.accent)
+                                Stat("AVERAGE", day.readings.average().toInt().toString(), day.accent)
+                                Stat("HIGH", day.readings.max().toString(), day.accent)
+                                Stat("READINGS", day.readings.size.toString(), day.accent)
+                            }
+                        }
+                    }
+                }
+            } else if (day.readings.isEmpty()) {
+                Spacer(Modifier.height(20.dp))
+                Text(
+                    if (dayOffset == 0) "No readings yet today." else "Nothing recorded that day.",
+                    color = Ink.muted, fontSize = 14.sp
+                )
+            } else {
+                // One reading is a reading, not an empty day; it just cannot be drawn as a trend.
+                Spacer(Modifier.height(16.dp))
+                Text("One reading so far today.", color = Ink.muted, fontSize = 14.sp)
+            }
+
+            if (day.rows.isNotEmpty()) {
+                Spacer(Modifier.height(26.dp))
+                // Shut to begin with, and shut again when the day changes. A day of automatic
+                // readings is dozens of rows, and the chart above already says what they say — the
+                // list is for looking something up, not for scrolling past every time.
+                var open by remember(day.title, dayOffset) { mutableStateOf(false) }
+                Row(
+                    Modifier.fillMaxWidth().clickableNoRippleShared { open = !open },
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "READINGS · ${day.rows.size}", color = Ink.muted, fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold, letterSpacing = 1.6.sp
+                    )
+                    Icon(
+                        if (open) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
+                        if (open) "Hide the readings" else "Show all ${day.rows.size} readings",
+                        tint = Ink.muted, modifier = Modifier.size(20.dp)
+                    )
+                }
+                if (open) {
+                    Spacer(Modifier.height(4.dp))
+                    // Newest first: the recent ones are the ones being looked for.
+                    day.rows.asReversed().forEach { ReadingRow(it, day.accent) }
+                }
+            }
         }
 
-        if (day.rows.isNotEmpty()) {
-            Spacer(Modifier.height(26.dp))
-            // Shut to begin with, and shut again when the day changes. A day of automatic
-            // readings is dozens of rows, and the chart above already says what they say — the
-            // list is for looking something up, not for scrolling past every time.
-            var open by remember(day.title, dayOffset) { mutableStateOf(false) }
-            Row(
-                Modifier.fillMaxWidth().clickableNoRippleShared { open = !open },
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+        // Fixed below the scrolling content rather than inside it, so it stays in the same place
+        // on screen regardless of how far the readings above are scrolled.
+        if (dayOffset == 0 && (day.canMeasure || onRefreshSteps != null)) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .background(Ink.canvas)
+                    .padding(horizontal = 20.dp)
+                    .padding(top = 10.dp, bottom = 20.dp)
             ) {
-                Text(
-                    "READINGS · ${day.rows.size}", color = Ink.muted, fontSize = 11.sp,
-                    fontWeight = FontWeight.Bold, letterSpacing = 1.6.sp
-                )
-                Icon(
-                    if (open) Icons.Rounded.ExpandLess else Icons.Rounded.ExpandMore,
-                    if (open) "Hide the readings" else "Show all ${day.rows.size} readings",
-                    tint = Ink.muted, modifier = Modifier.size(20.dp)
-                )
-            }
-            if (open) {
-                Spacer(Modifier.height(4.dp))
-                // Newest first: the recent ones are the ones being looked for.
-                day.rows.asReversed().forEach { ReadingRow(it, day.accent) }
+                if (day.canMeasure) {
+                    Button(
+                        onClick = onMeasure,
+                        enabled = !busy,
+                        shape = CircleShape,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = day.accent,
+                            contentColor = Ink.canvas,
+                            disabledContainerColor = day.accent.copy(alpha = 0.3f)
+                        ),
+                        modifier = Modifier.fillMaxWidth().height(56.dp)
+                    ) { Text(if (busy) "Measuring…" else "Measure now", fontSize = 16.sp) }
+
+                    // Continuous streaming, for a walk or a workout: readings keep arriving until it
+                    // is turned off, rather than one measurement at a time.
+                    onStream?.let { toggle ->
+                        Spacer(Modifier.height(10.dp))
+                        Button(
+                            onClick = toggle,
+                            shape = CircleShape,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (streaming) day.accent.copy(alpha = 0.22f) else Color.Transparent,
+                                contentColor = day.accent
+                            ),
+                            modifier = Modifier.fillMaxWidth().height(52.dp)
+                        ) {
+                            Text(
+                                if (streaming) "Stop continuous tracking" else "Track continuously",
+                                fontSize = 15.sp
+                            )
+                        }
+                    }
+                } else if (onRefreshSteps != null) {
+                    Button(
+                        onClick = onRefreshSteps,
+                        shape = CircleShape,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = day.accent,
+                            contentColor = Ink.canvas
+                        ),
+                        modifier = Modifier.fillMaxWidth().height(56.dp)
+                    ) { Text("Get latest step count", fontSize = 16.sp) }
+                }
             }
         }
     }

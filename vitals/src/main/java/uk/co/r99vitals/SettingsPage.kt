@@ -62,7 +62,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 
 /** What is shown and asked; the ring itself only ever gets [Profile.maleForRing]. */
-enum class Sex { Male, Female, PreferNotToSay }
+enum class Sex { Male, Female }
 
 /**
  * Who is wearing the ring, and what they want from it.
@@ -86,10 +86,16 @@ data class Profile(
     val storedAge: Int = 30,
     val heightCm: Int = 175,
     val weightKg: Int = 75,
-    /** Which units to show. Height and weight are stored in metric either way. */
-    val metric: Boolean = true,
-    /** Read separately from [metric]: feet and inches alongside kilos is a real preference. */
+    /** Which unit height is shown in. Always stored in centimetres either way. */
+    val heightMetric: Boolean = true,
+    /** Its own preference, same reasoning as [heightMetric] and [distanceMetric]: it does not follow from either. */
     val weightUnit: WeightUnit = WeightUnit.Stones,
+    /**
+     * Distance, kept apart from [heightMetric]: a wearer who reads their height in feet can still
+     * think in kilometres, or the other way round — asking about height never answers this one.
+     * Defaults to miles rather than following [heightMetric]'s default, the more common reading here.
+     */
+    val distanceMetric: Boolean = false,
     /** Unset until chosen — see [Ring.setSkinTone]. Nothing is sent to the ring until it is. */
     val skinTone: SkinTone? = null
 ) {
@@ -105,7 +111,8 @@ data class Profile(
             storedAge = prefs.getInt("age", 30),
             heightCm = prefs.getInt("height", 175),
             weightKg = prefs.getInt("weight", 75),
-            metric = prefs.getBoolean("metric", true),
+            heightMetric = prefs.getBoolean("metric", true),
+            distanceMetric = prefs.getBoolean("distanceMetric", false),
             weightUnit = prefs.getString("weightUnit", null)
                 ?.let { name -> runCatching { WeightUnit.valueOf(name) }.getOrNull() }
             // Profiles written before weight had its own setting are carried across from what
@@ -146,7 +153,8 @@ data class Profile(
         .putLong("birthday", birthday)
         .putInt("height", heightCm)
         .putInt("weight", weightKg)
-        .putBoolean("metric", metric)
+        .putBoolean("metric", heightMetric)
+        .putBoolean("distanceMetric", distanceMetric)
         .putString("weightUnit", weightUnit.name)
         .putString("skinTone", skinTone?.name)
         .apply()
@@ -213,12 +221,6 @@ fun SettingsPage(
                 Toggle("Male", profile.sex == Sex.Male) { onProfile(profile.copy(sex = Sex.Male)) }
                 Spacer(Modifier.width(8.dp))
                 Toggle("Female", profile.sex == Sex.Female) { onProfile(profile.copy(sex = Sex.Female)) }
-                Spacer(Modifier.width(8.dp))
-                // Short label here: three chips in a row this narrow have no room for the full
-                // "Prefer not to say" that the onboarding screen can afford.
-                Toggle("Skip", profile.sex == Sex.PreferNotToSay) {
-                    onProfile(profile.copy(sex = Sex.PreferNotToSay))
-                }
             }
             Divider()
             Value(
@@ -231,18 +233,18 @@ fun SettingsPage(
                 Text("${profile.age} years", color = Ink.muted, fontSize = 16.sp)
             }
             Divider()
-            SettingRow("Units") {
-                Toggle("Metric", profile.metric) { onProfile(profile.copy(metric = true)) }
-                Spacer(Modifier.width(8.dp))
-                Toggle("Imperial", !profile.metric) { onProfile(profile.copy(metric = false)) }
-            }
-            Divider()
-            Value("Height", Units.height(profile.heightCm, profile.metric)) {
+            Value("Height", Units.height(profile.heightCm, profile.heightMetric)) {
                 editing = Editing.Height
             }
             Divider()
             Value("Weight", Units.weight(profile.weightKg, profile.weightUnit)) {
                 editing = Editing.Weight
+            }
+            Divider()
+            SettingRow("Distance") {
+                Toggle("Kilometres", profile.distanceMetric) { onProfile(profile.copy(distanceMetric = true)) }
+                Spacer(Modifier.width(8.dp))
+                Toggle("Miles", !profile.distanceMetric) { onProfile(profile.copy(distanceMetric = false)) }
             }
             Divider()
             SettingRow("Skin tone") {
@@ -555,21 +557,35 @@ private fun WheelSheet(
                         color = Ink.muted, fontSize = 14.sp
                     )
                 }
-                Editing.Height -> if (profile.metric) {
-                    Picker(profile.heightCm, 120..220, { "$it cm" }, Modifier.width(160.dp)) {
-                        onProfile(profile.copy(heightCm = it))
-                    }
-                } else {
-                    // Feet and inches are two wheels, because they are two numbers.
-                    Row(horizontalArrangement = Arrangement.Center) {
-                        Picker(feet, 3..7, { "$it ft" }, Modifier.width(120.dp)) {
-                            feet = it
-                            onProfile(profile.copy(heightCm = Units.feetInchesToCm(it, inches)))
+                Editing.Height -> {
+                    // Its own toggle here, same as Weight's below: it does not follow from
+                    // anything else being asked, so nothing else should decide it either.
+                    Row {
+                        Toggle("Centimetres", profile.heightMetric) {
+                            onProfile(profile.copy(heightMetric = true))
                         }
-                        Spacer(Modifier.width(12.dp))
-                        Picker(inches, 0..11, { "$it in" }, Modifier.width(120.dp)) {
-                            inches = it
-                            onProfile(profile.copy(heightCm = Units.feetInchesToCm(feet, it)))
+                        Spacer(Modifier.width(8.dp))
+                        Toggle("Feet & inches", !profile.heightMetric) {
+                            onProfile(profile.copy(heightMetric = false))
+                        }
+                    }
+                    Spacer(Modifier.height(20.dp))
+                    if (profile.heightMetric) {
+                        Picker(profile.heightCm, 120..220, { "$it cm" }, Modifier.width(160.dp)) {
+                            onProfile(profile.copy(heightCm = it))
+                        }
+                    } else {
+                        // Feet and inches are two wheels, because they are two numbers.
+                        Row(horizontalArrangement = Arrangement.Center) {
+                            Picker(feet, 3..7, { "$it ft" }, Modifier.width(120.dp)) {
+                                feet = it
+                                onProfile(profile.copy(heightCm = Units.feetInchesToCm(it, inches)))
+                            }
+                            Spacer(Modifier.width(12.dp))
+                            Picker(inches, 0..11, { "$it in" }, Modifier.width(120.dp)) {
+                                inches = it
+                                onProfile(profile.copy(heightCm = Units.feetInchesToCm(feet, it)))
+                            }
                         }
                     }
                 }

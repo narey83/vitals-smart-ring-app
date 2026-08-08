@@ -58,6 +58,9 @@ object Ring {
     /** Reads firmware and battery. The literal "GC" is required; the ring refuses without it. */
     fun deviceInfo() = frame(0x02, 0x00, byteArrayOf(0x47, 0x43))
 
+    /** GetNowStep: the running total on demand, rather than waiting for the next automatic push. */
+    fun getNowStep() = frame(0x02, 0x0C)
+
     /**
      * Which measurements the ring takes on its own.
      *
@@ -178,6 +181,15 @@ object Ring {
             0x04 to 0x0E -> payload.takeIf { it.isNotEmpty() }?.let { Reading.Finished(at(0)) }
             0x02 to 0x00 -> payload.takeIf { it.size >= 6 }?.let {
                 Reading.Power(at(5), at(4) != 0, "V${at(3)}.${at(2)}")
+            }
+            // GetNowStep's reply: steps then calories then distance, unlike the bare ACTIVITY
+            // push which orders steps/distance/calories — see readActivity.
+            0x02 to 0x0C -> payload.takeIf { it.size >= 8 }?.let {
+                Reading.Motion(
+                    steps = at(0) or (at(1) shl 8) or (at(2) shl 16),
+                    distance = at(5) or (at(6) shl 8) or (at(7) shl 16),
+                    calories = at(3) or (at(4) shl 8)
+                )
             }
             else -> null
         }

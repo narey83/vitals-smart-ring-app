@@ -61,6 +61,7 @@ fun Shell(
     onStartWorkout: (String) -> Unit,
     onStopWorkout: () -> Unit,
     onCalibrate: () -> Unit,
+    onRefreshSteps: () -> Unit,
     sleepTarget: Int,
     dayFor: @Composable (Tab) -> VitalDay
 ) {
@@ -109,7 +110,8 @@ fun Shell(
                             }
                         )
                     },
-                    onCalibrate = if (tab == Tab.Pressure) onCalibrate else null
+                    onCalibrate = if (tab == Tab.Pressure) onCalibrate else null,
+                    onRefreshSteps = if (tab == Tab.Steps) onRefreshSteps else null
                 )
             }
         }

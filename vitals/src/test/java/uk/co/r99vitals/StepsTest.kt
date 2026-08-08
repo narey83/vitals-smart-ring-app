@@ -73,4 +73,30 @@ class StepsTest {
         assertEquals(2400, Steps.total(entries))
         assertEquals(Steps.total(entries), Steps.hours(entries).sumOf { it.steps })
     }
+
+    /**
+     * A ring whose clock never rolls over never zeroes the counter either, so today's first
+     * reading is still yesterday's leftover total, not a burst of steps taken at 09:05. Only the
+     * amount past the baseline is today's.
+     */
+    @Test fun `a counter carried over from before today only counts what is past the baseline`() {
+        val entries = listOf(at(9, 5, 1451), at(12, 5, 1451), at(18, 5, 1500))
+        assertEquals(49, Steps.total(entries, baseline = 1451))
+        val hours = Steps.hours(entries, baseline = 1451)
+        assertEquals(0, hours[9].steps)
+        assertEquals(49, hours[18].steps)
+        assertEquals(49, hours.sumOf { it.steps })
+    }
+
+    /**
+     * A real reset during the day still zeroes out, even with a baseline from before today.
+     * [Steps.total] takes the simpler "highest count seen" reading, so a reset partway through
+     * the day — the pre-reset peak outscoring what has been walked since — is a known blind spot
+     * shared with the no-baseline case above; [Steps.hours], which is bucket-by-bucket, is not.
+     */
+    @Test fun `a genuine reset still starts today from zero, baseline or not`() {
+        val entries = listOf(at(9, 5, 1451), at(12, 5, 40))
+        assertEquals(40, Steps.hours(entries, baseline = 1451)[12].steps)
+        assertEquals(0, Steps.hours(entries, baseline = 1451).count { it.steps < 0 })
+    }
 }

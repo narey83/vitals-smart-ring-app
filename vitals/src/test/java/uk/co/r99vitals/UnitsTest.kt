@@ -66,8 +66,8 @@ class UnitsTest {
     @Test fun `distance reads in whichever units are wanted`() {
         assertEquals("850 m", Units.distance(850, metric = true))
         assertEquals("1.02 km", Units.distance(1016, metric = true))
-        // Short walks in miles would read 0.00, so they are given in yards.
-        assertEquals("109 yd", Units.distance(100, metric = false))
+        // Always miles imperial-side, however short the walk — no yards.
+        assertEquals("0.06 mi", Units.distance(100, metric = false))
         assertEquals("0.63 mi", Units.distance(1016, metric = false))
     }
 }

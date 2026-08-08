@@ -66,8 +66,6 @@ object Units {
     fun distance(metres: Int, metric: Boolean): String = when {
         metric && metres < 1000 -> "$metres m"
         metric -> "%.2f km".format(metres / 1000.0)
-        // Under a couple of hundred yards a mile figure is all zeroes, so say yards instead.
-        metres < 400 -> "%d yd".format((metres * 1.0936133).roundToInt())
         else -> "%.2f mi".format(metres / 1609.344)
     }
 

@@ -46,7 +46,7 @@ import kotlinx.coroutines.delay
  * and [retreatOnboarding] step through, taken straight from [OnboardingStep.entries].
  */
 enum class OnboardingStep {
-    Splash, Name, Sex, Birthday, Height, Weight, SkinTone, Goals, Sleep, Notifications, Pairing
+    Splash, Name, Sex, Birthday, Height, Weight, Distance, SkinTone, Goals, Sleep, Notifications, Pairing
 }
 
 @Composable
@@ -73,6 +73,7 @@ fun OnboardingFlow(
             OnboardingStep.Birthday -> BirthdayPage(profile, onProfile, onNext, onBack)
             OnboardingStep.Height -> HeightPage(profile, onProfile, onNext, onBack)
             OnboardingStep.Weight -> WeightPage(profile, onProfile, onNext, onBack)
+            OnboardingStep.Distance -> DistancePage(profile, onProfile, onNext, onBack)
             OnboardingStep.SkinTone -> SkinTonePage(profile, onProfile, onNext, onBack)
             OnboardingStep.Goals -> GoalsPage(stepGoal, onGoal, onNext, onBack)
             OnboardingStep.Sleep -> SleepGoalPage(plan, onPlan, onNext, onBack)
@@ -149,10 +150,6 @@ private fun SexPage(profile: Profile, onProfile: (Profile) -> Unit, onNext: () -
             Spacer(Modifier.width(8.dp))
             Toggle("Female", profile.sex == Sex.Female) { onProfile(profile.copy(sex = Sex.Female)) }
         }
-        Spacer(Modifier.height(8.dp))
-        Toggle("Prefer not to say", profile.sex == Sex.PreferNotToSay) {
-            onProfile(profile.copy(sex = Sex.PreferNotToSay))
-        }
     }
 }
 
@@ -192,6 +189,23 @@ private fun WeightPage(profile: Profile, onProfile: (Profile) -> Unit, onNext: (
         onPrimary = onNext
     ) {
         WeightPicker(profile, onProfile)
+    }
+}
+
+@Composable
+private fun DistancePage(profile: Profile, onProfile: (Profile) -> Unit, onNext: () -> Unit, onBack: () -> Unit) {
+    OnboardingScaffold(
+        step = OnboardingStep.Distance,
+        title = "Distance",
+        subtitle = "How far you've walked — kilometres or miles. Its own choice, separate from height.",
+        onBack = onBack,
+        onPrimary = onNext
+    ) {
+        Row {
+            Toggle("Kilometres", profile.distanceMetric) { onProfile(profile.copy(distanceMetric = true)) }
+            Spacer(Modifier.width(8.dp))
+            Toggle("Miles", !profile.distanceMetric) { onProfile(profile.copy(distanceMetric = false)) }
+        }
     }
 }
 
@@ -246,13 +260,13 @@ private fun HeightPicker(profile: Profile, onProfile: (Profile) -> Unit) {
     var feet by remember { mutableStateOf(Units.cmToFeetInches(profile.heightCm).first) }
     var inches by remember { mutableStateOf(Units.cmToFeetInches(profile.heightCm).second) }
     Row {
-        Toggle("Centimetres", profile.metric) { onProfile(profile.copy(metric = true)) }
+        Toggle("Centimetres", profile.heightMetric) { onProfile(profile.copy(heightMetric = true)) }
         Spacer(Modifier.width(8.dp))
-        Toggle("Feet & inches", !profile.metric) { onProfile(profile.copy(metric = false)) }
+        Toggle("Feet & inches", !profile.heightMetric) { onProfile(profile.copy(heightMetric = false)) }
     }
     Spacer(Modifier.height(14.dp))
     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-        if (profile.metric) {
+        if (profile.heightMetric) {
             Picker(profile.heightCm, 120..220, { "$it cm" }, Modifier.width(160.dp)) {
                 onProfile(profile.copy(heightCm = it))
             }
