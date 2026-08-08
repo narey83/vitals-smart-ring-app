@@ -155,7 +155,9 @@ data class VitalsState(
     val metric: Boolean = true,
     val monitors: Ring.Monitors = Ring.Monitors(),
     /** Set only on the wearer's birthday, and already worded. */
-    val celebrate: String? = null
+    val celebrate: String? = null,
+    /** The ring's own advertised name — null until one has actually answered as a ring. */
+    val ringName: String? = null
 )
 
 @Composable
@@ -250,8 +252,13 @@ private fun Header(state: VitalsState, onLink: () -> Unit, onSettings: () -> Uni
             }
         }
         Spacer(Modifier.height(6.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            // A quiet dot beats a sentence about connection state.
+        Text(state.link, color = Ink.text, fontSize = 26.sp)
+        // The ring's own name, and what it's on — a second line, not squeezed onto the greeting.
+        // The dot lives here now too: it says whether the ring is connected, not whether you are.
+        // Always shown, even before a ring is paired, since the dot and the tap-to-connect are
+        // exactly what that state needs to say.
+        Spacer(Modifier.height(4.dp))
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickableNoRipple(onLink)) {
             val pulse by animateFloatAsState(
                 if (state.connected) 1f else 0.35f, tween(600), label = "link"
             )
@@ -261,13 +268,10 @@ private fun Header(state: VitalsState, onLink: () -> Unit, onSettings: () -> Uni
                     .clip(CircleShape)
                     .background((if (state.connected) Ink.motion else Ink.muted).copy(alpha = pulse))
             )
-            Spacer(Modifier.width(10.dp))
-            Text(
-                state.link, color = Ink.text, fontSize = 26.sp,
-                modifier = Modifier.clickableNoRipple(onLink)
-            )
+            Spacer(Modifier.width(8.dp))
+            Text(state.ringName ?: "Ring", color = Ink.muted, fontSize = 14.sp)
             state.battery?.let { level ->
-                Spacer(Modifier.width(12.dp))
+                Spacer(Modifier.width(10.dp))
                 // Charging is worth showing plainly: it is the one battery state you act on.
                 val tone = when {
                     state.charging -> Ink.motion
@@ -284,10 +288,10 @@ private fun Header(state: VitalsState, onLink: () -> Unit, onSettings: () -> Uni
                     },
                     contentDescription = if (state.charging) "Ring charging" else "Ring battery",
                     tint = tone,
-                    modifier = Modifier.size(17.dp)
+                    modifier = Modifier.size(15.dp)
                 )
                 Spacer(Modifier.width(4.dp))
-                Text("$level%", color = tone, fontSize = 15.sp)
+                Text("$level%", color = tone, fontSize = 14.sp)
                 if (state.charging) {
                     Spacer(Modifier.width(6.dp))
                     Text("charging", color = Ink.motion, fontSize = 13.sp)

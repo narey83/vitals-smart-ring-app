@@ -61,6 +61,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 
+/** What is shown and asked; the ring itself only ever gets [Profile.maleForRing]. */
+enum class Sex { Male, Female, PreferNotToSay }
+
 /**
  * Who is wearing the ring, and what they want from it.
  *
@@ -71,7 +74,7 @@ import androidx.compose.ui.viewinterop.AndroidView
  */
 data class Profile(
     val name: String = "",
-    val male: Boolean = true,
+    val sex: Sex = Sex.Male,
     /**
      * The day itself, as an epoch day, or 0 when it has never been set.
      *
@@ -93,7 +96,11 @@ data class Profile(
     companion object {
         fun read(prefs: SharedPreferences) = Profile(
             name = prefs.getString("name", "") ?: "",
-            male = prefs.getBoolean("male", true),
+            sex = prefs.getString("sex", null)
+                ?.let { name -> runCatching { Sex.valueOf(name) }.getOrNull() }
+            // Profiles written before sex had its own setting only ever recorded the two the
+            // ring accepts.
+                ?: if (prefs.getBoolean("male", true)) Sex.Male else Sex.Female,
             birthday = prefs.getLong("birthday", 0L),
             storedAge = prefs.getInt("age", 30),
             heightCm = prefs.getInt("height", 175),
@@ -127,9 +134,15 @@ data class Profile(
             it.monthValue == today.monthValue && it.dayOfMonth == today.dayOfMonth
         } ?: false
 
+    /** The ring's setUserInfo only has the one bit; asked not to say defaults to what it always did. */
+    val maleForRing: Boolean get() = sex != Sex.Female
+
+    /** What the Today greeting says — a surname in "Good morning" reads like a form letter. */
+    val firstName: String get() = name.trim().substringBefore(' ')
+
     fun write(prefs: SharedPreferences) = prefs.edit()
         .putString("name", name)
-        .putBoolean("male", male)
+        .putString("sex", sex.name)
         .putLong("birthday", birthday)
         .putInt("height", heightCm)
         .putInt("weight", weightKg)
@@ -196,11 +209,16 @@ fun SettingsPage(
         Panel {
             Field("Name", profile.name) { onProfile(profile.copy(name = it)) }
             Divider()
-            // Two buttons rather than a dropdown: there are two values the ring accepts.
             SettingRow("Sex") {
-                Toggle("Male", profile.male) { onProfile(profile.copy(male = true)) }
+                Toggle("Male", profile.sex == Sex.Male) { onProfile(profile.copy(sex = Sex.Male)) }
                 Spacer(Modifier.width(8.dp))
-                Toggle("Female", !profile.male) { onProfile(profile.copy(male = false)) }
+                Toggle("Female", profile.sex == Sex.Female) { onProfile(profile.copy(sex = Sex.Female)) }
+                Spacer(Modifier.width(8.dp))
+                // Short label here: three chips in a row this narrow have no room for the full
+                // "Prefer not to say" that the onboarding screen can afford.
+                Toggle("Skip", profile.sex == Sex.PreferNotToSay) {
+                    onProfile(profile.copy(sex = Sex.PreferNotToSay))
+                }
             }
             Divider()
             Value(
@@ -400,8 +418,8 @@ private fun Field(label: String, value: String, onChange: (String) -> Unit) {
 /** Which value a wheel is currently being shown for, if any. */
 private enum class Editing { None, Birthday, Height, Weight, Goal, Bedtime, WakeTime }
 
-private val birthdayFormat = java.time.format.DateTimeFormatter.ofPattern("d MMMM yyyy")
-private val monthNames = listOf(
+internal val birthdayFormat = java.time.format.DateTimeFormatter.ofPattern("d MMMM yyyy")
+internal val monthNames = listOf(
     "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
 )
 
@@ -692,7 +710,7 @@ private val skinSwatches = mapOf(
 )
 
 @Composable
-private fun Swatch(tone: SkinTone, chosen: Boolean, onPick: () -> Unit) {
+internal fun Swatch(tone: SkinTone, chosen: Boolean, onPick: () -> Unit) {
     Box(
         Modifier
             .size(30.dp)
@@ -706,7 +724,7 @@ private fun Swatch(tone: SkinTone, chosen: Boolean, onPick: () -> Unit) {
 }
 
 @Composable
-private fun Toggle(label: String, chosen: Boolean, onPick: () -> Unit) {
+internal fun Toggle(label: String, chosen: Boolean, onPick: () -> Unit) {
     Text(
         label,
         color = if (chosen) Ink.canvas else Ink.text,

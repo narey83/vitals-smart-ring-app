@@ -68,6 +68,8 @@ class VitalsActivity : AppCompatActivity() {
     private var interval = 15   // minutes; 0 means off
     private var monitors = Ring.Monitors()
     private var settingsOpen by mutableStateOf(false)
+    /** Null once done. Every screen it passes through writes as it goes, same as Settings does. */
+    private var onboarding by mutableStateOf<OnboardingStep?>(null)
     private var nightMode by mutableStateOf(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
     private var profile by mutableStateOf(Profile())
     private var plan by mutableStateOf(SleepPlan())
@@ -75,9 +77,21 @@ class VitalsActivity : AppCompatActivity() {
     private var ringAddress: String?
         get() = saved.getString("address", null)
         set(value) { saved.edit().putString("address", value).apply() }
+    /** The ring's own advertised name, read off the device once it has actually answered as one. */
+    private var ringName: String?
+        get() = saved.getString("ringName", null)
+        set(value) { saved.edit().putString("ringName", value).apply() }
     private var scanning = false
     private val found = linkedMapOf<String, ScanResult>()
     private var retryDelay = 0L
+
+    /**
+     * Set from the moment a freshly-chosen device is asked to connect until its services come
+     * back, so a device that answers with no [Ring.COMMAND_CHANNEL] — a phone, a pair of
+     * headphones, anything else nearby that happens to be a connectable BLE device — is told
+     * apart from a ring that has merely dropped a routine reconnect.
+     */
+    private var verifying = false
 
     private val handler = Handler(Looper.getMainLooper())
     private var gatt: BluetoothGatt? = null
@@ -154,12 +168,17 @@ class VitalsActivity : AppCompatActivity() {
         )
         profile = Profile.read(saved)
         plan = SleepPlan.read(saved)
+        val onboardingSeen = saved.getInt("onboardingSeen", 0)
+        onboarding = savedInstanceState?.getInt("onboarding", -1)?.takeIf { it >= 0 }
+            ?.let { OnboardingStep.entries.getOrNull(it) }
+            ?: if (onboardingSeen < ONBOARDING_VERSION) OnboardingStep.Splash else null
         ui = ui.copy(
             interval = interval,
             stepGoal = saved.getInt("goal", 10_000),
             metric = profile.metric,
             monitors = monitors,
-            celebrate = birthdayGreeting()
+            celebrate = birthdayGreeting(),
+            ringName = ringName
         )
         if (intent?.getStringExtra("tab") == "sleep") tab = Tab.Sleep
         setContent {
@@ -174,7 +193,22 @@ class VitalsActivity : AppCompatActivity() {
                 onDismiss = { sheet = Sheet.None }
             )
             BackHandler(settingsOpen) { closeSettings() }
-            if (settingsOpen) {
+            if (onboarding != null) {
+                OnboardingFlow(
+                    step = onboarding!!,
+                    profile = profile,
+                    onProfile = { updateProfile(it) },
+                    stepGoal = ui.stepGoal,
+                    onGoal = { updateGoal(it) },
+                    plan = plan,
+                    onPlan = { updatePlan(it) },
+                    link = ui.link,
+                    onNext = { advanceOnboarding() },
+                    onBack = { retreatOnboarding() },
+                    onEnableNotifications = { askNotificationThenAdvance() },
+                    onFindRing = { askThenConnect() }
+                )
+            } else if (settingsOpen) {
                 SettingsPage(
                     profile = profile,
                     state = ui,
@@ -184,27 +218,14 @@ class VitalsActivity : AppCompatActivity() {
                     // only told once, on the way out, rather than a frame per character.
                     nightMode = nightMode,
                     plan = plan,
-                    onPlan = {
-                        plan = it
-                        it.write(saved)
-                        // Booked straight away: a reminder the wearer has just switched on and
-                        // that only starts working after the next restart is a broken switch.
-                        Bedtime.apply(this, it)
-                    },
-                    onProfile = {
-                        profile = it
-                        it.write(saved)
-                        ui = ui.copy(metric = it.metric, celebrate = birthdayGreeting())
-                    },
+                    onPlan = { updatePlan(it) },
+                    onProfile = { updateProfile(it) },
                     onNightMode = { mode ->
                         nightMode = mode
                         saved.edit().putInt("night", mode).apply()
                         AppCompatDelegate.setDefaultNightMode(mode)
                     },
-                    onGoal = { goal ->
-                        ui = ui.copy(stepGoal = goal)
-                        saved.edit().putInt("goal", goal).apply()
-                    },
+                    onGoal = { updateGoal(it) },
                     onInterval = { minutes ->
                         interval = minutes
                         saved.edit().putInt("interval", minutes).apply()
@@ -256,7 +277,9 @@ class VitalsActivity : AppCompatActivity() {
                 this, overAdb, IntentFilter("uk.co.r99vitals.RUN"), ContextCompat.RECEIVER_EXPORTED
             )
         }
-        askThenConnect()
+        // Onboarding's own Pairing screen decides when to reach for the ring; asking here as
+        // well would pop the permission dialog under the splash before it has even said why.
+        if (onboarding == null) askThenConnect()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -268,6 +291,63 @@ class VitalsActivity : AppCompatActivity() {
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         outState.putBoolean("settings", settingsOpen)
+        outState.putInt("onboarding", onboarding?.ordinal ?: -1)
+    }
+
+    /** Shared by Settings and onboarding, so a name typed in either place behaves the same way. */
+    private fun updateProfile(next: Profile) {
+        profile = next
+        next.write(saved)
+        ui = ui.copy(
+            metric = next.metric, celebrate = birthdayGreeting(),
+            // A name typed in while the ring is already connected should show up in the
+            // greeting straight away, not only after the next reconnect.
+            link = if (command != null) greeting() else ui.link
+        )
+    }
+
+    private fun updateGoal(goal: Int) {
+        ui = ui.copy(stepGoal = goal)
+        saved.edit().putInt("goal", goal).apply()
+    }
+
+    private fun updatePlan(next: SleepPlan) {
+        plan = next
+        next.write(saved)
+        // Booked straight away: a reminder the wearer has just switched on and that only starts
+        // working after the next restart is a broken switch.
+        Bedtime.apply(this, next)
+    }
+
+    private val onboardingNotifications = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) {
+        // Granted or refused, onboarding moves on either way — see askNotificationThenAdvance.
+        advanceOnboarding()
+    }
+
+    private fun askNotificationThenAdvance() {
+        val already = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
+                PackageManager.PERMISSION_GRANTED
+        if (already) advanceOnboarding() else onboardingNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
+    }
+
+    private fun advanceOnboarding() {
+        val steps = OnboardingStep.entries
+        val next = onboarding?.let { steps.getOrNull(steps.indexOf(it) + 1) }
+        onboarding = next
+        if (next == null) {
+            saved.edit().putInt("onboardingSeen", ONBOARDING_VERSION).apply()
+            // Already connected if pairing succeeded during onboarding; only chase the ring if
+            // it did not, same as a normal launch would.
+            if (command == null) askThenConnect()
+        }
+    }
+
+    private fun retreatOnboarding() {
+        val steps = OnboardingStep.entries
+        onboarding = onboarding?.let { steps.getOrNull(steps.indexOf(it) - 1) } ?: onboarding
     }
 
     private fun askThenConnect() {
@@ -332,11 +412,21 @@ class VitalsActivity : AppCompatActivity() {
             .setTitle("Which one is your ring?")
             .setItems(labels) { _, which ->
                 ringAddress = choices[which].first
+                verifying = true
                 connect()
-                CollectorService.start(this)
             }
             .setNegativeButton("Cancel", null)
             .show()
+    }
+
+    /** The chosen device answered, but not as a ring would. Undoes the pairing rather than keeping it. */
+    @SuppressLint("MissingPermission")
+    private fun rejectNonRing() {
+        verifying = false
+        gatt?.disconnect(); gatt?.close(); gatt = null
+        ringAddress = null
+        ringName = null
+        ui = ui.copy(link = "That wasn't a ring — tap to choose again", connected = false, ringName = null)
     }
 
     private val scanCallback = object : ScanCallback() {
@@ -489,7 +579,7 @@ class VitalsActivity : AppCompatActivity() {
         if (command == null) return
         enqueue { write(Ring.setStepGoal(ui.stepGoal)) }
         enqueue {
-            write(Ring.setUserInfo(profile.male, profile.age, profile.heightCm, profile.weightKg))
+            write(Ring.setUserInfo(profile.maleForRing, profile.age, profile.heightCm, profile.weightKg))
         }
         profile.skinTone?.let { tone -> enqueue { write(Ring.setSkinTone(tone)) } }
     }
@@ -501,7 +591,11 @@ class VitalsActivity : AppCompatActivity() {
         gatt = null
         command = null
         ringAddress = null
-        ui = ui.copy(link = "Looking for your ring", connected = false, battery = null, firmware = null)
+        ringName = null
+        ui = ui.copy(
+            link = "Looking for your ring", connected = false, battery = null, firmware = null,
+            ringName = null
+        )
         settingsOpen = false
         askThenConnect()
     }
@@ -582,6 +676,14 @@ class VitalsActivity : AppCompatActivity() {
      */
     private fun rows(entries: List<History.Entry>, value: (History.Entry) -> String) =
         entries.map { Reading(hourMinute.format(it.at), value(it), manual = it.manual) }
+
+    /** What the header says once the ring is actually there to be read. */
+    private fun greeting(): String {
+        val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
+        val time = when { hour < 12 -> "morning"; hour < 18 -> "afternoon"; else -> "evening" }
+        val who = profile.firstName.takeIf { it.isNotEmpty() }
+        return "Good $time" + (who?.let { ", $it" } ?: "")
+    }
 
     /** Worded here so the screen only has to decide whether to show it. */
     private fun birthdayGreeting(): String? {
@@ -711,6 +813,20 @@ class VitalsActivity : AppCompatActivity() {
                         if (notifies) enqueue { subscribe(gatt, characteristic) }
                     }
                 }
+                // The one check that actually says "ring": nothing else on the command channel
+                // answers to this UUID, so a device without it is not one, whatever it looked
+                // like in the scan list.
+                if (command == null) {
+                    if (verifying) rejectNonRing() else ui = ui.copy(link = "Could not read the ring", connected = false)
+                    return@runOnUiThread
+                }
+                verifying = false
+                // The name it actually answers to, rather than a placeholder — read once, here,
+                // because this is the one moment already gated on the ring having proved itself.
+                ringName = runCatching { gatt.device.name }.getOrNull()
+                ui = ui.copy(ringName = ringName)
+                CollectorService.start(this@VitalsActivity)
+                if (onboarding == OnboardingStep.Pairing) advanceOnboarding()
                 enqueue { write(Ring.deviceInfo()) }
                 // The readings taken while nothing was listening. The ring keeps them to itself
                 // until asked, so every connection asks; History drops the ones already held.
@@ -728,7 +844,7 @@ class VitalsActivity : AppCompatActivity() {
                 // change". Sleep data matters more than a few seconds of drift.
                 Ring.automaticMonitoring(chosenMonitors(), if (interval > 0) interval else 15)
                     .forEach { frame -> enqueue { write(frame) } }
-                enqueue { ui = ui.copy(link = "Your ring"); false }
+                enqueue { ui = ui.copy(link = greeting()); false }
                 handler.removeCallbacks(askBattery)
                 handler.post(askBattery)
             }
@@ -774,6 +890,11 @@ class VitalsActivity : AppCompatActivity() {
                 val last = history.latest("steps")
                 val stillYesterday = last != null && it.steps >= last.value &&
                     !History.sameDay(last.at.time, System.currentTimeMillis())
+                // Without this, History's own "steps" row never advances while the app is in the
+                // foreground — only the background collector wrote it — so the row above stays
+                // pinned to yesterday and stillYesterday flips permanently true the moment today's
+                // count catches up to it.
+                history.record("steps", it.steps, it.calories)
                 if (!stillYesterday) {
                     ui = ui.copy(steps = it.steps, distance = it.distance, calories = it.calories)
                 }
@@ -821,7 +942,7 @@ class VitalsActivity : AppCompatActivity() {
                 history.record("pressure", reading.systolic, reading.diastolic, manual = userAsked)
             }
             is Ring.Reading.Power -> ui = ui.copy(
-                link = "Your ring", battery = reading.percent, charging = reading.charging,
+                link = greeting(), battery = reading.percent, charging = reading.charging,
                 firmware = reading.firmware
             )
             // Pushed on its own schedule, ahead of the next poll — see the Battery doc comment
@@ -868,5 +989,8 @@ class VitalsActivity : AppCompatActivity() {
         super.onDestroy()
     }
 
-
+    companion object {
+        /** Bumped so an existing install sees the onboarding once more; never for anything else. */
+        private const val ONBOARDING_VERSION = 1
+    }
 }
