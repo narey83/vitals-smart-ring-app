@@ -81,6 +81,7 @@ it only needs reconnecting:
 
 Then, to see whether the ring really is sampling on its own:
 
-    adb shell run-as uk.co.r99vitals cat files/readings.csv > /tmp/readings.csv
+    adb exec-out run-as uk.co.r99vitals cat files/readings.db > /tmp/readings.db
+    sqlite3 -csv /tmp/readings.db 'select at,kind,value,extra,manual from readings order by at,id' > /tmp/readings.csv
     python3 tools/interval_check.py /tmp/readings.csv 15
 EOF

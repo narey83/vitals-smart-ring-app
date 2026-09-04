@@ -88,9 +88,8 @@ fun SleepPage(
         if (days.isEmpty()) {
             Spacer(Modifier.height(16.dp))
             Note(
-                "The ring works out its own sleep stages overnight and keeps them to itself. " +
-                    "Wear it to bed and they are collected the next time it is connected — not " +
-                    "while you are asleep."
+                "No sleep recorded yet. Wear the ring tonight, then reconnect it after you wake " +
+                    "to bring your sleep stages into the app."
             )
             return@Column
         }

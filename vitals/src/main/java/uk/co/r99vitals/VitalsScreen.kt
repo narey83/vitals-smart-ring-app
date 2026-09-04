@@ -134,9 +134,12 @@ data class VitalsState(
     val battery: Int? = null,
     val charging: Boolean = false,
     val heart: Int? = null,
+    val heartAt: Long? = null,
     val oxygen: Int? = null,
+    val oxygenAt: Long? = null,
     val systolic: Int? = null,
     val diastolic: Int? = null,
+    val pressureAt: Long? = null,
     val steps: Int? = null,
     val distance: Int = 0,
     val calories: Int = 0,
@@ -148,6 +151,8 @@ data class VitalsState(
     val workout: String? = null,
     val workoutSince: Long = 0L,
     val workoutBeats: List<Int> = emptyList(),
+    /** Found in the step counter by the collector rather than started here — see [WorkoutDetector]. */
+    val workoutDetected: Boolean = false,
     val pastWorkouts: List<Workouts.Session> = emptyList(),
     val nights: List<Sleep.Night> = emptyList(),
     val stepGoal: Int = 10_000,
@@ -165,6 +170,7 @@ fun VitalsScreen(
     state: VitalsState,
     onSettings: () -> Unit,
     onLink: () -> Unit,
+    onVital: (Tab) -> Unit,
     sleepTarget: Int = SleepInsight.TARGET_ASLEEP
 ) {
     // Sleep is grouped by the day it ended on and can arrive in several pieces, same as the
@@ -185,23 +191,25 @@ fun VitalsScreen(
             BirthdayCard(it)
         }
         Spacer(Modifier.height(22.dp))
-        HeartCard(state)
+        HeartCard(state) { onVital(Tab.Heart) }
         Spacer(Modifier.height(12.dp))
         Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
             SmallCard(
                 "BLOOD OXYGEN", state.oxygen?.let { "$it%" }, Ink.oxygen,
-                Modifier.weight(1f).fillMaxHeight(), icon = Icons.Rounded.Bloodtype
+                Modifier.weight(1f).fillMaxHeight(), icon = Icons.Rounded.Bloodtype,
+                onClick = { onVital(Tab.Oxygen) }
             )
             Spacer(Modifier.width(12.dp))
             SmallCard(
                 "PRESSURE",
                 state.systolic?.let { "$it/${state.diastolic}" }, Ink.pressure,
-                Modifier.weight(1f).fillMaxHeight(), footnote = "estimated", icon = Icons.Rounded.MonitorHeart
+                Modifier.weight(1f).fillMaxHeight(), footnote = "estimated", icon = Icons.Rounded.MonitorHeart,
+                onClick = { onVital(Tab.Pressure) }
             )
         }
         Spacer(Modifier.height(12.dp))
         Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
-            MovementCard(state, Modifier.weight(1f).fillMaxHeight())
+            MovementCard(state, Modifier.weight(1f).fillMaxHeight()) { onVital(Tab.Steps) }
             // A fragment (a nap, a doze the ring barely caught) is not scored anywhere else
             // either, so it is left out here too rather than showing a number nobody would
             // stand behind. Movement then simply takes the full row on its own.
@@ -210,7 +218,8 @@ fun VitalsScreen(
                 val (score, _) = SleepInsight.score(night, sleepTarget)
                 SmallCard(
                     "SLEEP", score.toString(), Ink.sleep, Modifier.weight(1f).fillMaxHeight(),
-                    footnote = SleepInsight.verdict(score), icon = Icons.Rounded.Bedtime
+                    footnote = SleepInsight.verdict(score), icon = Icons.Rounded.Bedtime,
+                    onClick = { onVital(Tab.Sleep) }
                 )
             }
         }
@@ -219,7 +228,7 @@ fun VitalsScreen(
         // ring is currently doing, which is a fact rather than a button.
         Text(
             if (state.interval == 0) "Automatic readings are off"
-            else "Measuring on its own every ${state.interval} min",
+            else "Automatic measurements every ${state.interval} min",
             color = Ink.muted, fontSize = 13.sp
         )
         Spacer(Modifier.height(20.dp))
@@ -269,7 +278,10 @@ private fun Header(state: VitalsState, onLink: () -> Unit, onSettings: () -> Uni
                     .background((if (state.connected) Ink.motion else Ink.muted).copy(alpha = pulse))
             )
             Spacer(Modifier.width(8.dp))
-            Text(state.ringName ?: "Ring", color = Ink.muted, fontSize = 14.sp)
+            Text(
+                (if (state.connected) "Connected · " else "Disconnected · ") + (state.ringName ?: "Ring"),
+                color = Ink.muted, fontSize = 14.sp
+            )
             state.battery?.let { level ->
                 Spacer(Modifier.width(10.dp))
                 // Charging is worth showing plainly: it is the one battery state you act on.
@@ -301,6 +313,16 @@ private fun Header(state: VitalsState, onLink: () -> Unit, onSettings: () -> Uni
     }
 }
 
+private fun relativeTime(at: Long): String {
+    val minutes = ((System.currentTimeMillis() - at).coerceAtLeast(0) / 60_000).toInt()
+    return when {
+        minutes < 1 -> "just now"
+        minutes < 60 -> "$minutes min ago"
+        minutes < 24 * 60 -> "${minutes / 60} hr ago"
+        else -> java.text.SimpleDateFormat("d MMM, HH:mm", java.util.Locale.UK).format(java.util.Date(at))
+    }
+}
+
 /** Once a year, and gone the next day. Worth a moment rather than a whole feature. */
 @Composable
 private fun BirthdayCard(message: String) {
@@ -322,11 +344,11 @@ private fun BirthdayCard(message: String) {
 }
 
 @Composable
-private fun HeartCard(state: VitalsState) {
+private fun HeartCard(state: VitalsState, onClick: () -> Unit) {
     Card(
         shape = RoundedCornerShape(26.dp),
         colors = CardDefaults.cardColors(containerColor = Ink.card),
-        modifier = Modifier.fillMaxWidth()
+        modifier = Modifier.fillMaxWidth().clickableNoRippleShared(onClick)
     ) {
         Column(Modifier.padding(22.dp)) {
             Label("HEART RATE", Ink.heart, Icons.Rounded.Favorite)
@@ -349,7 +371,11 @@ private fun HeartCard(state: VitalsState) {
                 Text("bpm", color = Ink.muted, fontSize = 16.sp, modifier = Modifier.padding(bottom = 14.dp))
             }
             Text(
-                state.measuring ?: if (state.heart == null) "Not measured yet" else "Latest reading",
+                state.measuring ?: when {
+                    state.heart == null -> "Not measured yet"
+                    state.heartAt == null -> "Live now · tap for details"
+                    else -> "Measured ${relativeTime(state.heartAt)} · tap for details"
+                },
                 color = Ink.muted, fontSize = 13.sp
             )
             if (state.trend.size > 1) {
@@ -485,12 +511,13 @@ private fun SmallCard(
     accent: Color,
     modifier: Modifier,
     footnote: String? = null,
-    icon: ImageVector? = null
+    icon: ImageVector? = null,
+    onClick: () -> Unit = {}
 ) {
     Card(
         shape = RoundedCornerShape(22.dp),
         colors = CardDefaults.cardColors(containerColor = Ink.card),
-        modifier = modifier
+        modifier = modifier.clickableNoRippleShared(onClick)
     ) {
         Column(Modifier.padding(18.dp)) {
             Label(label, accent, icon)
@@ -501,11 +528,11 @@ private fun SmallCard(
 }
 
 @Composable
-private fun MovementCard(state: VitalsState, modifier: Modifier = Modifier.fillMaxWidth()) {
+private fun MovementCard(state: VitalsState, modifier: Modifier = Modifier.fillMaxWidth(), onClick: () -> Unit = {}) {
     Card(
         shape = RoundedCornerShape(26.dp),
         colors = CardDefaults.cardColors(containerColor = Ink.card),
-        modifier = modifier
+        modifier = modifier.clickableNoRippleShared(onClick)
     ) {
         Column(Modifier.padding(22.dp)) {
             Label("MOVEMENT", Ink.motion, Icons.Rounded.DirectionsWalk)

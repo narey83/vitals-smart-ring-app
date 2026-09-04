@@ -54,8 +54,12 @@ What you leave installed. It assumes the protocol is known and gets on with reco
 - **sleep**: the ring stages its own nights and hands them over only when asked, so the app asks
   on every connection — the night is drawn as a hypnogram, scored out of a hundred against the
   wearer's own bedtime and wake time, and summarised by week and by month;
-- an optional bedtime reminder, and a sleep report when the phone is first unlocked in the
-  morning — both off until switched on, and the only things the app ever interrupts anyone with;
+- four things ever interrupt anyone, each on its own notification channel so any of them can be
+  silenced from the phone's own settings without touching the others: an optional bedtime
+  reminder and a sleep report when the phone is first unlocked in the morning, both off until
+  switched on; a warning when the step count has sat still long enough to mean a stopped ring
+  rather than a still wearer; and a note when a walk or a run has been found and recorded, which
+  only ever follows a session nobody started by hand;
 - a settings page for who is wearing the ring — name, sex, age, height and weight, which the
   ring itself uses to work out distance and calories — plus the step goal and reading interval;
 - metric or imperial, though the ring is always told metric;
@@ -64,9 +68,16 @@ What you leave installed. It assumes the protocol is known and gets on with reco
   — the ring measures on its own schedule and pushes results, so the work is staying connected,
   not polling;
 - sets the ring's automatic monitoring interval and a step goal;
-- workouts record as whole sessions, with the sport, duration and heart curve kept intact rather
-  than averaged into the day;
-- every reading is written to a CSV in the app's own storage, because the ring's internal store
+- **workouts**: walks and runs are found on their own, whether or not the app is open — the ring
+  never says a session has started, but it pushes its step total every couple of seconds, and
+  five minutes of steady cadence is a walk; the session is backdated to when the walking began,
+  ends when it stops, and the sport can be corrected afterwards, since cadence tells a walk from
+  a run and nothing else;
+- while one is running the heart sensor is driven continuously rather than every quarter of an
+  hour, so what is kept is a curve; anything the step counter cannot see — cycling, yoga, the
+  weights room — is still started by hand, and either way a session is stored whole, with its
+  sport, duration and heart curve, rather than averaged into the day;
+- every reading is written to an indexed SQLite database in the app's own storage, because the ring's internal store
   is small and rotates records away as it fills — history cannot depend on the ring remembering;
 - optionally hands readings to Health Connect, so other apps on the phone can use them.
 

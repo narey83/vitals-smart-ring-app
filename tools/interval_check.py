@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Does the ring actually measure on its own at the configured interval?
 
-Reads the app's readings.csv (epoch millis, kind, value, extra) and reports the gap between
+Reads a CSV export of the app's readings database (epoch millis, kind, value, extra) and reports the gap between
 consecutive readings of each kind. Automatic sampling should show a cluster of gaps at the
 configured interval; manual taps show up as isolated short gaps.
 
-    adb shell run-as uk.co.r99vitals cat files/readings.csv > readings.csv
+    adb exec-out run-as uk.co.r99vitals cat files/readings.db > readings.db
+    sqlite3 -csv readings.db 'select at,kind,value,extra,manual from readings order by at,id' > readings.csv
     python3 interval_check.py readings.csv 15
 """
 import sys

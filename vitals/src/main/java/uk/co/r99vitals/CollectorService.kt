@@ -37,6 +37,24 @@ class CollectorService : Service() {
     private val handler = Handler(Looper.getMainLooper())
     private lateinit var history: History
     private lateinit var nights: Nights
+    private lateinit var workouts: Workouts
+    private val saved by lazy { getSharedPreferences("ring", Context.MODE_PRIVATE) }
+
+    /**
+     * Watches the step counter for a workout, since the ring will not say when one starts.
+     *
+     * It lives here rather than on the screen because a walk does not wait for the app to be
+     * open. This service is the only part of Vitals that is always connected, so it is the only
+     * part in a position to notice.
+     */
+    private val detector = WorkoutDetector()
+
+    /** The heart curve of the session going on now, kept whole rather than folded into the day. */
+    private var sessionBeats = mutableListOf<Int>()
+    private var lastBeatAt = 0L
+
+    /** Set when a previous run of this service left the ring measuring for a lost session. */
+    private var settleSensor = false
 
     /** A night arrives split across frames; this holds them until the record is whole. */
     private var sleepReader = SleepReader()
@@ -70,6 +88,7 @@ class CollectorService : Service() {
         super.onCreate()
         history = History(this)
         nights = Nights(this)
+        workouts = Workouts(this)
         // Carried over from what is already written down rather than starting at nothing. The
         // ring re-notifies the reading it holds as soon as anything connects, so a service that
         // began each time not knowing the last value wrote that stale number down once per
@@ -80,12 +99,22 @@ class CollectorService : Service() {
             this, unlocked, IntentFilter(Intent.ACTION_USER_PRESENT), ContextCompat.RECEIVER_NOT_EXPORTED
         )
         Bedtime.apply(this)
+        // A session in flight when the process died leaves the ring streaming for a workout that
+        // no longer exists, and the screen believing one is still being recorded. Neither
+        // survives a restart, so both are put back: the record of it now, the sensor on the next
+        // connection, once there is a link to say it over.
+        settleSensor = saved.contains("detectedSince")
+        saved.edit().remove("detectedSport").remove("detectedSince").apply()
+        handler.post(watchForTheEnd)
         connect()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         // Restarted by the system after being killed: pick the ring back up.
         if (gatt == null) connect()
+        // The wearer finishing a detected session from the Workout tab. The screen cannot end it
+        // itself: the session belongs to this service, which owns both the detector and the link.
+        if (intent?.action == FINISH) handle(detector.finishNow())
         return START_STICKY
     }
 
@@ -105,9 +134,22 @@ class CollectorService : Service() {
             this, 0, Intent(this, VitalsActivity::class.java),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
         )
-        // Steps lead, the way a step counter should read at a glance on the lock screen.
-        val title = if (steps > 0) "%,d steps".format(steps) else "Collecting from your ring"
-        val detail = if (steps > 0) "$distance m · $calories kcal · $latest" else latest
+        // A workout in progress takes the notification over while it lasts: it is the one thing
+        // happening that the wearer did not ask for and would want to see. Nothing new is posted
+        // for it — this notification is already there — so the app still interrupts nobody.
+        val session = detector.takeIf { it.inProgress }
+        // Steps lead otherwise, the way a step counter should read at a glance on the lock screen.
+        val title = when {
+            session != null -> "${session.sport} · ${elapsedMinutes()} min"
+            steps > 0 -> "%,d steps".format(steps)
+            else -> "Collecting from your ring"
+        }
+        val detail = when {
+            session != null -> sessionBeats.lastOrNull()?.let { "$it bpm · %,d steps".format(session.steps) }
+                ?: "Finding your heart rate"
+            steps > 0 -> "$distance m · $calories kcal · $latest"
+            else -> latest
+        }
         return Notification.Builder(this, channel())
             .setContentTitle(title)
             .setContentText(detail)
@@ -134,6 +176,47 @@ class CollectorService : Service() {
             )
         }
         return PROBLEM_CHANNEL
+    }
+
+    private fun workoutChannel(): String {
+        val manager = getSystemService(NotificationManager::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            manager.createNotificationChannel(
+                NotificationChannel(WORKOUT_CHANNEL, "Workouts found", NotificationManager.IMPORTANCE_DEFAULT)
+                    .apply { description = "Says when a walk or a run has been recorded on its own" }
+            )
+        }
+        return WORKOUT_CHANNEL
+    }
+
+    /**
+     * Says a session was recorded, for a session nobody asked for.
+     *
+     * Only detected ones. A workout the wearer started themselves ends with them looking at the
+     * screen that ended it, and telling someone what they have just this moment done is noise.
+     *
+     * Its own channel rather than the collector's, so the phone's own notification settings can
+     * silence these without silencing anything else — see the README.
+     */
+    private fun announce(event: WorkoutDetector.Event.Ended, beats: List<Int>) {
+        val open = PendingIntent.getActivity(
+            this, 3, Intent(this, VitalsActivity::class.java).putExtra("tab", "workout"),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        val minutes = ((event.endedAt - event.startedAt) / 60_000).coerceAtLeast(1)
+        val detail = buildString {
+            append("$minutes min")
+            if (event.steps > 0) append(" · %,d steps".format(event.steps))
+            if (beats.isNotEmpty()) append(" · average ${beats.average().toInt()} bpm")
+        }
+        val notification = Notification.Builder(this, workoutChannel())
+            .setContentTitle("${event.sport} recorded")
+            .setContentText(detail)
+            .setSmallIcon(android.R.drawable.ic_menu_compass)
+            .setContentIntent(open)
+            .setAutoCancel(true)
+            .build()
+        getSystemService(NotificationManager::class.java).notify(WORKOUT_NOTIFICATION, notification)
     }
 
     /**
@@ -165,6 +248,146 @@ class CollectorService : Service() {
             .setAutoCancel(true)
             .build()
         getSystemService(NotificationManager::class.java).notify(PROBLEM_NOTIFICATION, notification)
+    }
+
+    // ---- Workouts the wearer never started -------------------------------------------------
+
+    /**
+     * A session ends by nothing happening, which no push announces, so the clock has to notice.
+     * A minute is often enough: the detector only ends a session after three quiet ones.
+     */
+    private val watchForTheEnd = object : Runnable {
+        override fun run() {
+            handle(detector.quiet(System.currentTimeMillis()))
+            handler.postDelayed(this, 60_000)
+        }
+    }
+
+    /**
+     * The ring stops measuring on its own after about half a minute, and the completion event
+     * does not always arrive, so the session restarts it on a timer rather than trusting one.
+     */
+    private val keepMeasuring = object : Runnable {
+        override fun run() {
+            if (!detector.inProgress) return
+            send(Ring.startMeasuring(Ring.HEART))
+            handler.postDelayed(this, 35_000)
+        }
+    }
+
+    /** Every step total goes past the detector, unless something else has claim to the ring. */
+    private fun watchForAWorkout(total: Int) {
+        if (!saved.getBoolean("autoWorkouts", true)) {
+            // Switched off mid-walk: drop the session and hand the sensor back to its schedule.
+            if (detector.inProgress) forgetSession(putTheSensorBack = true)
+            detector.abandon()
+            return
+        }
+        // The wearer's own workout wins: they have named the sport and the screen is already
+        // streaming for it, so detecting the same minutes would record them a second time. The
+        // sensor is deliberately left alone here — it is theirs now, not this service's.
+        if (manualWorkoutRunning()) {
+            if (detector.inProgress) forgetSession(putTheSensorBack = false)
+            detector.abandon()
+            return
+        }
+        handle(detector.step(System.currentTimeMillis(), total))
+    }
+
+    private fun handle(event: WorkoutDetector.Event?) {
+        when (event) {
+            is WorkoutDetector.Event.Started -> begin(event)
+            is WorkoutDetector.Event.Ended -> end(event)
+            null -> Unit
+        }
+    }
+
+    private fun begin(event: WorkoutDetector.Event.Started) {
+        sessionBeats = mutableListOf()
+        lastBeatAt = 0L
+        // Written down so the screen can show the session it did not start, and so a service
+        // killed mid-walk does not leave the app believing one is still running.
+        saved.edit().putString("detectedSport", event.sport).putLong("detectedSince", event.at).apply()
+        // The ring measures once and stops unless told to keep going. Half a minute of heart
+        // rate every fifteen minutes is the shape of a resting day, not of a workout.
+        send(Ring.streamLive(true), Ring.startMeasuring(Ring.HEART))
+        handler.removeCallbacks(keepMeasuring)
+        handler.postDelayed(keepMeasuring, 35_000)
+        refresh()
+    }
+
+    private fun end(event: WorkoutDetector.Event.Ended) {
+        val beats = sessionBeats.toList()
+        workouts.save(
+            sport = event.sport, startedAt = event.startedAt, beats = beats,
+            endedAt = event.endedAt, detected = true, steps = event.steps
+        )
+        forgetSession(putTheSensorBack = true)
+        // After the save, never before: the notification says a session was recorded, and it is
+        // only true once it has been.
+        announce(event, beats)
+        refresh()
+    }
+
+    /**
+     * Forgets the session was running, and stops driving the sensor unless something else has
+     * taken it over — a workout the wearer started themselves is streaming for its own reasons.
+     */
+    private fun forgetSession(putTheSensorBack: Boolean) {
+        handler.removeCallbacks(keepMeasuring)
+        if (putTheSensorBack) send(Ring.stopMeasuring(), Ring.streamLive(false))
+        saved.edit().remove("detectedSport").remove("detectedSince").apply()
+        sessionBeats = mutableListOf()
+        lastBeatAt = 0L
+    }
+
+    /**
+     * A session the wearer started themselves, from the Workout tab.
+     *
+     * Stale after a few hours rather than trusted forever: the activity clears this on its way
+     * out, but a process killed mid-session never gets the chance, and a flag left set would
+     * quietly switch detection off for good.
+     */
+    private fun manualWorkoutRunning(): Boolean {
+        val since = saved.getLong("manualWorkout", 0L)
+        return since != 0L && System.currentTimeMillis() - since < 6 * 60 * 60 * 1000L
+    }
+
+    private fun elapsedMinutes() = ((System.currentTimeMillis() - detector.since) / 60_000)
+
+    /**
+     * How close together two heart readings may be and still count as the same one.
+     *
+     * The day's default settles a burst of readings into one row, which is right for a ring
+     * measuring every fifteen minutes and wrong for a workout, where the climb is the point.
+     */
+    private fun duringAWorkout() = if (detector.inProgress) 10_000L else 90_000L
+
+    /**
+     * A beat, if it belongs to a session and is not one the last few seconds already hold.
+     *
+     * The ring pushes far faster than a curve needs while it is streaming, and every reading
+     * kept ends up on one line of the workouts file.
+     */
+    private fun keepBeat(bpm: Int) {
+        if (!detector.inProgress) return
+        val now = System.currentTimeMillis()
+        if (now - lastBeatAt < 5_000) return
+        lastBeatAt = now
+        sessionBeats.add(bpm)
+        refresh()
+    }
+
+    /**
+     * Frames, spaced out. There is no queue behind this link — the activity has one because it
+     * sends a dozen at a time on connecting — and a second write before the first is answered
+     * is simply lost.
+     */
+    @SuppressLint("MissingPermission")
+    private fun send(vararg frames: ByteArray) {
+        frames.forEachIndexed { index, frame ->
+            handler.postDelayed({ gatt?.let { writeCommand(it, frame) } }, index * 500L)
+        }
     }
 
     @SuppressLint("MissingPermission")
@@ -217,6 +440,10 @@ class CollectorService : Service() {
             sleepReader = SleepReader()
             clockSyncedThisConnect = false
             handler.postDelayed({ requestRoomForANight(gatt) }, notifying.size * 350L + 500L)
+            if (settleSensor) {
+                settleSensor = false
+                handler.postDelayed({ send(Ring.stopMeasuring(), Ring.streamLive(false)) }, notifying.size * 350L + 2_500L)
+            }
         }
 
         override fun onMtuChanged(gatt: BluetoothGatt, mtu: Int, status: Int) {
@@ -295,6 +522,7 @@ class CollectorService : Service() {
                 steps = (it.steps - (baseline?.value ?: 0)).coerceAtLeast(0)
                 distance = it.distance
                 calories = (it.calories - (baseline?.extra ?: 0)).coerceAtLeast(0)
+                watchForAWorkout(it.steps)
                 refresh()
                 checkStepsStuck()
             }
@@ -312,8 +540,9 @@ class CollectorService : Service() {
         if (characteristic.uuid == Ring.HEART_RATE) {
             Ring.readStandardHeartRate(value)?.takeIf { it != lastHeart }?.let {
                 lastHeart = it
-                history.record("heart", it)
+                history.record("heart", it, burst = duringAWorkout())
                 latest = "$it bpm"
+                keepBeat(it)
                 refresh()
             }
             return
@@ -325,8 +554,9 @@ class CollectorService : Service() {
         }
         when (val reading = Ring.read(value)) {
             is Ring.Reading.Heart -> {
-                history.record("heart", reading.bpm)
+                history.record("heart", reading.bpm, burst = duringAWorkout())
                 latest = "${reading.bpm} bpm"
+                keepBeat(reading.bpm)
                 refresh()
             }
             is Ring.Reading.Oxygen -> {
@@ -381,7 +611,17 @@ class CollectorService : Service() {
         private const val NOTIFICATION = 1
         private const val PROBLEM_CHANNEL = "problems"
         private const val PROBLEM_NOTIFICATION = 2
+        private const val WORKOUT_CHANNEL = "workouts"
+        private const val WORKOUT_NOTIFICATION = 3
         private const val STUCK_THRESHOLD = 3 * 60 * 60 * 1000L
+        private const val FINISH = "uk.co.r99vitals.FINISH_WORKOUT"
+
+        /** Ends the detected session now, at the wearer's word rather than by going quiet. */
+        fun finishWorkout(context: Context) {
+            val intent = Intent(context, CollectorService::class.java).setAction(FINISH)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) context.startForegroundService(intent)
+            else context.startService(intent)
+        }
 
         fun start(context: Context) {
             val intent = Intent(context, CollectorService::class.java)

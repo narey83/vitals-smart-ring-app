@@ -174,6 +174,8 @@ fun SettingsPage(
     onGoal: (Int) -> Unit,
     onInterval: (Int) -> Unit,
     onMonitors: (Ring.Monitors) -> Unit,
+    autoWorkouts: Boolean,
+    onAutoWorkouts: (Boolean) -> Unit,
     onRepair: () -> Unit,
     onExport: () -> Unit,
     onBack: () -> Unit
@@ -213,7 +215,7 @@ fun SettingsPage(
             Text("Settings", color = Ink.text, fontSize = 26.sp, fontWeight = FontWeight.Light)
         }
 
-        Section("YOU")
+        Section("PROFILE")
         Panel {
             Field("Name", profile.name) { onProfile(profile.copy(name = it)) }
             Divider()
@@ -263,7 +265,7 @@ fun SettingsPage(
                 "Everything here is always told metric; imperial is only how it is shown."
         )
 
-        Section("GOALS")
+        Section("UNITS & GOALS")
         Panel {
             Value("Daily steps", "%,d".format(state.stepGoal)) { editing = Editing.Goal }
         }
@@ -290,7 +292,7 @@ fun SettingsPage(
                 "${clockOf(plan.wake)} would arrive while you were still asleep."
         )
 
-        Section("THE RING")
+        Section("AUTOMATIC MEASUREMENTS")
         Panel {
             listOf(0 to "Off", 15 to "Every 15 minutes", 30 to "Every 30 minutes", 60 to "Every hour")
                 .forEachIndexed { i, (minutes, label) ->
@@ -298,7 +300,7 @@ fun SettingsPage(
                     Pick(label, state.interval == minutes) { onInterval(minutes) }
                 }
         }
-        Note("How often the ring measures on its own, whether or not this app is open.")
+        Note("Choose how often the ring measures, even while the app is closed.")
 
         Panel {
             Pick("Heart rate", state.monitors.heart) {
@@ -317,6 +319,18 @@ fun SettingsPage(
             "Which of them it takes at that interval. Blood pressure comes from the vendor's " +
                 "command table and has never been confirmed on this ring — turn it on and see " +
                 "whether readings actually arrive."
+        )
+
+        Section("WORKOUTS")
+        Panel {
+            Pick("Find walks and runs on their own", autoWorkouts) { onAutoWorkouts(!autoWorkouts) }
+        }
+        Note(
+            "Five minutes of steady walking pace starts a session, and it ends once you stop. " +
+                "It runs the heart sensor continuously for as long as the session lasts, which " +
+                "is what makes the curve worth keeping and what costs the ring's battery — turn " +
+                "it off and workouts are only the ones you start yourself. The ring cannot see " +
+                "cycling or yoga either way: neither makes steps."
         )
 
         // Deliberately no manual "set the ring's clock" action here: VitalsActivity and
@@ -339,7 +353,7 @@ fun SettingsPage(
             }
         }
 
-        Section("YOUR DATA")
+        Section("RING & DATA")
         Panel {
             Action("Export readings") { onExport() }
         }

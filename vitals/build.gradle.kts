@@ -60,4 +60,5 @@ dependencies {
 
     // Ring speaks in frames, which are pure bytes and so testable on the JVM without a ring.
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.robolectric:robolectric:4.16.1")
 }

@@ -233,6 +233,14 @@ app and the vendor's. The ring reports `Sleep` as a supported feature, so this i
 store rather than an unsupported query: nothing had been recorded yet. Sleep has since filled
 in and is decoded below; sport is still empty.
 
+Sport has stayed empty through every capture since, days with long walks in them included, and
+the firmware's own log shows `Delete Sport Record` alongside the other housekeeping — the ring
+records a session only for a sport mode it was explicitly put into, and rotates that away like
+everything else. There is no event to subscribe to either: no flag in `GetDeviceSupportFunction`
+recognises an activity, and the sport bits that are set are modes to enter, not things reported.
+Vitals therefore finds workouts on the phone instead, from the cadence between step pushes — see
+`WorkoutDetector` in the Vitals sources.
+
 ### Stored sleep — verified
 
 `Health_HistorySleep` (`05 04`) answers with a count and then pushes the nights under `05 13`,

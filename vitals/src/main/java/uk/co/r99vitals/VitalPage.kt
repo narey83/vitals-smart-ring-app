@@ -1,6 +1,7 @@
 package uk.co.r99vitals
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -79,6 +80,7 @@ data class VitalDay(
 data class Reading(val at: String, val value: String, val manual: Boolean = false)
 
 private val dayLabel = SimpleDateFormat("EEEE d MMMM", Locale.UK)
+private val detailStamp = SimpleDateFormat("HH:mm · d MMM", Locale.UK)
 
 @Composable
 fun VitalPage(
@@ -91,7 +93,9 @@ fun VitalPage(
     onStream: (() -> Unit)? = null,
     onCalibrate: (() -> Unit)? = null,
     /** Steps have no measuring cycle of their own — just a running total to ask the ring for. */
-    onRefreshSteps: (() -> Unit)? = null
+    onRefreshSteps: (() -> Unit)? = null,
+    onVital: (Tab) -> Unit = {},
+    selectedVital: Tab = Tab.Heart
 ) {
     Column(Modifier.fillMaxSize().background(Ink.canvas)) {
         Column(
@@ -110,6 +114,21 @@ fun VitalPage(
                 )
             }
 
+            if (selectedVital in listOf(Tab.Heart, Tab.Oxygen, Tab.Pressure)) {
+                Spacer(Modifier.height(14.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(Tab.Heart to "Heart", Tab.Oxygen to "Blood oxygen", Tab.Pressure to "Blood pressure").forEach { (item, label) ->
+                        Text(
+                            label, fontSize = 12.sp,
+                            color = if (item == selectedVital) Ink.canvas else Ink.muted,
+                            modifier = Modifier.clip(CircleShape)
+                                .background(if (item == selectedVital) item.accent else Ink.card)
+                                .clickable { onVital(item) }.padding(horizontal = 12.dp, vertical = 9.dp)
+                        )
+                    }
+                }
+            }
+
             Spacer(Modifier.height(14.dp))
             DayPicker(dayOffset, onDay)
 
@@ -120,6 +139,9 @@ fun VitalPage(
                 )
                 Spacer(Modifier.width(10.dp))
                 Text(day.unit, color = Ink.muted, fontSize = 18.sp, modifier = Modifier.padding(bottom = 16.dp))
+            }
+            day.entries.lastOrNull()?.let {
+                Text("Measured ${detailStamp.format(it.at)}", color = Ink.muted, fontSize = 13.sp)
             }
             day.note?.let { Text(it, color = Ink.muted, fontSize = 13.sp) }
 
@@ -191,10 +213,18 @@ fun VitalPage(
                 }
             } else if (day.readings.isEmpty()) {
                 Spacer(Modifier.height(20.dp))
-                Text(
-                    if (dayOffset == 0) "No readings yet today." else "Nothing recorded that day.",
-                    color = Ink.muted, fontSize = 14.sp
-                )
+                Card(shape = RoundedCornerShape(22.dp), colors = CardDefaults.cardColors(containerColor = Ink.card)) {
+                    Row(Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(day.icon, null, tint = day.accent, modifier = Modifier.size(28.dp))
+                        Spacer(Modifier.width(14.dp))
+                        Text(
+                            if (dayOffset != 0) "Nothing was recorded that day."
+                            else if (day.canMeasure) "No readings yet. Take your first measurement to start a daily trend."
+                            else "No movement data has synced yet. Reconnect the ring to refresh today’s steps.",
+                            color = Ink.muted, fontSize = 14.sp, lineHeight = 20.sp
+                        )
+                    }
+                }
             } else {
                 // One reading is a reading, not an empty day; it just cannot be drawn as a trend.
                 Spacer(Modifier.height(16.dp))

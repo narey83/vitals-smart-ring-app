@@ -60,6 +60,7 @@ fun Shell(
     onLink: () -> Unit,
     onStartWorkout: (String) -> Unit,
     onStopWorkout: () -> Unit,
+    onRelabelWorkout: (Long, String) -> Unit,
     onCalibrate: () -> Unit,
     onRefreshSteps: () -> Unit,
     sleepTarget: Int,
@@ -69,13 +70,13 @@ fun Shell(
         containerColor = Ink.canvas,
         bottomBar = {
             NavigationBar(containerColor = Ink.card) {
-                Tab.entries.forEach { entry ->
+                listOf(Tab.Today, Tab.Heart, Tab.Steps, Tab.Sleep, Tab.Workout).forEach { entry ->
                     val accent = entry.accent
                     NavigationBarItem(
-                        selected = tab == entry,
+                        selected = if (entry == Tab.Heart) tab in listOf(Tab.Heart, Tab.Oxygen, Tab.Pressure) else tab == entry,
                         onClick = { onTab(entry) },
                         icon = { Icon(entry.icon, contentDescription = entry.label) },
-                        label = { Text(entry.label, fontSize = 11.sp) },
+                        label = { Text(if (entry == Tab.Heart) "Vitals" else entry.label, fontSize = 11.sp) },
                         colors = NavigationBarItemDefaults.colors(
                             selectedIconColor = Ink.canvas,
                             selectedTextColor = accent,
@@ -92,8 +93,8 @@ fun Shell(
         // windowInsetsPadding on top counted the status bar twice and left a dead band.
         Column(Modifier.fillMaxSize().padding(padding)) {
             when (tab) {
-                Tab.Today -> VitalsScreen(state, onSettings, onLink, sleepTarget)
-                Tab.Workout -> WorkoutPage(state, onStartWorkout, onStopWorkout)
+                Tab.Today -> VitalsScreen(state, onSettings, onLink, onVital = onTab, sleepTarget)
+                Tab.Workout -> WorkoutPage(state, onStartWorkout, onStopWorkout, onRelabelWorkout)
                 Tab.Sleep -> SleepPage(state.nights, sleepTarget, dayOffset, onDay)
                 else -> VitalPage(
                     day = dayFor(tab),
@@ -111,7 +112,9 @@ fun Shell(
                         )
                     },
                     onCalibrate = if (tab == Tab.Pressure) onCalibrate else null,
-                    onRefreshSteps = if (tab == Tab.Steps) onRefreshSteps else null
+                    onRefreshSteps = if (tab == Tab.Steps) onRefreshSteps else null,
+                    onVital = onTab,
+                    selectedVital = tab
                 )
             }
         }

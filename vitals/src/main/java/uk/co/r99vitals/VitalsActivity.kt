@@ -66,6 +66,8 @@ class VitalsActivity : AppCompatActivity() {
     private val sleepReader = SleepReader()
 
     private var interval = 15   // minutes; 0 means off
+    /** Read by the collector, which does the detecting; held here only so Settings can show it. */
+    private var autoWorkouts by mutableStateOf(true)
     private var monitors = Ring.Monitors()
     private var settingsOpen by mutableStateOf(false)
     /** Null once done. Every screen it passes through writes as it goes, same as Settings does. */
@@ -164,6 +166,7 @@ class VitalsActivity : AppCompatActivity() {
         // Changing it recreates the activity, so remember which page was open across that.
         settingsOpen = savedInstanceState?.getBoolean("settings") == true
         interval = saved.getInt("interval", 15)
+        autoWorkouts = saved.getBoolean("autoWorkouts", true)
         monitors = Ring.Monitors(
             heart = saved.getBoolean("monitorHeart", true),
             oxygen = saved.getBoolean("monitorOxygen", true),
@@ -172,10 +175,17 @@ class VitalsActivity : AppCompatActivity() {
         profile = Profile.read(saved)
         plan = SleepPlan.read(saved)
         val onboardingSeen = saved.getInt("onboardingSeen", 0)
+        val lastHeart = history.latest("heart")
+        val lastOxygen = history.latest("oxygen")
+        val lastPressure = history.latest("pressure")
         onboarding = savedInstanceState?.getInt("onboarding", -1)?.takeIf { it >= 0 }
             ?.let { OnboardingStep.entries.getOrNull(it) }
             ?: if (onboardingSeen < ONBOARDING_VERSION) OnboardingStep.Splash else null
         ui = ui.copy(
+            heart = lastHeart?.value, heartAt = lastHeart?.at?.time,
+            oxygen = lastOxygen?.value, oxygenAt = lastOxygen?.at?.time,
+            systolic = lastPressure?.value, diastolic = lastPressure?.extra,
+            pressureAt = lastPressure?.at?.time,
             interval = interval,
             stepGoal = saved.getInt("goal", 10_000),
             distanceMetric = profile.distanceMetric,
@@ -183,7 +193,7 @@ class VitalsActivity : AppCompatActivity() {
             celebrate = birthdayGreeting(),
             ringName = ringName
         )
-        if (intent?.getStringExtra("tab") == "sleep") tab = Tab.Sleep
+        tabFor(intent)?.let { tab = it }
         setContent {
             VitalsSheet(
                 sheet = sheet,
@@ -235,6 +245,11 @@ class VitalsActivity : AppCompatActivity() {
                         ui = ui.copy(interval = minutes)
                         applyInterval()
                     },
+                    autoWorkouts = autoWorkouts,
+                    onAutoWorkouts = { on ->
+                        autoWorkouts = on
+                        saved.edit().putBoolean("autoWorkouts", on).apply()
+                    },
                     onMonitors = { chosen ->
                         monitors = chosen
                         saved.edit()
@@ -268,6 +283,7 @@ class VitalsActivity : AppCompatActivity() {
                     sleepTarget = plan.target,
                     onStartWorkout = { startWorkout(it) },
                     onStopWorkout = { stopWorkout() },
+                    onRelabelWorkout = { at, sport -> relabelWorkout(at, sport) },
                     onCalibrate = { sheet = Sheet.Calibrate },
                     onRefreshSteps = { refreshSteps() },
                     dayFor = { pageFor(it) }
@@ -288,8 +304,15 @@ class VitalsActivity : AppCompatActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        // Tapping the morning report while the app is already open should still land on Sleep.
-        if (intent.getStringExtra("tab") == "sleep") { tab = Tab.Sleep; dayOffset = 0 }
+        // Tapping a notification while the app is already open should still land on its tab.
+        tabFor(intent)?.let { tab = it; dayOffset = 0 }
+    }
+
+    /** Which tab a notification wants, if it was a notification that opened the app. */
+    private fun tabFor(intent: Intent?) = when (intent?.getStringExtra("tab")) {
+        "sleep" -> Tab.Sleep
+        "workout" -> Tab.Workout
+        else -> null
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -545,9 +568,12 @@ class VitalsActivity : AppCompatActivity() {
      */
     private fun startWorkout(sport: String) {
         if (command == null) { ui = ui.copy(link = "Not connected yet"); connect(); return }
+        // Claimed, so the collector's detector stands off rather than finding the same walk in
+        // the step counter and recording it a second time under a sport it had to guess at.
+        saved.edit().putLong("manualWorkout", System.currentTimeMillis()).apply()
         ui = ui.copy(
             workout = sport, workoutSince = System.currentTimeMillis(),
-            workoutBeats = emptyList(), streaming = true
+            workoutBeats = emptyList(), streaming = true, workoutDetected = false
         )
         enqueue { write(Ring.streamLive(true)) }
         enqueue { write(Ring.startMeasuring(Ring.HEART)) }
@@ -555,9 +581,18 @@ class VitalsActivity : AppCompatActivity() {
     }
 
     private fun stopWorkout() {
+        // A detected session belongs to the collector, which holds the beats and will write the
+        // record whether or not this screen is still open — so it is asked to finish rather than
+        // finished from here. The poll below picks the ending up and refreshes the list.
+        if (ui.workoutDetected) {
+            CollectorService.finishWorkout(this)
+            handler.postDelayed({ readDetectedSession() }, 800)
+            return
+        }
         // Keep the session whole: its sport, its length and its curve, none of which survive
         // being folded into the day's readings.
         ui.workout?.let { workouts.save(it, ui.workoutSince, ui.workoutBeats) }
+        saved.edit().remove("manualWorkout").apply()
         ui = ui.copy(workout = null, streaming = false, pastWorkouts = workouts.all())
         handler.removeCallbacks(keepGoing)
         enqueue { write(Ring.streamLive(false)) }
@@ -566,11 +601,55 @@ class VitalsActivity : AppCompatActivity() {
     }
 
     /**
+     * Shows the session the collector is running, if it is running one.
+     *
+     * Detection lives in the service because a walk does not wait for the app to be opened, so
+     * this screen reads the session rather than owning it — and fills the curve in from the
+     * pushes its own connection is receiving anyway, rather than asking for them twice.
+     */
+    private fun readDetectedSession() {
+        val sport = saved.getString("detectedSport", null)
+        val since = saved.getLong("detectedSince", 0L)
+        when {
+            // A session the wearer started themselves is never overwritten by a detected one.
+            sport != null && since != 0L && ui.workout == null -> ui = ui.copy(
+                workout = sport, workoutSince = since, workoutBeats = emptyList(),
+                workoutDetected = true, streaming = true
+            )
+            sport == null && ui.workoutDetected -> {
+                ui = ui.copy(
+                    workout = null, workoutDetected = false, workoutBeats = emptyList(),
+                    streaming = false, pastWorkouts = workouts.all()
+                )
+                showTrend()
+            }
+            // The sport can firm up from a walk into a run partway through the session.
+            sport != null && ui.workoutDetected && sport != ui.workout -> ui = ui.copy(workout = sport)
+        }
+    }
+
+    /** Only while the app is in front: nothing needs polling when there is no screen to update. */
+    private val watchForDetected = object : Runnable {
+        override fun run() {
+            readDetectedSession()
+            handler.postDelayed(this, 5_000)
+        }
+    }
+
+    /** The wearer correcting a guess. Only the sport changes, and only for that one session. */
+    private fun relabelWorkout(startedAt: Long, sport: String) {
+        workouts.relabel(startedAt, sport)
+        ui = ui.copy(pastWorkouts = workouts.all())
+    }
+
+    /**
      * The ring stops measuring on its own, and the completion event does not always arrive, so
      * the session restarts it on a timer rather than trusting the event.
      */
     private val keepGoing = Runnable {
-        if (ui.workout != null && command != null) {
+        // Only for a session this screen started. A detected one is kept measuring by the
+        // collector, which owns it, and two restarts on one ring is one too many.
+        if (ui.workout != null && !ui.workoutDetected && command != null) {
             enqueue { write(Ring.startMeasuring(Ring.HEART)) }
             keepMeasuring()
         }
@@ -654,7 +733,7 @@ class VitalsActivity : AppCompatActivity() {
             Tab.Steps -> "steps"
             else -> "heart"
         }
-        val entries = history.all().filter { it.kind == kind && it.at.time in start until end }
+        val entries = history.between(kind, start, end)
         val readings = entries.map { it.value }
         // Where in the day each reading happened, as a fraction, so the chart can place it.
         val positions = entries.map { ((it.at.time - start).toFloat() / (24 * 60 * 60 * 1000)) }
@@ -740,7 +819,7 @@ class VitalsActivity : AppCompatActivity() {
     private fun showTrend() {
         val since = System.currentTimeMillis() - 24 * 60 * 60 * 1000
         ui = ui.copy(
-            trend = history.all().filter { it.kind == "heart" && it.at.time >= since }.map { it.value },
+            trend = history.between("heart", since).map { it.value },
             trendCaption = "Last 24 hours · " + history.summary("heart", since)
         )
     }
@@ -957,7 +1036,7 @@ class VitalsActivity : AppCompatActivity() {
         }
         when (val reading = Ring.read(value)) {
             is Ring.Reading.Heart -> {
-                ui = ui.copy(heart = reading.bpm)
+                ui = ui.copy(heart = reading.bpm, heartAt = System.currentTimeMillis())
                 history.record(
                     "heart", reading.bpm,
                     burst = if (ui.workout != null) 10_000L else 90_000L,
@@ -967,11 +1046,11 @@ class VitalsActivity : AppCompatActivity() {
                 showTrend()
             }
             is Ring.Reading.Oxygen -> {
-                ui = ui.copy(oxygen = reading.percent)
+                ui = ui.copy(oxygen = reading.percent, oxygenAt = System.currentTimeMillis())
                 history.record("oxygen", reading.percent, manual = userAsked)
             }
             is Ring.Reading.Pressure -> {
-                ui = ui.copy(systolic = reading.systolic, diastolic = reading.diastolic)
+                ui = ui.copy(systolic = reading.systolic, diastolic = reading.diastolic, pressureAt = System.currentTimeMillis())
                 history.record("pressure", reading.systolic, reading.diastolic, manual = userAsked)
             }
             // GetNowStep's reply. No Finished event follows a single request/reply command like
@@ -992,7 +1071,7 @@ class VitalsActivity : AppCompatActivity() {
                 userAsked = false
                 ui = ui.copy(measuring = null)
                 showTrend()
-                if (ui.workout != null) keepMeasuring()
+                if (ui.workout != null && !ui.workoutDetected) keepMeasuring()
             }
             // ponytail: frames nothing here understands, in debug builds only. This is how the
             // missing history turned up — the ring was answering with a record count and the
@@ -1012,15 +1091,23 @@ class VitalsActivity : AppCompatActivity() {
         if (ringAddress != null) CollectorService.start(this)
         if (command == null && ringAddress != null) askThenConnect()
         showTrend()
+        // A walk taken with the app closed is already recorded by the time it is opened.
+        ui = ui.copy(pastWorkouts = workouts.all())
+        handler.removeCallbacks(watchForDetected)
+        handler.post(watchForDetected)
     }
 
     override fun onPause() {
         super.onPause()
         watching = false
+        handler.removeCallbacks(watchForDetected)
     }
 
     @SuppressLint("MissingPermission")
     override fun onDestroy() {
+        // A manual session lives in this screen's own memory, so it cannot outlive it — and a
+        // claim left standing would switch detection off until it went stale hours later.
+        saved.edit().remove("manualWorkout").apply()
         runCatching { unregisterReceiver(overAdb) }
         handler.removeCallbacksAndMessages(null)
         gatt?.disconnect()

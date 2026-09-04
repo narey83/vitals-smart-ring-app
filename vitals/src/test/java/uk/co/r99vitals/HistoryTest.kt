@@ -5,16 +5,19 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 /**
- * Recording is read, change, write back, and two things record at once: the activity while it
- * is open, the collector service while it is not, with their callbacks on different threads.
+ * Two things can record at once: the activity while it is open and the collector service while
+ * it is not, with their callbacks on different threads.
  *
  * These are the cases where getting that wrong costs readings rather than merely misplacing
  * them, which is what happened before the file was locked and replaced atomically.
  */
+@RunWith(RobolectricTestRunner::class)
 class HistoryTest {
 
     @get:Rule val folder = TemporaryFolder()
@@ -52,7 +55,7 @@ class HistoryTest {
         assertEquals(100, entries.count { it.kind == "heart" })
     }
 
-    /** The file is replaced by moving one into place, so nothing may be left lying beside it. */
+    /** SQLite recording no longer needs the CSV implementation's temporary rewrite file. */
     @Test fun `recording leaves no working file behind`() {
         val history = history()
         history.add("steps", 1)
