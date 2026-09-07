@@ -19,12 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
----
-
-These apps are not a medical device. Readings from an optical ring, blood
-pressure especially, are estimates and must not be used for medical decisions.
-
-Not affiliated with, endorsed by, or derived from any source of the ring
-vendor or their SmartHealth app. The protocol documented here was recovered by
-observing traffic to and from hardware that was bought and owned.

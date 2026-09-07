@@ -1,0 +1,27 @@
+R99 Smart Ring
+Copyright (c) 2026 John Narey
+
+Licensed under the MIT License; see LICENSE.
+
+NOT A MEDICAL DEVICE
+
+These apps do not diagnose, treat or monitor any condition. Readings taken by
+an optical ring are estimates, and blood pressure especially is inferred from
+the pulse waveform rather than measured. Treat every value as a trend and
+never as the basis for a medical decision.
+
+The ring does not implement HRV, ECG, temperature, respiratory rate, stress or
+blood sugar. Those capability bits read zero on this hardware whatever the
+listing claimed.
+
+NO AFFILIATION
+
+Not affiliated with, endorsed by, or derived from any source belonging to the
+ring's vendor or their SmartHealth app (com.zhuoting.healthyucheng). The
+protocol documented in PROTOCOL.md and COMMANDS.md was recovered by observing
+Bluetooth traffic to and from hardware that was bought and owned, and by
+replaying frames against that same hardware. No vendor code was decompiled
+into this project and none is redistributed here.
+
+R99 rings ship under several names and firmware revisions. Nothing here is
+guaranteed to hold on another ring; re-capture before relying on it.
