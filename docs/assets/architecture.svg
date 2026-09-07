@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 700" width="1200" height="700" role="img" aria-label="Architecture: the R99 ring over Bluetooth LE into two Android apps, and where their data ends up">
+  <defs>
+    <linearGradient id="abg" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#0c121b"/><stop offset="100%" stop-color="#101825"/></linearGradient>
+    <linearGradient id="ringMini" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#45C4F5"/><stop offset="100%" stop-color="#FF5C7A"/></linearGradient>
+  </defs>
+  <rect width="1200" height="700" fill="url(#abg)"/>
+  <rect x="0.5" y="0.5" width="1199" height="699" fill="none" stroke="#1f2a3a"/>
+
+  <g>
+    <rect x="410" y="30" width="380" height="94" rx="14" fill="#141d2b" stroke="#33445c" stroke-width="1.5"/>
+    <circle cx="462" cy="77" r="21" fill="none" stroke="url(#ringMini)" stroke-width="9"/>
+    <text x="502" y="70" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="20" font-weight="700" fill="#e8eef7">R99 ring</text>
+    <text x="502" y="92" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12.5" fill="#6c7f96">reports as R11M &#183; Nordic nRF5x &#183; paired, so it never advertises</text>
+  </g>
+
+  <g stroke="#45C4F5" stroke-width="1.5" fill="none"><path d="M600 126v28"/></g>
+  <polygon points="600,162 594,150 606,150" fill="#45C4F5"/>
+  <text x="616" y="150" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13.5" font-weight="600" fill="#45C4F5">Bluetooth LE</text>
+
+  <g>
+    <rect x="180" y="168" width="840" height="94" rx="12" fill="#111a26" stroke="#2a3648"/>
+    <text x="204" y="194" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#8b9bb0" letter-spacing="1.5">GATT CHARACTERISTICS</text>
+    <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
+      <g><rect x="204" y="206" width="182" height="42" rx="8" fill="#0d2430" stroke="#2f5c72"/><text x="295" y="224" font-size="13" font-weight="700" fill="#45C4F5" text-anchor="middle">be940001</text><text x="295" y="240" font-size="11" fill="#6c7f96" text-anchor="middle">commands out</text></g>
+      <g><rect x="398" y="206" width="182" height="42" rx="8" fill="#1a1630" stroke="#4c3f7a"/><text x="489" y="224" font-size="13" font-weight="700" fill="#A78BFA" text-anchor="middle">be940003</text><text x="489" y="240" font-size="11" fill="#6c7f96" text-anchor="middle">ring-initiated data</text></g>
+      <g><rect x="592" y="206" width="182" height="42" rx="8" fill="#0f2a1c" stroke="#2c6b47"/><text x="683" y="224" font-size="13" font-weight="700" fill="#4ADE8C" text-anchor="middle">fea1</text><text x="683" y="240" font-size="11" fill="#6c7f96" text-anchor="middle">steps, pushed ~2 s</text></g>
+      <g><rect x="786" y="206" width="182" height="42" rx="8" fill="#2b1219" stroke="#7a3446"/><text x="877" y="224" font-size="13" font-weight="700" fill="#FF5C7A" text-anchor="middle">2a37</text><text x="877" y="240" font-size="11" fill="#6c7f96" text-anchor="middle">SIG heart rate</text></g>
+    </g>
+  </g>
+
+  <g stroke="#33445c" stroke-width="1.5" fill="none"><path d="M600 264v22M290 286h620M290 286v20M910 286v20"/></g>
+  <polygon points="290,314 284,302 296,302" fill="#33445c"/>
+  <polygon points="910,314 904,302 916,302" fill="#33445c"/>
+
+  <g>
+    <rect x="70" y="316" width="440" height="212" rx="14" fill="#111a26" stroke="#2f5c72" stroke-width="1.5"/>
+    <rect x="70" y="316" width="440" height="4" rx="2" fill="#45C4F5"/>
+    <text x="96" y="352" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="21" font-weight="700" fill="#e8eef7">R99 Ring Debugger</text>
+    <text x="96" y="374" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12" fill="#6c7f96">:app &#183; uk.co.r99companion</text>
+    <text x="96" y="398" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-style="italic" fill="#45C4F5">the microscope</text>
+    <g font-family="ui-sans-serif, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13.5" fill="#9fb0c6">
+      <text x="96" y="428">&#8226;&#160; all 329 SDK commands, searchable</text>
+      <text x="96" y="452">&#8226;&#160; every frame logged, decoded where known</text>
+      <text x="96" y="476">&#8226;&#160; capability bitmap, decoded to named flags</text>
+      <text x="96" y="500">&#8226;&#160; the ring&#8217;s own internal firmware log</text>
+    </g>
+  </g>
+
+  <g>
+    <rect x="690" y="316" width="440" height="212" rx="14" fill="#111a26" stroke="#4c3f7a" stroke-width="1.5"/>
+    <rect x="690" y="316" width="440" height="4" rx="2" fill="#A78BFA"/>
+    <text x="716" y="352" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="21" font-weight="700" fill="#e8eef7">Vitals</text>
+    <text x="716" y="374" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12" fill="#6c7f96">:vitals &#183; uk.co.r99vitals</text>
+    <text x="716" y="398" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-style="italic" fill="#A78BFA">the product</text>
+    <g font-family="ui-sans-serif, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13.5" fill="#9fb0c6">
+      <text x="716" y="428">&#8226;&#160; heart, SpO&#8322;, pressure, steps, sleep, workouts</text>
+      <text x="716" y="452">&#8226;&#160; foreground service holds the link open</text>
+      <text x="716" y="476">&#8226;&#160; walks and runs found in the step counter</text>
+      <text x="716" y="500">&#8226;&#160; keeps the history the ring rotates away</text>
+    </g>
+  </g>
+
+  <g stroke="#33445c" stroke-width="1.5" fill="none"><path d="M175 530v26M405 530v26M795 530v26M1025 530v26"/></g>
+  <g fill="#33445c">
+    <polygon points="175,562 169,550 181,550"/><polygon points="405,562 399,550 411,550"/>
+    <polygon points="795,562 789,550 801,550"/><polygon points="1025,562 1019,550 1031,550"/>
+  </g>
+
+  <g font-family="ui-sans-serif, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+    <g><rect x="70" y="566" width="210" height="62" rx="10" fill="#131c29" stroke="#2a3648"/><text x="175" y="592" font-size="14" font-weight="600" fill="#cfdae8" text-anchor="middle">protocol log</text><text x="175" y="612" font-size="11.5" fill="#6c7f96" text-anchor="middle">shareable file</text></g>
+    <g><rect x="300" y="566" width="210" height="62" rx="10" fill="#131c29" stroke="#2a3648"/><text x="405" y="592" font-size="14" font-weight="600" fill="#cfdae8" text-anchor="middle">PROTOCOL.md</text><text x="405" y="612" font-size="11.5" fill="#6c7f96" text-anchor="middle">evidence, re-provable</text></g>
+    <g><rect x="690" y="566" width="210" height="62" rx="10" fill="#131c29" stroke="#2a3648"/><text x="795" y="592" font-size="14" font-weight="600" fill="#cfdae8" text-anchor="middle">SQLite</text><text x="795" y="612" font-size="11.5" fill="#6c7f96" text-anchor="middle">the phone, indexed</text></g>
+    <g><rect x="920" y="566" width="210" height="62" rx="10" fill="#131c29" stroke="#2a3648"/><text x="1025" y="592" font-size="14" font-weight="600" fill="#cfdae8" text-anchor="middle">Health Connect</text><text x="1025" y="612" font-size="11.5" fill="#6c7f96" text-anchor="middle">optional, on-device</text></g>
+  </g>
+
+  <g>
+    <rect x="290" y="652" width="620" height="34" rx="17" fill="#0f2a1c" stroke="#2c6b47"/>
+    <text x="600" y="674" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13.5" font-weight="600" fill="#4ADE8C" text-anchor="middle">Neither app declares INTERNET. Nothing here leaves the phone.</text>
+  </g>
+</svg>

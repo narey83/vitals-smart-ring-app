@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 500" width="1200" height="500" role="img" aria-label="How a walk or run is found in the step counter: cadence thresholds, a five minute confirmation, and a backdated start">
+  <defs>
+    <linearGradient id="wbg" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#0c121b"/><stop offset="100%" stop-color="#101825"/></linearGradient>
+    <linearGradient id="sess" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#4ADE8C" stop-opacity="0.16"/><stop offset="100%" stop-color="#4ADE8C" stop-opacity="0.02"/></linearGradient>
+  </defs>
+  <rect width="1200" height="500" fill="url(#wbg)"/>
+  <rect x="0.5" y="0.5" width="1199" height="499" fill="none" stroke="#1f2a3a"/>
+
+  <text x="48" y="52" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="26" font-weight="700" fill="#e8eef7">Finding a workout the ring never announces</text>
+  <text x="48" y="78" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" fill="#8b9bb0">The ring pushes its running step total every couple of seconds. The difference between two pushes is cadence, and a cadence that holds is a walk.</text>
+
+  <rect x="298" y="110" width="650" height="190" fill="url(#sess)"/>
+
+  <g stroke="#2a3648" stroke-width="1"><path d="M90 300h1040"/></g>
+  <g stroke-dasharray="5 5" stroke-width="1.2">
+    <path d="M90 194h1040" stroke="#4ADE8C" opacity="0.55"/>
+    <path d="M90 152h1040" stroke="#FFC24B" opacity="0.55"/>
+  </g>
+  <g font-family="ui-sans-serif, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" font-weight="600">
+    <text x="1136" y="198" fill="#4ADE8C">100 spm</text>
+    <text x="1136" y="156" fill="#FFC24B">140 spm</text>
+  </g>
+  <text x="76" y="304" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="11" fill="#5f7085" text-anchor="end">0</text>
+  <text x="48" y="210" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="11.5" fill="#6c7f96" transform="rotate(-90 48 210)" text-anchor="middle">cadence</text>
+
+  <path d="M90 270 L116 266 L142 272 L168 264 L194 270 L220 266 L246 272 L272 268 L285 268 L298 182 L324 178 L350 183 L376 177 L402 181 L428 179 L454 184 L480 178 L506 182 L532 177 L558 181 L584 179 L610 168 L636 150 L662 142 L688 146 L714 140 L740 145 L766 152 L792 180 L818 176 L844 182 L870 178 L896 183 L922 179 L948 182 L974 300 L1130 300"
+        fill="none" stroke="#45C4F5" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+
+  <g stroke-dasharray="4 4" stroke-width="1.5">
+    <path d="M298 110v190" stroke="#4ADE8C"/>
+    <path d="M428 110v190" stroke="#45C4F5"/>
+    <path d="M948 110v190" stroke="#FF5C7A"/>
+    <path d="M1026 110v190" stroke="#FF5C7A" opacity="0.6"/>
+  </g>
+
+  <path d="M424 126 Q363 108 302 126" fill="none" stroke="#4ADE8C" stroke-width="1.6"/>
+  <polygon points="298,126 310,120 309,131" fill="#4ADE8C"/>
+  <text x="363" y="102" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" font-style="italic" font-weight="600" fill="#4ADE8C" text-anchor="middle">backdated</text>
+
+  <g font-family="ui-sans-serif, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="700" text-anchor="middle">
+    <g><circle cx="298" cy="318" r="13" fill="#0f2a1c" stroke="#4ADE8C" stroke-width="1.5"/><text x="298" y="323" fill="#4ADE8C">1</text></g>
+    <g><circle cx="428" cy="318" r="13" fill="#0d2430" stroke="#45C4F5" stroke-width="1.5"/><text x="428" y="323" fill="#45C4F5">2</text></g>
+    <g><circle cx="948" cy="318" r="13" fill="#2b1219" stroke="#FF5C7A" stroke-width="1.5"/><text x="948" y="323" fill="#FF5C7A">3</text></g>
+    <g><circle cx="1026" cy="318" r="13" fill="#2b1219" stroke="#FF5C7A" stroke-width="1.5"/><text x="1026" y="323" fill="#FF5C7A">4</text></g>
+  </g>
+
+  <g font-family="ui-sans-serif, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif">
+    <g>
+      <text x="90" y="376" font-size="14" font-weight="700" fill="#4ADE8C">1 &#8194;Walking begins</text>
+      <g font-size="12.5" fill="#8b9bb0"><text x="90" y="397">Cadence crosses 100. Nothing</text><text x="90" y="415">starts yet &#8212; but this instant is</text><text x="90" y="433">remembered.</text></g>
+    </g>
+    <g>
+      <text x="360" y="376" font-size="14" font-weight="700" fill="#45C4F5">2 &#8194;Confirmed, 5 min later</text>
+      <g font-size="12.5" fill="#8b9bb0"><text x="360" y="397">Only now is the heart sensor</text><text x="360" y="415">driven continuously. A brisk trip</text><text x="360" y="433">to the kitchen costs nothing.</text></g>
+    </g>
+    <g>
+      <text x="646" y="376" font-size="14" font-weight="700" fill="#FF5C7A">3 &#8194;Last step</text>
+      <g font-size="12.5" fill="#8b9bb0"><text x="646" y="397">Where the session is cut &#8212; not</text><text x="646" y="415">where the trailing window finally</text><text x="646" y="433">falls, which lags a minute behind.</text></g>
+    </g>
+    <g>
+      <text x="932" y="376" font-size="14" font-weight="700" fill="#FF5C7A">4 &#8194;Ended after 3 min still</text>
+      <g font-size="12.5" fill="#8b9bb0"><text x="932" y="397">A pause at a crossing is not an</text><text x="932" y="415">ending. The fastest minute in the</text><text x="932" y="433">session is what calls it a run.</text></g>
+    </g>
+  </g>
+
+  <g>
+    <rect x="48" y="452" width="1104" height="32" rx="8" fill="#131c29" stroke="#2a3648"/>
+    <text x="600" y="473" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12.5" fill="#8b9bb0" text-anchor="middle">Cycling, rowing and yoga produce almost no steps, so they are started by hand. No arithmetic on a step counter will recover them.</text>
+  </g>
+</svg>

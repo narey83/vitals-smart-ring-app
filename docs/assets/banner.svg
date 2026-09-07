@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 340" width="1280" height="340" role="img" aria-label="R99 Smart Ring — two Android apps for a ring that documents nothing">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0b1119"/>
+      <stop offset="55%" stop-color="#101a28"/>
+      <stop offset="100%" stop-color="#0d1420"/>
+    </linearGradient>
+    <linearGradient id="ringGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#45C4F5"/>
+      <stop offset="50%" stop-color="#A78BFA"/>
+      <stop offset="100%" stop-color="#FF5C7A"/>
+    </linearGradient>
+    <linearGradient id="accentRule" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#45C4F5"/>
+      <stop offset="100%" stop-color="#45C4F5" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="ecg" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#FF5C7A" stop-opacity="0"/>
+      <stop offset="22%" stop-color="#FF5C7A" stop-opacity="0.9"/>
+      <stop offset="78%" stop-color="#FF5C7A" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#FF5C7A" stop-opacity="0"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+      <stop offset="60%" stop-color="#45C4F5" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#45C4F5" stop-opacity="0.16"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="1280" height="340" fill="url(#bg)"/>
+
+  <g stroke="#1b2636" stroke-width="1" opacity="0.7">
+    <path d="M0 84.5H1280M0 170.5H1280M0 256.5H1280"/>
+  </g>
+
+  <circle cx="1058" cy="170" r="150" fill="url(#glow)"/>
+
+  <g fill="none" stroke="url(#ecg)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M846 170H1006l12-20 10 42 12-98 12 128 12-54h182"/>
+  </g>
+
+  <circle cx="1058" cy="170" r="112" fill="none" stroke="#2a3648" stroke-width="1"/>
+  <circle cx="1058" cy="170" r="84" fill="none" stroke="url(#ringGrad)" stroke-width="34"/>
+  <circle cx="1058" cy="170" r="66" fill="none" stroke="#0b1119" stroke-width="2"/>
+
+  <text x="72" y="128" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="66" font-weight="700" letter-spacing="-1">
+    <tspan fill="#45C4F5">R99</tspan><tspan fill="#e8eef7"> Smart Ring</tspan>
+  </text>
+  <rect x="74" y="146" width="190" height="3" fill="url(#accentRule)"/>
+
+  <text x="72" y="192" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="23" fill="#95a6bd">Two Android apps for a ring that documents nothing.</text>
+  <text x="72" y="224" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="14.5" fill="#5f7085">protocol recovered by capture and replay &#183; verified against hardware &#183; no INTERNET permission</text>
+
+  <g font-family="ui-sans-serif, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13.5" font-weight="600">
+    <g><rect x="72" y="256" width="86" height="30" rx="15" fill="#16212f" stroke="#2a3648"/><text x="115" y="276" fill="#A78BFA" text-anchor="middle">Kotlin</text></g>
+    <g><rect x="166" y="256" width="126" height="30" rx="15" fill="#16212f" stroke="#2a3648"/><text x="229" y="276" fill="#4ADE8C" text-anchor="middle">Compose</text></g>
+    <g><rect x="300" y="256" width="146" height="30" rx="15" fill="#16212f" stroke="#2a3648"/><text x="373" y="276" fill="#45C4F5" text-anchor="middle">Bluetooth LE</text></g>
+    <g><rect x="454" y="256" width="168" height="30" rx="15" fill="#16212f" stroke="#2a3648"/><text x="538" y="276" fill="#FFC24B" text-anchor="middle">Health Connect</text></g>
+  </g>
+</svg>

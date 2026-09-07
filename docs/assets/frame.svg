@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 430" width="1200" height="430" role="img" aria-label="Anatomy of an R99 command frame: group, command, total length, payload, CRC">
+  <defs>
+    <linearGradient id="fbg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0c121b"/><stop offset="100%" stop-color="#101825"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="430" fill="url(#fbg)"/>
+  <rect x="0.5" y="0.5" width="1199" height="429" fill="none" stroke="#1f2a3a"/>
+
+  <text x="48" y="56" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="26" font-weight="700" fill="#e8eef7">Anatomy of a command frame</text>
+  <text x="48" y="82" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="13.5" fill="#6c7f96">written to be940001 &#183; the ring echoes group and command back, so replies pair up without sequence numbers</text>
+  <g><rect x="1040" y="36" width="112" height="28" rx="14" fill="#0f2a1c" stroke="#2c6b47"/><text x="1096" y="55" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13" font-weight="700" fill="#4ADE8C" text-anchor="middle">verified</text></g>
+
+  <text x="216" y="116" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="13.5" fill="#8b9bb0">Example &#8212; start a heart-rate measurement</text>
+
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace">
+    <g><rect x="216" y="130" width="96" height="72" rx="8" fill="#0d2430" stroke="#45C4F5" stroke-width="1.5"/><text x="224" y="147" font-size="10" fill="#5f7085">0</text><text x="264" y="180" font-size="27" font-weight="700" fill="#45C4F5" text-anchor="middle">03</text></g>
+    <g><rect x="312" y="130" width="96" height="72" rx="8" fill="#1a1630" stroke="#A78BFA" stroke-width="1.5"/><text x="320" y="147" font-size="10" fill="#5f7085">1</text><text x="360" y="180" font-size="27" font-weight="700" fill="#A78BFA" text-anchor="middle">2F</text></g>
+    <g><rect x="408" y="130" width="96" height="72" rx="8" fill="#2a2110" stroke="#FFC24B" stroke-width="1.5"/><text x="416" y="147" font-size="10" fill="#5f7085">2</text><text x="456" y="180" font-size="27" font-weight="700" fill="#FFC24B" text-anchor="middle">08</text></g>
+    <g><rect x="504" y="130" width="96" height="72" rx="8" fill="#2a2110" stroke="#FFC24B" stroke-width="1.5"/><text x="512" y="147" font-size="10" fill="#5f7085">3</text><text x="552" y="180" font-size="27" font-weight="700" fill="#FFC24B" text-anchor="middle">00</text></g>
+    <g><rect x="600" y="130" width="96" height="72" rx="8" fill="#0f2a1c" stroke="#4ADE8C" stroke-width="1.5"/><text x="608" y="147" font-size="10" fill="#5f7085">4</text><text x="648" y="180" font-size="27" font-weight="700" fill="#4ADE8C" text-anchor="middle">01</text></g>
+    <g><rect x="696" y="130" width="96" height="72" rx="8" fill="#0f2a1c" stroke="#4ADE8C" stroke-width="1.5"/><text x="704" y="147" font-size="10" fill="#5f7085">5</text><text x="744" y="180" font-size="27" font-weight="700" fill="#4ADE8C" text-anchor="middle">00</text></g>
+    <g><rect x="792" y="130" width="96" height="72" rx="8" fill="#2b1219" stroke="#FF5C7A" stroke-width="1.5"/><text x="800" y="147" font-size="10" fill="#5f7085">6</text><text x="840" y="180" font-size="27" font-weight="700" fill="#FF5C7A" text-anchor="middle">4F</text></g>
+    <g><rect x="888" y="130" width="96" height="72" rx="8" fill="#2b1219" stroke="#FF5C7A" stroke-width="1.5"/><text x="896" y="147" font-size="10" fill="#5f7085">7</text><text x="936" y="180" font-size="27" font-weight="700" fill="#FF5C7A" text-anchor="middle">1B</text></g>
+  </g>
+
+  <g fill="none" stroke-width="1.5">
+    <path d="M222 214v10h84v-10" stroke="#45C4F5"/>
+    <path d="M318 214v10h84v-10" stroke="#A78BFA"/>
+    <path d="M414 214v10h180v-10" stroke="#FFC24B"/>
+    <path d="M606 214v10h180v-10" stroke="#4ADE8C"/>
+    <path d="M798 214v10h180v-10" stroke="#FF5C7A"/>
+  </g>
+
+  <g font-family="ui-sans-serif, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" font-weight="700" text-anchor="middle">
+    <text x="264" y="248" fill="#45C4F5">group</text>
+    <text x="360" y="248" fill="#A78BFA">command</text>
+    <text x="504" y="248" fill="#FFC24B">total length</text>
+    <text x="696" y="248" fill="#4ADE8C">payload</text>
+    <text x="888" y="248" fill="#FF5C7A">CRC</text>
+  </g>
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="12" fill="#6c7f96" text-anchor="middle">
+    <text x="264" y="270" fill="#6c7f96">1 byte</text>
+    <text x="360" y="270" fill="#6c7f96">1 byte</text>
+    <text x="504" y="270" fill="#6c7f96">uint16 LE = 8</text>
+    <text x="696" y="270" fill="#6c7f96">type 00 = heart rate</text>
+    <text x="888" y="270" fill="#6c7f96">CCITT-FALSE, LE</text>
+  </g>
+  <g font-family="ui-sans-serif, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="12" fill="#5f7085" text-anchor="middle">
+    <text x="504" y="290">the whole frame, header and CRC included</text>
+    <text x="888" y="290">poly 0x1021, init 0xFFFF, no reflection, no final XOR</text>
+  </g>
+
+  <g>
+    <rect x="48" y="322" width="1104" height="76" rx="10" fill="#1d1508" stroke="#5a4418"/>
+    <rect x="48" y="322" width="4" height="76" fill="#FFC24B"/>
+    <text x="76" y="352" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="15" font-weight="700" fill="#FFC24B">A wrong length field is not ignored &#8212; the firmware drops the connection.</text>
+    <text x="76" y="376" font-family="ui-sans-serif, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="14" fill="#a99367">It is the one genuinely destructive mistake available here, and reconnecting recovers it.</text>
+  </g>
+</svg>
