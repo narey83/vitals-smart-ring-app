@@ -30,12 +30,47 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Gitea's runner starts every job in a fresh container, so without these caches each build
+      # downloaded everything again: the JDK, the Android SDK, Gradle and every dependency, and
+      # Robolectric's Android images for the tests. That was most of a 26-minute build. Gitea's
+      # runner serves the same cache API as GitHub, and GitHub's machines already have the JDK and
+      # SDK installed, so only Gradle and Robolectric are cached there.
+      - name: Where the tools go
+        if: github.server_url != 'https://github.com'
+        run: |
+          sdk="${ANDROID_HOME:-$HOME/android-sdk}"
+          echo "ANDROID_HOME=$sdk" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$sdk" >> "$GITHUB_ENV"
+
+      - name: Cache the JDK and Android SDK
+        if: github.server_url != 'https://github.com'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.ANDROID_HOME }}
+            ${{ runner.tool_cache }}/Java_Temurin-Hotspot_jdk
+          key: tools-${{ runner.os }}-jdk17-${{ hashFiles('vitals/build.gradle.kts', 'app/build.gradle.kts') }}
+          restore-keys: tools-${{ runner.os }}-jdk17-
+
+      - name: Cache Robolectric's Android images
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository/org/robolectric
+          key: robolectric-${{ runner.os }}-${{ hashFiles('vitals/build.gradle.kts') }}
+          restore-keys: robolectric-${{ runner.os }}-
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
+          # Gradle's own download, the dependencies and the build cache, kept between runs.
+          cache: gradle
 
       - uses: android-actions/setup-android@v3
+        with:
+          # Only the command-line tools. Gradle fetches the platform and build tools it needs, and
+          # the default package list adds the obsolete "tools" package, which nothing here uses.
+          packages: ""
 
       - name: Signing key
         env:
