@@ -11,7 +11,19 @@ on:
   push:
     branches: [main]
     tags: ["v*"]
+    # A push that only touches the documentation builds nothing: the apps are what they were.
+    # Tags are never filtered by path, so a release always builds.
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - "LICENSE"
+      - "NOTICE"
   pull_request:
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - "LICENSE"
+      - "NOTICE"
   workflow_dispatch:
 
 permissions:
