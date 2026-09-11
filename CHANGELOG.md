@@ -4,6 +4,18 @@ One version covers the whole repository. Both apps are built from `r99.version` 
 [`gradle.properties`](gradle.properties), and each release is tagged `v<version>`. See
 "Versions and releases" in the [README](README.md#versions-and-releases).
 
+## 0.2.1 — 11 September 2026
+
+The repository is now **vitals-smart-ring-app**. The app is still Vitals.
+
+### Changed
+
+- The update check and the Settings → About link use the new address,
+  `github.com/narey83/vitals-smart-ring-app`. 0.2.0 still finds its updates through GitHub's
+  redirect from the old name, and this is the release it will find.
+- CI requires the signing key only where releases are published, so builds on the home Gitea
+  pass without it.
+
 ## 0.2.0 — 11 September 2026
 
 Steps now turn up when they should.
