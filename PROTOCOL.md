@@ -189,6 +189,14 @@ GetNowStep     | 41 00 00 | 04 00 | 2F 00 00 …    on request
 `0x41` = 65 steps, with distance and calorie counters alongside. Watching `fea1` is therefore
 enough to track steps live without polling.
 
+**The counter resets at the ring's midnight, which is 00:00 UTC** — the clock is set in UTC,
+see "Send UTC, not local time". In British summer time that is 01:00, so the first hour of the
+phone's day still carries yesterday's total. Vitals' own history shows the drop on three
+consecutive nights, 5–7 September 2026, every time between 00:57 and 00:59 BST (`873 → 0`,
+`78 → 0`, `1742 → 0`). A day's steps therefore cannot be "today's highest total minus
+yesterday's last": after the reset that is zero until the wearer has out-walked yesterday. Sum
+the rises between readings instead, and treat a drop as a reset.
+
 ## Firmware
 
 The ring is a Nordic nRF5x running Nordic DFU (`no.nordicsemi.android.dfu` appears throughout

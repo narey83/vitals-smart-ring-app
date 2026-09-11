@@ -176,6 +176,9 @@ fun SettingsPage(
     onMonitors: (Ring.Monitors) -> Unit,
     autoWorkouts: Boolean,
     onAutoWorkouts: (Boolean) -> Unit,
+    /** Whether Android has been told to leave the collector alone, rather than ration it. */
+    unrestricted: Boolean,
+    onBackground: () -> Unit,
     onRepair: () -> Unit,
     onExport: () -> Unit,
     onBack: () -> Unit
@@ -355,7 +358,15 @@ fun SettingsPage(
 
         Section("RING & DATA")
         Panel {
+            Value("Run in background", if (unrestricted) "Unrestricted" else "Optimised") { onBackground() }
+            Divider()
             Action("Export readings") { onExport() }
+        }
+        if (!unrestricted) {
+            Note(
+                "Optimised lets Android put off reconnecting to the ring while the phone sleeps, " +
+                    "which is how hours of steps go missing. Tap to let it run unrestricted."
+            )
         }
         Note(
             "Everything stays on this phone. This app has no internet permission, so it cannot " +

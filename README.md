@@ -85,17 +85,21 @@ vital tab carries its own chart, statistics and day-by-day history.
 - **Sleep**: the ring stages its own nights and hands them over only when asked, so the app asks
   on every connection — the night is drawn as a hypnogram, scored out of a hundred against the
   wearer's own bedtime and wake time, and summarised by week and by month.
-- **Notifications**: four things ever interrupt anyone, each on its own channel so any of them can
+- **Notifications**: five things ever interrupt anyone, each on its own channel so any of them can
   be silenced from the phone's own settings without touching the others — an optional bedtime
   reminder and a morning sleep report, both off until switched on; a warning when the step count
-  has sat still long enough to mean a stopped ring rather than a still wearer; and a note when a
-  walk or a run has been found and recorded.
+  has sat still long enough to mean a stopped ring rather than a still wearer; a note when a
+  walk or a run has been found and recorded; and a quiet one when the ring has been out of reach
+  for a couple of hours, since a missing link otherwise looks exactly like a day without walking.
 - **Settings** for who is wearing the ring — name, sex, age, height and weight, which the ring
   itself uses to work out distance and calories — plus the step goal and reading interval. Metric
   or imperial, though the ring is always told metric. Light and dark, following the system.
 - **A foreground service** keeps the Bluetooth link open so readings arrive while the app is
   closed. The ring measures on its own schedule and pushes results, so the work is staying
-  connected, not polling.
+  connected, not polling — and checking the step count keeps coming, since a subscription can
+  lapse without a word. It starts again by itself after the phone restarts or the app updates,
+  and writes what happens to the link to `files/link-log.txt`:
+  `adb shell run-as uk.co.r99vitals cat files/link-log.txt`.
 - **Every reading is written to an indexed SQLite database** in the app's own storage, because the
   ring's internal store is small and rotates records away as it fills — history cannot depend on
   the ring remembering.

@@ -1,6 +1,7 @@
 package uk.co.r99vitals
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.util.Calendar
 import java.util.Date
@@ -67,7 +68,7 @@ class StepsTest {
         assertEquals(0, hours.count { it.steps < 0 })
     }
 
-    /** The headline figure is the counter itself, not the sum of the differences. */
+    /** On a day without a reset the headline figure is simply the counter, and the bars add up to it. */
     @Test fun `the day's total is the highest count seen`() {
         val entries = listOf(at(9, 5, 100), at(12, 5, 900), at(18, 5, 2400))
         assertEquals(2400, Steps.total(entries))
@@ -88,15 +89,56 @@ class StepsTest {
         assertEquals(49, hours.sumOf { it.steps })
     }
 
-    /**
-     * A real reset during the day still zeroes out, even with a baseline from before today.
-     * [Steps.total] takes the simpler "highest count seen" reading, so a reset partway through
-     * the day — the pre-reset peak outscoring what has been walked since — is a known blind spot
-     * shared with the no-baseline case above; [Steps.hours], which is bucket-by-bucket, is not.
-     */
+    /** A real reset during the day still zeroes out, even with a baseline from before today. */
     @Test fun `a genuine reset still starts today from zero, baseline or not`() {
         val entries = listOf(at(9, 5, 1451), at(12, 5, 40))
         assertEquals(40, Steps.hours(entries, baseline = 1451)[12].steps)
         assertEquals(0, Steps.hours(entries, baseline = 1451).count { it.steps < 0 })
+        assertEquals(40, Steps.total(entries, baseline = 1451))
+    }
+
+    /**
+     * The ring's midnight is 00:00 UTC, so in British summer time it resets at 01:00 and the
+     * day's first hour is still yesterday's total. That early reading must not outscore the
+     * day's walking: measured as highest-minus-baseline, this read 7 steps all day, and the tile
+     * showed nothing until the wearer had out-walked yesterday. The shape is from a real phone:
+     * 6,593 at bedtime, reset between 00:57 and 00:59.
+     */
+    @Test fun `a day the ring resets an hour into still counts what was walked after it`() {
+        val entries = listOf(at(0, 30, 6593), at(0, 57, 6600), at(0, 59, 0), at(9, 0, 1200), at(18, 0, 3000))
+        assertEquals(3007, Steps.total(entries, baseline = 6593))
+        val hours = Steps.hours(entries, baseline = 6593)
+        assertEquals(7, hours[0].steps)
+        assertEquals(1200, hours[9].steps)
+        assertEquals(1800, hours[18].steps)
+        assertEquals(Steps.total(entries, baseline = 6593), hours.sumOf { it.steps })
+    }
+
+    /**
+     * A reset inside a quarter hour is seen reading by reading. Taking only each quarter's peak
+     * hid it behind the pre-reset total, and everything up to that total went uncounted.
+     */
+    @Test fun `a reset in the middle of a quarter hour is still seen`() {
+        val entries = listOf(at(0, 50, 873), at(0, 58, 5), at(9, 0, 2000))
+        assertEquals(2003, Steps.total(entries, baseline = 870))
+        assertEquals(1995, Steps.hours(entries, baseline = 870)[9].steps)
+    }
+
+    /** A gap in the counter is said out loud, rather than passing for an afternoon sat down. */
+    @Test fun `the page says when the ring went quiet, and only then`() {
+        val now = at(14, 0, 0).at.time
+        assertEquals(null, Steps.silence(at(13, 50, 0).at.time, now))
+        assertEquals(null, Steps.silence(null, now))
+        val note = Steps.silence(at(12, 30, 0).at.time, now)!!
+        assertTrue(note, note.startsWith("Nothing from the ring since 12:30."))
+        val yesterday = at(23, 42, 0).at.time - 24 * 60 * 60 * 1000L
+        assertTrue(Steps.silence(yesterday, now)!!.startsWith("Nothing from the ring since 23:42 on "))
+    }
+
+    /** Calories are a running total too, kept alongside steps and reset with them. */
+    @Test fun `calories are counted across a reset the same way`() {
+        fun cal(hour: Int, minute: Int, total: Int, kcal: Int) = at(hour, minute, total).copy(extra = kcal)
+        val entries = listOf(cal(0, 30, 6593, 267), cal(0, 59, 0, 0), cal(18, 0, 3000, 120))
+        assertEquals(120, Steps.calories(entries, baseline = 267))
     }
 }

@@ -86,6 +86,8 @@ class CollectorService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        log = LinkLog(this)
+        log.note("collector started")
         history = History(this)
         nights = Nights(this)
         workouts = Workouts(this)
@@ -106,6 +108,7 @@ class CollectorService : Service() {
         settleSensor = saved.contains("detectedSince")
         saved.edit().remove("detectedSport").remove("detectedSince").apply()
         handler.post(watchForTheEnd)
+        handler.postDelayed(watchSteps, 60_000)
         connect()
     }
 
@@ -147,6 +150,8 @@ class CollectorService : Service() {
         val detail = when {
             session != null -> sessionBeats.lastOrNull()?.let { "$it bpm · %,d steps".format(session.steps) }
                 ?: "Finding your heart rate"
+            // Said here rather than left looking like a quiet day: nothing is being counted.
+            saidOutOfReach -> "Ring out of reach since ${clock.format(java.util.Date(lostAt))}"
             steps > 0 -> "$distance m · $calories kcal · $latest"
             else -> latest
         }
@@ -176,6 +181,39 @@ class CollectorService : Service() {
             )
         }
         return PROBLEM_CHANNEL
+    }
+
+    /**
+     * Its own channel, and a quiet one: a ring left charging in another room is worth knowing
+     * about when the phone is next looked at, not worth waking anyone for. The phone's own
+     * notification settings can make it louder.
+     */
+    private fun linkChannel(): String {
+        val manager = getSystemService(NotificationManager::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            manager.createNotificationChannel(
+                NotificationChannel(LINK_CHANNEL, "Ring connection", NotificationManager.IMPORTANCE_LOW)
+                    .apply { description = "Says when the ring has been out of reach for a while" }
+            )
+        }
+        return LINK_CHANNEL
+    }
+
+    /** The link has been gone long enough that a day of steps is going uncounted. */
+    private fun announceOutage() {
+        val open = PendingIntent.getActivity(
+            this, 4, Intent(this, VitalsActivity::class.java),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+        val hours = (System.currentTimeMillis() - lostAt) / (60 * 60 * 1000)
+        val notification = Notification.Builder(this, linkChannel())
+            .setContentTitle("Ring out of reach since ${clock.format(java.util.Date(lostAt))}")
+            .setContentText("Nothing heard for over ${hours}h. Steps taken meanwhile are counted once it reconnects.")
+            .setSmallIcon(android.R.drawable.ic_menu_compass)
+            .setContentIntent(open)
+            .setAutoCancel(true)
+            .build()
+        getSystemService(NotificationManager::class.java).notify(LINK_NOTIFICATION, notification)
     }
 
     private fun workoutChannel(): String {
@@ -378,77 +416,243 @@ class CollectorService : Service() {
         refresh()
     }
 
-    /**
-     * Frames, spaced out. There is no queue behind this link — the activity has one because it
-     * sends a dozen at a time on connecting — and a second write before the first is answered
-     * is simply lost.
-     */
-    @SuppressLint("MissingPermission")
+    /** Frames for the ring, sent one at a time through [queue]. */
     private fun send(vararg frames: ByteArray) {
-        frames.forEachIndexed { index, frame ->
-            handler.postDelayed({ gatt?.let { writeCommand(it, frame) } }, index * 500L)
+        frames.forEach { frame -> enqueue { gatt?.let { writeCommand(it, frame) } ?: false } }
+    }
+
+    // ---- One request at a time -------------------------------------------------------------
+
+    /**
+     * Android carries one outstanding request per connection and refuses the next until the
+     * last is answered, so requests wait here for their answer rather than going out on a timer.
+     *
+     * This used to be subscriptions spaced 350 ms apart with nothing checking they took. Any
+     * that landed while the one before was still in flight was refused without a word: at 23:55
+     * on 10 September the collector reconnected, heard heart rates for the next 45 minutes and
+     * not one step, while the ring pushed steps the moment the app's own connection subscribed.
+     */
+    private val queue = ArrayDeque<() -> Boolean>()
+    private var running = false
+    private var request = 0
+
+    /** [work] returns whether it went out; one that did not is skipped rather than waited on. */
+    private fun enqueue(work: () -> Boolean) {
+        handler.post {
+            queue.addLast(work)
+            if (!running) runNext()
         }
     }
 
+    private fun runNext() {
+        val work = queue.removeFirstOrNull()
+        if (work == null) { running = false; return }
+        running = true
+        val mine = ++request
+        if (!work()) { handler.post { finish(mine) }; return }
+        // A request the ring accepts but never answers must not wedge everything behind it.
+        handler.postDelayed({ finish(mine) }, 5_000)
+    }
+
+    private fun finish(which: Int) { if (which == request) runNext() }
+    private fun answered() { handler.post { finish(request) } }
+
+    private fun forgetRequests() { queue.clear(); running = false; request++ }
+
+    // ---- Holding the link ------------------------------------------------------------------
+
+    /** Whether the ring is connected, as the last state change said. */
+    @Volatile private var connected = false
+
+    /** When the step counter last pushed, or the link last came up, whichever is later. */
+    @Volatile private var lastSteps = 0L
+
+    /** When the step count was last asked for, and when the ring last answered. See [watchSteps]. */
+    private var lastAsked = 0L
+    @Volatile private var lastAnswered = 0L
+
+    /** Since when there has been no link; 0 while there is one. */
+    @Volatile private var lostAt = 0L
+    /** Whether the ongoing notification says so, and whether the outage has been announced. */
+    private var saidOutOfReach = false
+    private var announcedOutage = false
+
+    private lateinit var log: LinkLog
+    private val clock = java.text.SimpleDateFormat("HH:mm", java.util.Locale.UK)
+
+    /** Short enough to read in the log: `fea1`, `2a37`, `be940001`. */
+    private fun short(characteristic: BluetoothGattCharacteristic) =
+        characteristic.uuid.toString().take(8).trimStart('0')
+
     @SuppressLint("MissingPermission")
     private fun connect() {
+        // Every path here is a spell without a link — first start, a drop, a restart, Bluetooth
+        // switched off — and every one of them should be noticed if it goes on.
+        if (lostAt == 0L) lostAt = System.currentTimeMillis()
         val address = getSharedPreferences("ring", Context.MODE_PRIVATE).getString("address", null)
             ?: return stopSelf()
         val adapter = (getSystemService(BLUETOOTH_SERVICE) as BluetoothManager).adapter ?: return
         if (!adapter.isEnabled) { retry(); return }
         val device = runCatching { adapter.getRemoteDevice(address) }.getOrNull() ?: return stopSelf()
         gatt?.close()
-        gatt = device.connectGatt(this, false, callback, android.bluetooth.BluetoothDevice.TRANSPORT_LE)
+        forgetRequests()
+        connected = false
+        lastSteps = System.currentTimeMillis()
+        log.note("asking for the ring")
+        // autoConnect: the request waits in the Bluetooth controller until the ring is back,
+        // however long that takes, with no timer of this service's involved. A direct connection
+        // gives up after thirty seconds, and the next attempt then waited on this service's own
+        // timer — which does not run while the phone sleeps. That is how a link dropped at 12:30
+        // on 6 September stayed dropped until the app was next opened, at 21:13.
+        gatt = device.connectGatt(this, true, callback, android.bluetooth.BluetoothDevice.TRANSPORT_LE)
     }
 
-    /** The link drops; come back for it, less eagerly each time. */
+    /**
+     * An attempt refused outright, rather than one waiting for the ring: back off, so a Bluetooth
+     * stack that is refusing everything is not asked again in a tight loop.
+     */
     private fun retry() {
         backoff = when (backoff) { 0L -> 5_000; 5_000L -> 20_000; 20_000L -> 60_000; else -> 300_000 }
         handler.postDelayed({ connect() }, backoff)
+    }
+
+    /**
+     * Once a minute: keep the step count coming, or say that it is not.
+     *
+     * The ring pushes its counter every couple of seconds for as long as it is subscribed, moving
+     * or not, so minutes without a push on a live link mean the subscription has gone rather than
+     * that the wearer is sitting still. Asked again first, since that is cheap; if even that
+     * brings nothing, the link is started over, which redoes every subscription.
+     *
+     * The count is also asked for outright every few minutes, whatever the pushes are doing. The
+     * answer comes back on the command channel rather than the counter's own, so one path failing
+     * no longer means steps going unrecorded.
+     */
+    private val watchSteps = object : Runnable {
+        override fun run() {
+            handler.postDelayed(this, 60_000)
+            val now = System.currentTimeMillis()
+            val link = gatt?.takeIf { connected }
+            if (link == null) { noticeOutage(now); return }
+            if (now - lastAsked >= STEPS_ASK) {
+                if (lastAsked != 0L && lastAnswered < lastAsked) log.note("no answer to the last step count request")
+                askForSteps(link)
+            }
+            val quiet = now - lastSteps
+            if (quiet < STEPS_QUIET) return
+            val activity = link.services.flatMap { it.characteristics }.firstOrNull { it.uuid == Ring.ACTIVITY }
+            if (activity != null && quiet < STEPS_LOST) {
+                log.note("no step push for ${quiet / 60_000} min: subscribing again")
+                enqueue { subscribe(link, activity) }
+            } else {
+                log.note("no step push for ${quiet / 60_000} min: starting the link over")
+                connect()
+            }
+        }
+    }
+
+    private fun askForSteps(link: BluetoothGatt) {
+        lastAsked = System.currentTimeMillis()
+        enqueue { writeCommand(link, Ring.getNowStep()) }
+    }
+
+    /**
+     * No link: say so on the ongoing notification after a few minutes, and with a notification
+     * of its own after a couple of hours, once per outage. A missing link otherwise looks exactly
+     * like a day without walking.
+     */
+    private fun noticeOutage(now: Long) {
+        val since = lostAt.takeIf { it != 0L } ?: return
+        if (!saidOutOfReach && now - since >= OUT_OF_REACH) {
+            saidOutOfReach = true
+            refresh()
+        }
+        if (!announcedOutage && now - since >= OUTAGE) {
+            announcedOutage = true
+            log.note("out of reach for ${(now - since) / 60_000} min: telling the wearer")
+            announceOutage()
+        }
+    }
+
+    /** Back in reach: take the outage off the notifications, and write down how long it was. */
+    private fun backInReach() {
+        val since = lostAt
+        lostAt = 0L
+        if (since != 0L) log.note("connected after ${(System.currentTimeMillis() - since) / 1000} s without a link")
+        if (announcedOutage) getSystemService(NotificationManager::class.java).cancel(LINK_NOTIFICATION)
+        announcedOutage = false
+        if (saidOutOfReach) { saidOutOfReach = false; refresh() }
     }
 
     private val callback = object : BluetoothGattCallback() {
         @SuppressLint("MissingPermission")
         override fun onConnectionStateChange(gatt: BluetoothGatt, status: Int, state: Int) {
             if (state == BluetoothProfile.STATE_CONNECTED) {
+                log.note("connected (status $status)")
                 backoff = 0
+                connected = true
+                lastSteps = System.currentTimeMillis()
+                handler.post { backInReach() }
                 gatt.discoverServices()
             } else {
-                retry()
+                val wasConnected = connected
+                connected = false
+                log.note(if (wasConnected) "link dropped (status $status)" else "could not connect (status $status)")
+                // A link that was up and has dropped is asked for again at once; the request
+                // then waits for the ring by itself. See connect().
+                if (wasConnected) {
+                    lostAt = System.currentTimeMillis()
+                    handler.post { connect() }
+                } else retry()
             }
         }
 
         @SuppressLint("MissingPermission")
         override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
-            if (status != BluetoothGatt.GATT_SUCCESS) return
+            // Connected but unread is connected to nothing; start over rather than sit on it.
+            if (status != BluetoothGatt.GATT_SUCCESS) {
+                log.note("could not read the ring's services (status $status): disconnecting")
+                gatt.disconnect()
+                return
+            }
             // Subscribe and then stay quiet: the ring pushes on its own schedule.
-            val notifying = gatt.services.flatMap { it.characteristics }
+            gatt.services.flatMap { it.characteristics }
                 .filter {
                     it.properties and (BluetoothGattCharacteristic.PROPERTY_NOTIFY or
                         BluetoothGattCharacteristic.PROPERTY_INDICATE) != 0
                 }
-            notifying.forEachIndexed { index, characteristic ->
-                // Spaced out because the radio carries one request at a time.
-                handler.postDelayed({ subscribe(gatt, characteristic) }, index * 350L)
-            }
+                .forEach { characteristic -> enqueue { subscribe(gatt, characteristic) } }
             // Sleep is the one thing that has to be asked for. The ring stages a night by itself,
             // says nothing, and drops the record within about a day — so a collector that only
             // listens loses every night the wearer does not happen to open the app for.
             //
             // The room has to be asked for first: the default 20-byte payload is far smaller than
             // a night, and without this the ring answers with a count and the record never comes.
+            // If the request is refused the queue carries on, and the reader drops what does not
+            // fit rather than the nights never being asked for at all.
             sleepReader = SleepReader()
             clockSyncedThisConnect = false
-            handler.postDelayed({ requestRoomForANight(gatt) }, notifying.size * 350L + 500L)
+            enqueue { gatt.requestMtu(517) }
+            enqueue { writeCommand(gatt, Ring.storedSleep()) }
+            // The count as it stands, straight away: after a gap this is the first word of the
+            // steps taken while nothing was listening, rather than waiting for the next push.
+            handler.post { askForSteps(gatt) }
             if (settleSensor) {
                 settleSensor = false
-                handler.postDelayed({ send(Ring.stopMeasuring(), Ring.streamLive(false)) }, notifying.size * 350L + 2_500L)
+                send(Ring.stopMeasuring(), Ring.streamLive(false))
             }
         }
 
         override fun onMtuChanged(gatt: BluetoothGatt, mtu: Int, status: Int) {
-            askForNights(gatt)
+            log.note("room for $mtu bytes (status $status)")
+            answered()
         }
+
+        override fun onDescriptorWrite(gatt: BluetoothGatt, descriptor: BluetoothGattDescriptor, status: Int) {
+            log.note("subscribed ${short(descriptor.characteristic)}: " + if (status == BluetoothGatt.GATT_SUCCESS) "ok" else "failed (status $status)")
+            answered()
+        }
+        override fun onCharacteristicWrite(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic, status: Int) = answered()
 
         @Deprecated("Superseded on Android 13")
         override fun onCharacteristicChanged(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic) {
@@ -461,16 +665,6 @@ class CollectorService : Service() {
         }
     }
 
-    @SuppressLint("MissingPermission")
-    private fun requestRoomForANight(gatt: BluetoothGatt) {
-        // If the request itself fails there is no callback to carry on from, so ask anyway and
-        // let the reader drop what does not fit rather than never asking at all.
-        if (!gatt.requestMtu(517)) askForNights(gatt)
-    }
-
-    @SuppressLint("MissingPermission")
-    private fun askForNights(gatt: BluetoothGatt) = writeCommand(gatt, Ring.storedSleep())
-
     /**
      * Self-heals a stopped or un-reset ring clock, using the sleep timestamps this service
      * already asks for on every connection — this is the collector's only source of ring-side
@@ -482,16 +676,18 @@ class CollectorService : Service() {
     private fun resyncClockIfStopped(gatt: BluetoothGatt, ringTimestamps: List<Long>) {
         if (clockSyncedThisConnect || !Ring.clockLooksStopped(ringTimestamps)) return
         clockSyncedThisConnect = true
-        writeCommand(gatt, Ring.setClock())
+        enqueue { writeCommand(gatt, Ring.setClock()) }
     }
 
+    /** Whether the write went out. Only ever called from [queue]. */
     @SuppressLint("MissingPermission")
-    private fun writeCommand(gatt: BluetoothGatt, frame: ByteArray) {
+    private fun writeCommand(gatt: BluetoothGatt, frame: ByteArray): Boolean {
         val channel = gatt.services.firstNotNullOfOrNull {
             it.getCharacteristic(Ring.COMMAND_CHANNEL)
-        } ?: return
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            gatt.writeCharacteristic(channel, frame, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT)
+        } ?: return false
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            gatt.writeCharacteristic(channel, frame, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT) ==
+                BluetoothStatusCodes.SUCCESS
         } else {
             @Suppress("DEPRECATION") channel.value = frame
             @Suppress("DEPRECATION") channel.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
@@ -499,33 +695,27 @@ class CollectorService : Service() {
         }
     }
 
+    /** Whether the subscription went out. Only ever called from [queue]. */
     @SuppressLint("MissingPermission")
-    private fun subscribe(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic) {
-        if (!gatt.setCharacteristicNotification(characteristic, true)) return
-        val descriptor = characteristic.getDescriptor(Ring.CLIENT_CONFIG) ?: return
+    private fun subscribe(gatt: BluetoothGatt, characteristic: BluetoothGattCharacteristic): Boolean {
+        if (!gatt.setCharacteristicNotification(characteristic, true)) return false
+        val descriptor = characteristic.getDescriptor(Ring.CLIENT_CONFIG) ?: return false
         val value = if (characteristic.properties and BluetoothGattCharacteristic.PROPERTY_INDICATE != 0) {
             BluetoothGattDescriptor.ENABLE_INDICATION_VALUE
         } else BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            gatt.writeDescriptor(descriptor, value)
+        val sent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            gatt.writeDescriptor(descriptor, value) == BluetoothStatusCodes.SUCCESS
         } else {
             @Suppress("DEPRECATION") descriptor.value = value
             @Suppress("DEPRECATION") gatt.writeDescriptor(descriptor)
         }
+        if (!sent) log.note("subscribing ${short(characteristic)} refused before it went out")
+        return sent
     }
 
     private fun store(characteristic: BluetoothGattCharacteristic, value: ByteArray) {
         if (characteristic.uuid == Ring.ACTIVITY) {
-            Ring.readActivity(value)?.let {
-                val baseline = history.latestBefore("steps", History.startOfToday())
-                history.record("steps", it.steps, it.calories)
-                steps = (it.steps - (baseline?.value ?: 0)).coerceAtLeast(0)
-                distance = it.distance
-                calories = (it.calories - (baseline?.extra ?: 0)).coerceAtLeast(0)
-                watchForAWorkout(it.steps)
-                refresh()
-                checkStepsStuck()
-            }
+            Ring.readActivity(value)?.let { recordSteps(it, pushed = true) }
             return
         }
         // Where the ring's own periodic sampling lands: it reports automatic heart readings on
@@ -569,6 +759,11 @@ class CollectorService : Service() {
                 latest = "${reading.systolic}/${reading.diastolic}"
                 refresh()
             }
+            // The answer to asking for the count outright — see watchSteps.
+            is Ring.Reading.Motion -> {
+                lastAnswered = System.currentTimeMillis()
+                recordSteps(reading, pushed = false)
+            }
             // ponytail: heart arrives on the SIG characteristic above, but automatic blood
             // oxygen and pressure still show up nowhere. Log what else the ring pushes while
             // unattended; drop this once those two are identified as well. Frames this app
@@ -579,6 +774,25 @@ class CollectorService : Service() {
         }
     }
 
+    /** A step total from either path: the ring's own push, or its answer when asked. */
+    private fun recordSteps(motion: Ring.Reading.Motion, pushed: Boolean) {
+        val now = System.currentTimeMillis()
+        history.record("steps", motion.steps, motion.calories)
+        val today = Steps.today(history)
+        steps = today.steps
+        distance = motion.distance
+        calories = today.calories
+        // Only pushes carry a cadence. An answer every few minutes would read to the detector as
+        // one long stride, and it already counts a jump after a silence as nothing.
+        if (pushed) {
+            if (now - lastSteps >= STEPS_QUIET) log.note("step pushes back after ${(now - lastSteps) / 60_000} min")
+            lastSteps = now
+            watchForAWorkout(motion.steps)
+        }
+        refresh()
+        checkStepsStuck()
+    }
+
     /**
      * Phone unlocked: ask the ring for the night before saying anything about it, because the
      * record is often written only as the wearer gets up, and then report if there is something
@@ -587,7 +801,7 @@ class CollectorService : Service() {
     private fun reportOnWaking() {
         val plan = SleepPlan.read(this)
         if (!plan.report) return
-        gatt?.let { askForNights(it) }
+        gatt?.let { link -> enqueue { writeCommand(link, Ring.storedSleep()) } }
         handler.postDelayed({
             val night = SleepInsight.merge(nights.all()).lastOrNull()
             val reported = getSharedPreferences("ring", Context.MODE_PRIVATE).getLong("reportedNight", 0L)
@@ -614,6 +828,18 @@ class CollectorService : Service() {
         private const val WORKOUT_CHANNEL = "workouts"
         private const val WORKOUT_NOTIFICATION = 3
         private const val STUCK_THRESHOLD = 3 * 60 * 60 * 1000L
+        /** No step push for this long on a live link: ask for them again. See watchSteps. */
+        private const val STEPS_QUIET = 2 * 60 * 1000L
+        /** Still none after asking for this long: start the link over. */
+        private const val STEPS_LOST = 10 * 60 * 1000L
+        /** How often the count is asked for outright, pushes or not. */
+        private const val STEPS_ASK = 5 * 60 * 1000L
+        /** No link for this long: the ongoing notification says so. */
+        private const val OUT_OF_REACH = 5 * 60 * 1000L
+        /** And for this long: a notification of its own. */
+        private const val OUTAGE = 2 * 60 * 60 * 1000L
+        private const val LINK_CHANNEL = "link"
+        private const val LINK_NOTIFICATION = 4
         private const val FINISH = "uk.co.r99vitals.FINISH_WORKOUT"
 
         /** Ends the detected session now, at the wearer's word rather than by going quiet. */

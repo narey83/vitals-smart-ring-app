@@ -150,11 +150,19 @@ class BedtimeReceiver : BroadcastReceiver() {
     }
 }
 
-/** Alarms do not survive a restart, so they are booked again once the phone is up. */
+/**
+ * The phone restarting, or this app being updated, stops everything it had running.
+ *
+ * Alarms do not survive either, so they are booked again. Nor does the collector, which used to
+ * wait for the app to be opened — a phone that restarted overnight counted no steps until the
+ * wearer happened to look.
+ */
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent?) {
-        if (intent?.action != Intent.ACTION_BOOT_COMPLETED) return
+        if (intent?.action != Intent.ACTION_BOOT_COMPLETED && intent?.action != Intent.ACTION_MY_PACKAGE_REPLACED) return
         Bedtime.apply(context)
+        val paired = context.getSharedPreferences("ring", Context.MODE_PRIVATE).getString("address", null) != null
+        if (paired) CollectorService.start(context)
     }
 }
 

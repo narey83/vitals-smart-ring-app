@@ -30,6 +30,9 @@ import androidx.compose.material.icons.rounded.MonitorHeart
 import android.widget.TextView
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
+import android.provider.Settings
+import android.net.Uri
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.setContent
 import androidx.appcompat.app.AppCompatActivity
@@ -70,6 +73,8 @@ class VitalsActivity : AppCompatActivity() {
     private var autoWorkouts by mutableStateOf(true)
     private var monitors = Ring.Monitors()
     private var settingsOpen by mutableStateOf(false)
+    /** Whether Android leaves the collector alone rather than rationing it; read again on resume. */
+    private var unrestricted by mutableStateOf(false)
     /** Null once done. Every screen it passes through writes as it goes, same as Settings does. */
     private var onboarding by mutableStateOf<OnboardingStep?>(null)
     private var nightMode by mutableStateOf(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
@@ -260,6 +265,8 @@ class VitalsActivity : AppCompatActivity() {
                         ui = ui.copy(monitors = chosen)
                         applyInterval()
                     },
+                    unrestricted = unrestricted,
+                    onBackground = { runInBackground(asked = true) },
                     onRepair = { forgetRing() },
                     onExport = { report = history.report(); sheet = Sheet.Export },
                     onBack = { closeSettings() }
@@ -358,6 +365,33 @@ class VitalsActivity : AppCompatActivity() {
             ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
                 PackageManager.PERMISSION_GRANTED
         if (already) advanceOnboarding() else onboardingNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
+    }
+
+    private fun isUnrestricted() =
+        getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(packageName)
+
+    /**
+     * Asks Android to stop rationing the collector.
+     *
+     * Battery optimisation lets the phone defer the collector's work while it sleeps, and a ring
+     * that has dropped the link is then not asked for again until something wakes the phone —
+     * which reads, the next day, as hours nobody walked. Asked once by itself, the first time the
+     * ring connects: the collector has just started, and nothing else is on screen to compete
+     * with the system's own dialog. Refused, it is not asked again unprompted; Settings has a row
+     * for changing it, which also leads back out once it has been allowed, since that dialog
+     * cannot take it away again.
+     */
+    private fun runInBackground(asked: Boolean) {
+        unrestricted = isUnrestricted()
+        val intent = when {
+            unrestricted && asked -> Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))
+            unrestricted -> return
+            !asked && saved.getBoolean("askedBackground", false) -> return
+            else -> Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName"))
+        }
+        saved.edit().putBoolean("askedBackground", true).apply()
+        runCatching { startActivity(intent) }
+            .onFailure { runCatching { startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) } }
     }
 
     private fun advanceOnboarding() {
@@ -528,18 +562,13 @@ class VitalsActivity : AppCompatActivity() {
 
     /**
      * Shared by the passive ACTIVITY push and an explicit GetNowStep reply — same shape, same
-     * write. The ring reports a running total rather than a daily one, so what is shown is that
-     * total minus whatever it already read before today began — see Steps.hours for why a ring
-     * whose own clock never rolls over still needs this.
+     * write. The ring reports a running total that resets on its own midnight, not the phone's,
+     * so what is shown is worked out from the day's readings by Steps rather than read off it.
      */
     private fun showSteps(motion: Ring.Reading.Motion, manual: Boolean) {
-        val baseline = history.latestBefore("steps", History.startOfToday())
         history.record("steps", motion.steps, motion.calories, manual = manual)
-        ui = ui.copy(
-            steps = (motion.steps - (baseline?.value ?: 0)).coerceAtLeast(0),
-            distance = motion.distance,
-            calories = (motion.calories - (baseline?.extra ?: 0)).coerceAtLeast(0)
-        )
+        val today = Steps.today(history)
+        ui = ui.copy(steps = today.steps, distance = motion.distance, calories = today.calories)
     }
 
     /** Asks the ring for its running step total right now, instead of waiting for the next push. */
@@ -756,10 +785,9 @@ class VitalsActivity : AppCompatActivity() {
                 rows = rows(entries) { "${it.value}/${it.extra}" }
             )
             Tab.Steps -> {
-                // What the counter read when today began — the day's own first reading, on a
-                // ring whose clock rolls over at midnight. On one that does not, this is still
-                // whatever total was left over from before, and steps taken today are counted
-                // from there rather than from zero.
+                // What the counter read when today began. The ring keeps climbing from it until
+                // its own midnight, which is not the phone's, so today's first readings are
+                // measured from here rather than counted as steps in their own right.
                 val baseline = history.latestBefore("steps", start)?.value ?: 0
                 // The ring reports a running total, so both the bars and the rows below them are
                 // differences between totals. Steps works that out once, for each quarter hour,
@@ -770,6 +798,7 @@ class VitalsActivity : AppCompatActivity() {
                     Icons.Rounded.DirectionsWalk,
                     Steps.total(entries, baseline).takeIf { it > 0 }?.let { "%,d".format(it) },
                     hours.map { it.steps }, entries,
+                    note = if (dayOffset == 0) Steps.silence(history.latest("steps")?.at?.time, System.currentTimeMillis()) else null,
                     canMeasure = false, asBars = true,
                     // A quarter hour the ring never reported on is not the same as one spent
                     // still, so only the quarters it did report on are listed.
@@ -951,6 +980,7 @@ class VitalsActivity : AppCompatActivity() {
                 ui = ui.copy(ringName = ringName)
                 CollectorService.start(this@VitalsActivity)
                 if (onboarding == OnboardingStep.Pairing) advanceOnboarding()
+                runInBackground(asked = false)
                 enqueue { write(Ring.deviceInfo()) }
                 // The readings taken while nothing was listening. The ring keeps them to itself
                 // until asked, so every connection asks; History drops the ones already held.
@@ -1085,6 +1115,8 @@ class VitalsActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         watching = true
+        // Coming back from the system's dialog, or from the app's own settings page.
+        unrestricted = isUnrestricted()
         handler.removeCallbacks(askBattery)
         handler.post(askBattery)
         // Collection continues with the app closed; starting it here is idempotent.

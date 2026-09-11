@@ -119,14 +119,19 @@ class HealthExport(private val context: Context) {
         return records.size
     }
 
-    /** Steps arrive as a running total, so each day becomes a single record of its highest count. */
+    /**
+     * Steps arrive as a running total, so each day becomes a single record of what the counter
+     * rose by across it, measured from where the day before left off — see Steps.total.
+     */
     suspend fun sendSteps(entries: List<History.Entry>): Int {
         val connect = client ?: return 0
         val zone = ZoneId.systemDefault().rules.getOffset(Instant.now())
-        val byDay = entries.filter { it.kind == "steps" }
+        val byDay = entries.filter { it.kind == "steps" }.sortedBy { it.at }
             .groupBy { it.at.toInstant().atZone(ZoneId.systemDefault()).toLocalDate() }
+        var baseline = 0
         val records = byDay.mapNotNull { (day, readings) ->
-            val total = readings.maxOfOrNull { it.value } ?: return@mapNotNull null
+            val total = Steps.total(readings, baseline)
+            baseline = readings.last().value
             if (total <= 0) return@mapNotNull null
             StepsRecord(
                 startTime = day.atStartOfDay(ZoneId.systemDefault()).toInstant(),
