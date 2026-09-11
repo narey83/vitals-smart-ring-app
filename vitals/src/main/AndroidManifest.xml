@@ -4,9 +4,16 @@
     <!--
         For one request only: asking GitHub, once a day, whether a newer release is out. No
         reading is ever sent anywhere, and the check can be switched off in Settings — see
-        Updates.kt. Until 0.2.0 there was no INTERNET permission at all.
+        Updates.kt. Until 0.2.0 there was no INTERNET permission at all. Where it is a permission
+        the wearer grants ("Network", on GrapheneOS), it is asked for during setup.
     -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!--
+        "Sensors", on the builds that have it: asked for during setup alongside Network. Vitals
+        reads nothing from the phone's own sensors. Standard Android has no such permission and
+        ignores this line. See VitalsActivity.setUp.
+    -->
+    <uses-permission android:name="android.permission.OTHER_SENSORS" />
 
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <!-- connectedDevice, not health: the work is holding a Bluetooth link open. -->

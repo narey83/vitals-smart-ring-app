@@ -4,6 +4,27 @@ One version covers the whole repository. Both apps are built from `r99.version` 
 [`gradle.properties`](gradle.properties), and each release is tagged `v<version>`. See
 "Versions and releases" in the [README](README.md#versions-and-releases).
 
+## 0.2.2 — 11 September 2026
+
+Setup asks for everything the app needs in one go.
+
+### Added
+
+- **One-time setup when the ring first connects**, one dialog after another: Network and Sensors
+  on Android builds that make them permissions you grant (GrapheneOS, for one), then to be left
+  off battery optimisation, then Health Connect ("Fitness and wellness"). Anything already
+  granted, or not a permission on the phone, is skipped.
+- **Check now** asks for the Network permission if it is off, and the update check reports
+  "Network permission is off" rather than failing to find GitHub. That was why the first
+  background check on a GrapheneOS phone came back "unable to resolve host".
+
+### Changed
+
+- Release downloads are named `vitals-<version>.apk` and `ring-debugger-<version>.apk`, and
+  releases are titled "Vitals <version>". The 0.2.0 and 0.2.1 releases were renamed to match.
+- The README and its graphics call the project Vitals Smart Ring App. They no longer claim the
+  app has no internet permission, and the README explains why the update check needs it.
+
 ## 0.2.1 — 11 September 2026
 
 The repository is now **vitals-smart-ring-app**. The app is still Vitals.

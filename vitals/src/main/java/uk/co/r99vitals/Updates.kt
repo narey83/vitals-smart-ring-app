@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import org.json.JSONObject
@@ -55,6 +56,11 @@ object Updates {
      * GitHub could not be asked, so a phone without signal is not taken to mean "up to date".
      */
     fun check(context: Context) {
+        // Where Network is a permission the wearer grants, and it has not been, the request would
+        // fail as "unable to resolve host", which says nothing about why.
+        if (context.checkSelfPermission(android.Manifest.permission.INTERNET) != PackageManager.PERMISSION_GRANTED) {
+            throw IOException("the Network permission is off")
+        }
         val latest = fetch(BuildConfig.REPO)
         prefs(context).edit().apply {
             putLong("updateCheckedAt", System.currentTimeMillis())

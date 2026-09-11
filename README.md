@@ -106,6 +106,12 @@ vital tab carries its own chart, statistics and day-by-day history.
   ring's internal store is small and rotates records away as it fills — history cannot depend on
   the ring remembering.
 - **Optionally hands readings to Health Connect**, so other apps on the phone can use them.
+- **Asks for what it needs once**, the first time the ring connects, one dialog after another:
+  Network and Sensors, on Android builds that make them permissions you grant (GrapheneOS, for
+  one); then to be left off battery optimisation, so the link is not left down while the phone
+  sleeps; then Health Connect ("Fitness and wellness"). Anything already granted, or not a
+  permission on your phone, is skipped. Vitals reads nothing from the phone's own sensors, since
+  the ring's data arrives over Bluetooth, so refusing Sensors changes nothing.
 - **Tells you when a newer version is out.** Once a day it asks GitHub for this repository's
   latest release, and says so in Settings and with a quiet notification if it is newer than the
   one installed. Settings → Updates also has **Check now**, and a switch to stop checking.
@@ -139,7 +145,10 @@ User-Agent: R99-Vitals/<installed version>
 - **Turning it off:** switch off **Check GitHub for new versions** in Settings → Updates, and
   Vitals never goes online at all.
 
-Android grants `INTERNET` without asking, which is why it is spelled out here. The code is
+Standard Android grants `INTERNET` without asking, which is why it is spelled out here. Some
+builds, GrapheneOS among them, make it a **Network** permission you grant. There Vitals asks for
+it during first-run setup, and **Check now** asks again if it is off. Refused, the update check
+does not run and nothing else changes. The code is
 [`Updates.kt`](vitals/src/main/java/uk/co/r99vitals/Updates.kt). The debugger has no network
 permission at all.
 

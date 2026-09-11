@@ -268,7 +268,7 @@ class VitalsActivity : AppCompatActivity() {
                         applyInterval()
                     },
                     unrestricted = unrestricted,
-                    onBackground = { runInBackground(asked = true) },
+                    onBackground = { runInBackground() },
                     updates = updates,
                     onUpdateChecks = { on ->
                         Updates.setEnabled(this, on)
@@ -376,8 +376,17 @@ class VitalsActivity : AppCompatActivity() {
         if (already) advanceOnboarding() else onboardingNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
 
+    /** "Check now" with the Network permission off asks for it first, then checks. */
+    private val askNetwork = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) checkForUpdates() else updates = updates.copy(status = "Network permission is off")
+    }
+
     /** Settings' "Check now": asks GitHub straight away rather than waiting for the daily check. */
     private fun checkForUpdates() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.INTERNET) != PackageManager.PERMISSION_GRANTED) {
+            askNetwork.launch(Manifest.permission.INTERNET)
+            return
+        }
         updates = updates.copy(status = "Checking…")
         kotlin.concurrent.thread(name = "update-check") {
             val asked = runCatching { Updates.check(this) }
@@ -398,25 +407,87 @@ class VitalsActivity : AppCompatActivity() {
     private fun isUnrestricted() =
         getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(packageName)
 
+    /** Where the one-time setup has got to. See [setUp]. */
+    private enum class Setup { Access, Background, Health }
+
     /**
-     * Asks Android to stop rationing the collector.
+     * Everything the app asks for once, in one sitting, the first time the ring connects: the
+     * collector has just started, and nothing else is on screen to compete with the system's own
+     * dialogs. Each step waits for the one before to be answered, and each is skipped where it is
+     * already granted or where this phone has no such thing to grant. Refused, a step is not asked
+     * again unprompted.
      *
-     * Battery optimisation lets the phone defer the collector's work while it sleeps, and a ring
-     * that has dropped the link is then not asked for again until something wakes the phone —
-     * which reads, the next day, as hours nobody walked. Asked once by itself, the first time the
-     * ring connects: the collector has just started, and nothing else is on screen to compete
-     * with the system's own dialog. Refused, it is not asked again unprompted; Settings has a row
-     * for changing it, which also leads back out once it has been allowed, since that dialog
-     * cannot take it away again.
+     * 1. **Network and Sensors**, on the Android builds that make them the wearer's to grant —
+     *    GrapheneOS, for one. Standard Android grants network access at install and has no
+     *    Sensors permission, so there this step asks nothing. Network is for the update check
+     *    alone; see Updates. Vitals reads nothing from the phone's own sensors — the ring's data
+     *    arrives over Bluetooth — but Sensors is asked for here so it is not left off by default.
+     * 2. **Battery optimisation.** It lets the phone defer the collector while it sleeps, and a
+     *    ring that has dropped the link is then not asked for again until something wakes the
+     *    phone — which reads, the next day, as hours nobody walked.
+     * 3. **Health Connect** — "Fitness and wellness" — so readings can be handed to other apps.
+     *    Granted here, the day so far goes across straight away.
      */
-    private fun runInBackground(asked: Boolean) {
-        unrestricted = isUnrestricted()
-        val intent = when {
-            unrestricted && asked -> Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))
-            unrestricted -> return
-            !asked && saved.getBoolean("askedBackground", false) -> return
-            else -> Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName"))
+    private fun setUp(step: Setup = Setup.Access) {
+        when (step) {
+            Setup.Access -> {
+                val wanted = accessToAsk()
+                if (wanted.isEmpty() || saved.getBoolean("askedAccess", false)) return setUp(Setup.Background)
+                saved.edit().putBoolean("askedAccess", true).apply()
+                setupAccess.launch(wanted.toTypedArray())
+            }
+            Setup.Background -> {
+                unrestricted = isUnrestricted()
+                if (unrestricted || saved.getBoolean("askedBackground", false)) return setUp(Setup.Health)
+                saved.edit().putBoolean("askedBackground", true).apply()
+                val ask = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName"))
+                if (runCatching { setupBackground.launch(ask) }.isFailure) setUp(Setup.Health)
+            }
+            Setup.Health -> {
+                if (!health.available || saved.getBoolean("askedHealth", false)) return
+                saved.edit().putBoolean("askedHealth", true).apply()
+                lifecycleScope.launch { if (!health.granted()) healthPermission.launch(health.permissions) }
+            }
         }
+    }
+
+    /**
+     * Set when the ring connected while the app was not on screen. A dialog asked for then would
+     * never be seen but would still count as asked, so setup waits for the app to come back.
+     */
+    private var setupPending = false
+
+    private fun setUpWhenSeen() {
+        if (lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.RESUMED)) setUp()
+        else setupPending = true
+    }
+
+    private val setupAccess = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
+        setUp(Setup.Background)
+    }
+
+    private val setupBackground = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        unrestricted = isUnrestricted()
+        setUp(Setup.Health)
+    }
+
+    /**
+     * Network and Sensors, where they exist as permissions and are not yet granted. On standard
+     * Android the first is granted at install and the second does not exist, so this is empty.
+     */
+    private fun accessToAsk() = listOf(Manifest.permission.INTERNET, OTHER_SENSORS).filter { name ->
+        runCatching { packageManager.getPermissionInfo(name, 0) }.isSuccess &&
+            ContextCompat.checkSelfPermission(this, name) != PackageManager.PERMISSION_GRANTED
+    }
+
+    /**
+     * Settings' "Run in background" row: asks to be left off battery optimisation, or, once that
+     * is allowed, opens the app's own settings page — the system dialog cannot take it away again.
+     */
+    private fun runInBackground() {
+        unrestricted = isUnrestricted()
+        val intent = if (unrestricted) Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))
+            else Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName"))
         saved.edit().putBoolean("askedBackground", true).apply()
         runCatching { startActivity(intent) }
             .onFailure { runCatching { startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) } }
@@ -1008,7 +1079,7 @@ class VitalsActivity : AppCompatActivity() {
                 ui = ui.copy(ringName = ringName)
                 CollectorService.start(this@VitalsActivity)
                 if (onboarding == OnboardingStep.Pairing) advanceOnboarding()
-                runInBackground(asked = false)
+                setUpWhenSeen()
                 enqueue { write(Ring.deviceInfo()) }
                 // The readings taken while nothing was listening. The ring keeps them to itself
                 // until asked, so every connection asks; History drops the ones already held.
@@ -1145,6 +1216,7 @@ class VitalsActivity : AppCompatActivity() {
         watching = true
         // Coming back from the system's dialog, or from the app's own settings page.
         unrestricted = isUnrestricted()
+        if (setupPending) { setupPending = false; setUp() }
         // The collector may have found a release while the app was closed.
         updates = updates.copy(enabled = Updates.enabled(this), available = Updates.available(this))
         handler.removeCallbacks(askBattery)
@@ -1180,5 +1252,10 @@ class VitalsActivity : AppCompatActivity() {
     companion object {
         /** Bumped so an existing install sees the onboarding once more; never for anything else. */
         private const val ONBOARDING_VERSION = 2
+        /**
+         * The Sensors permission some Android builds add, GrapheneOS among them. Named by its
+         * string, since standard Android has no such permission to name. See setUp.
+         */
+        private const val OTHER_SENSORS = "android.permission.OTHER_SENSORS"
     }
 }
