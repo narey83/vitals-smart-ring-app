@@ -257,10 +257,30 @@ version is in [CHANGELOG.md](CHANGELOG.md). To cut a release:
 
 1. Bump `r99.version`, and add the release to `CHANGELOG.md` under that number.
 2. Commit, then tag it: `git tag -a v0.3.0 -m "Vitals 0.3.0"`.
-3. Push the commit and the tag, and publish a GitHub release for the tag with the APKs attached.
+3. Push the commit and the tag: `git push github main v0.3.0`. CI does the rest.
 
 Vitals only offers a release that is published on GitHub. Drafts and pre-releases never reach
 it, and tags without a release are never seen.
+
+### Continuous integration
+
+[`.github/workflows/build.yml`](.github/workflows/build.yml) runs the tests and builds both APKs
+on every push, keeping them as downloadable artifacts. For a `v*` tag it also publishes the GitHub
+release, with the APKs attached and that version's section of the changelog as the notes. It
+refuses to publish if the tag and `r99.version` disagree, if the changelog has no section for the
+version, or if an APK is not signed with the key the phone's app was installed with. An APK
+signed with any other key cannot be installed as an update, and uninstalling to get round that
+deletes the readings.
+
+The same file runs in two places:
+
+- **GitHub Actions**, on GitHub's machines. It signs with this PC's debug key, held as a
+  repository secret, set once with:
+  `base64 -w0 ~/.android/debug.keystore | gh secret set R99_DEBUG_KEYSTORE --repo narey83/r99-smart-ring`
+- **Gitea Actions**, on the home server, run by a runner on this PC. Set it up once with
+  `tools/setup-runner.sh <token>`, using the token from the repository's Settings → Actions →
+  Runners. It builds on the PC itself, with the SDK already there and the key already on disk,
+  so it needs no secret. Only GitHub publishes releases.
 
 ## Use it
 

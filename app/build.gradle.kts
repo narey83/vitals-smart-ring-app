@@ -18,6 +18,13 @@ android {
         versionName = release
     }
 
+    signingConfigs {
+        // The same key as Vitals in CI — see vitals/build.gradle.kts.
+        getByName("debug") {
+            providers.environmentVariable("R99_KEYSTORE").orNull?.let { storeFile = file(it) }
+        }
+    }
+
     buildFeatures {
         buildConfig = true
     }

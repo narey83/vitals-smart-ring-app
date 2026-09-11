@@ -1,0 +1,100 @@
+# Tests and builds both apps on every push, and publishes a release for every v* tag.
+#
+# One file, two hosts. GitHub runs it on its own machines. The home Gitea runs the same file on the
+# runner tools/setup-runner.sh installs, which answers to ubuntu-latest but builds on that PC
+# itself. Only GitHub publishes releases, because GitHub is where Vitals looks for them.
+#
+# What gets published is the debug build, the one that has been installed on the phone all along:
+# it keeps `adb shell run-as`, which is how the database and files/link-log.txt are read back.
+name: Build
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  # The certificate of this PC's debug key, which signed the app on the phone. An APK signed with
+  # any other key will not install over it without uninstalling first, and uninstalling deletes
+  # the readings, so a release signed with anything else is refused below. Public by nature:
+  # every APK carries it.
+  RELEASE_CERT_SHA256: 11f9dc7b844f47cc149bd9fe2dbea69b662d6239056ff317f5f8518810569910
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Signing key
+        env:
+          KEYSTORE: ${{ secrets.R99_DEBUG_KEYSTORE }}
+        run: |
+          # Without the secret the build still works, signed with a throwaway key: fine for
+          # testing, never for a release. The home runner needs no secret, since it builds on the
+          # PC that holds the key.
+          if [ -n "$KEYSTORE" ]; then
+            echo "$KEYSTORE" | base64 -d > "$RUNNER_TEMP/r99.keystore"
+            echo "R99_KEYSTORE=$RUNNER_TEMP/r99.keystore" >> "$GITHUB_ENV"
+          fi
+
+      - name: Test
+        run: ./gradlew test --no-daemon
+
+      - name: Build
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Name the APKs after the version
+        run: |
+          version=$(sed -n 's/^r99\.version=//p' gradle.properties)
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          mkdir -p out
+          cp vitals/build/outputs/apk/debug/vitals-debug.apk "out/r99-vitals-$version.apk"
+          cp app/build/outputs/apk/debug/app-debug.apk "out/r99-debugger-$version.apk"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: r99-apks-${{ env.VERSION }}-build${{ github.run_number }}
+          path: out/*.apk
+
+      - name: Check the release is what it says it is
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          # The tag names the version the apps were actually built as, or Vitals would offer a
+          # release it then never stops offering.
+          if [ "${GITHUB_REF_NAME#v}" != "$VERSION" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME but gradle.properties says $VERSION"
+            exit 1
+          fi
+          # Signed with the phone's key, or it cannot be installed as an update.
+          apksigner="$(ls -1d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)apksigner"
+          for apk in out/*.apk; do
+            if ! "$apksigner" verify --print-certs "$apk" | grep -qi "SHA-256 digest: $RELEASE_CERT_SHA256"; then
+              echo "::error::$apk is not signed with the release key. Is the R99_DEBUG_KEYSTORE secret set?"
+              exit 1
+            fi
+          done
+          # The release notes are this version's section of the changelog.
+          awk -v heading="## $VERSION " 'index($0, heading) == 1 { on = 1; next } /^## / { on = 0 } on' CHANGELOG.md > notes.md
+          if [ ! -s notes.md ]; then
+            echo "::error::CHANGELOG.md has no section for $VERSION"
+            exit 1
+          fi
+
+      - name: Publish the release
+        if: startsWith(github.ref, 'refs/tags/v') && github.server_url == 'https://github.com'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" out/*.apk --title "R99 Smart Ring $VERSION" --notes-file notes.md

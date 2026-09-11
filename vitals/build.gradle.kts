@@ -25,6 +25,15 @@ android {
         buildConfigField("String", "REPO", "\"$repo\"")
     }
 
+    signingConfigs {
+        // CI is handed this PC's debug key as a file (see .github/workflows/build.yml), so what it
+        // builds installs over what was installed from here. Without it, the usual
+        // ~/.android/debug.keystore.
+        getByName("debug") {
+            providers.environmentVariable("R99_KEYSTORE").orNull?.let { storeFile = file(it) }
+        }
+    }
+
     buildFeatures {
         buildConfig = true
         compose = true

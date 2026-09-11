@@ -35,6 +35,9 @@ Steps now turn up when they should.
   the phone.
 - The developer and the source repository in Settings → About.
 - One version number for both apps, and this changelog.
+- CI on GitHub Actions and on the home Gitea. It tests and builds both apps on every push, and a
+  `v*` tag publishes the GitHub release with the APKs, signed with the key that makes them
+  install as updates.
 
 ## 0.1.0
 
