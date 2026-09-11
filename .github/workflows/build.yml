@@ -1,8 +1,7 @@
 # Tests and builds both apps on every push, and publishes a release for every v* tag.
 #
-# One file, two hosts. GitHub runs it on its own machines. The home Gitea runs the same file on the
-# runner tools/setup-runner.sh installs, which answers to ubuntu-latest but builds on that PC
-# itself. Only GitHub publishes releases, because GitHub is where Vitals looks for them.
+# One file, two hosts. GitHub runs it on its own machines, and the home Gitea runs the same file on
+# its own runner. Only GitHub publishes releases, because GitHub is where Vitals looks for them.
 #
 # What gets published is the debug build, the one that has been installed on the phone all along:
 # it keeps `adb shell run-as`, which is how the database and files/link-log.txt are read back.
@@ -43,8 +42,8 @@ jobs:
           KEYSTORE: ${{ secrets.R99_DEBUG_KEYSTORE }}
         run: |
           # Without the secret the build still works, signed with a throwaway key: fine for
-          # testing, never for a release. The home runner needs no secret, since it builds on the
-          # PC that holds the key.
+          # testing, never for a release. Gitea has no copy unless it is given the same secret, so
+          # its APKs test the code but will not install over the phone's app.
           if [ -n "$KEYSTORE" ]; then
             echo "$KEYSTORE" | base64 -d > "$RUNNER_TEMP/r99.keystore"
             echo "R99_KEYSTORE=$RUNNER_TEMP/r99.keystore" >> "$GITHUB_ENV"
@@ -78,14 +77,18 @@ jobs:
             echo "::error::Tag $GITHUB_REF_NAME but gradle.properties says $VERSION"
             exit 1
           fi
-          # Signed with the phone's key, or it cannot be installed as an update.
-          apksigner="$(ls -1d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)apksigner"
-          for apk in out/*.apk; do
-            if ! "$apksigner" verify --print-certs "$apk" | grep -qi "SHA-256 digest: $RELEASE_CERT_SHA256"; then
-              echo "::error::$apk is not signed with the release key. Is the R99_DEBUG_KEYSTORE secret set?"
-              exit 1
-            fi
-          done
+          # Signed with the phone's key, or it cannot be installed as an update. Required where the
+          # release is published; elsewhere only checked if the key was handed over, since a
+          # runner without it has nothing to publish.
+          if [ "$GITHUB_SERVER_URL" = "https://github.com" ] || [ -n "${R99_KEYSTORE:-}" ]; then
+            apksigner="$(ls -1d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)apksigner"
+            for apk in out/*.apk; do
+              if ! "$apksigner" verify --print-certs "$apk" | grep -qi "SHA-256 digest: $RELEASE_CERT_SHA256"; then
+                echo "::error::$apk is not signed with the release key. Is the R99_DEBUG_KEYSTORE secret set?"
+                exit 1
+              fi
+            done
+          fi
           # The release notes are this version's section of the changelog.
           awk -v heading="## $VERSION " 'index($0, heading) == 1 { on = 1; next } /^## / { on = 0 } on' CHANGELOG.md > notes.md
           if [ ! -s notes.md ]; then

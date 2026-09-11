@@ -279,10 +279,11 @@ The same file runs in two places:
 - **GitHub Actions**, on GitHub's machines. It signs with this PC's debug key, held as a
   repository secret, set once with:
   `base64 -w0 ~/.android/debug.keystore | gh secret set R99_DEBUG_KEYSTORE --repo narey83/vitals-smart-ring-app`
-- **Gitea Actions**, on the home server, run by a runner on this PC. Set it up once with
-  `tools/setup-runner.sh <token>`, using the token from the repository's Settings → Actions →
-  Runners. It builds on the PC itself, with the SDK already there and the key already on disk,
-  so it needs no secret. Only GitHub publishes releases.
+- **Gitea Actions**, on the home server's own runner. It tests and builds every push, tags
+  included, but publishes nothing. Without the key, its APKs are signed with a throwaway one,
+  which is enough to prove the build and not enough to install over the phone's app. To make
+  them installable, give Gitea the same `R99_DEBUG_KEYSTORE` secret, under the repository's
+  Settings → Actions → Secrets.
 
 ## Use it
 
