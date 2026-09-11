@@ -3,6 +3,11 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+// See gradle.properties: one version for the repository, and where its releases live.
+val release = providers.gradleProperty("r99.version").get()
+val developer = providers.gradleProperty("r99.developer").get()
+val repo = providers.gradleProperty("r99.repo").get()
+
 android {
     namespace = "uk.co.r99vitals"
     compileSdk = 37
@@ -11,8 +16,13 @@ android {
         applicationId = "uk.co.r99vitals"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        // 0.2.0 is 200 and 1.4.12 is 10412, so every release installs over the last. Minor and
+        // patch stay under a hundred.
+        val (major, minor, patch) = release.split('.').map { it.toInt() }
+        versionCode = major * 10_000 + minor * 100 + patch
+        versionName = release
+        buildConfigField("String", "DEVELOPER", "\"$developer\"")
+        buildConfigField("String", "REPO", "\"$repo\"")
     }
 
     buildFeatures {
@@ -54,8 +64,8 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.13.0")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.11.0")
 
-    // Local, on-device only: Health Connect is IPC, not a network service, so the app keeps
-    // its guarantee of having no INTERNET permission.
+    // Local, on-device only: Health Connect is IPC, not a network service. The one thing Vitals
+    // asks the network is whether a newer release is out — see Updates.kt.
     implementation("androidx.health.connect:connect-client:1.1.0")
 
     // Ring speaks in frames, which are pure bytes and so testable on the JVM without a ring.

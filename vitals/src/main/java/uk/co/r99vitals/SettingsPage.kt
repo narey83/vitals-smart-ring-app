@@ -160,6 +160,13 @@ data class Profile(
         .apply()
 }
 
+/** What Settings shows about updates: whether it looks, what it found, and what "Check now" said. */
+data class UpdateState(
+    val enabled: Boolean = true,
+    val available: Updates.Release? = null,
+    val status: String? = null
+)
+
 @Composable
 fun SettingsPage(
     profile: Profile,
@@ -179,6 +186,11 @@ fun SettingsPage(
     /** Whether Android has been told to leave the collector alone, rather than ration it. */
     unrestricted: Boolean,
     onBackground: () -> Unit,
+    updates: UpdateState,
+    onUpdateChecks: (Boolean) -> Unit,
+    onCheckUpdates: () -> Unit,
+    /** Opens a web address in the phone's browser — a release page, or the source. */
+    onOpen: (String) -> Unit,
     onRepair: () -> Unit,
     onExport: () -> Unit,
     onBack: () -> Unit
@@ -369,8 +381,26 @@ fun SettingsPage(
             )
         }
         Note(
-            "Everything stays on this phone. This app has no internet permission, so it cannot " +
-                "send your readings anywhere even if it wanted to."
+            "Your readings stay on this phone. Nothing sends them anywhere: the only thing this " +
+                "app asks the internet is whether a newer version is out, below."
+        )
+
+        Section("UPDATES")
+        Panel {
+            updates.available?.let { release ->
+                Value("Update available", release.version) { onOpen(release.page) }
+                Divider()
+            }
+            Pick("Check GitHub for new versions", updates.enabled) { onUpdateChecks(!updates.enabled) }
+            if (updates.enabled) {
+                Divider()
+                if (updates.status != null) Value("Check now", updates.status) { onCheckUpdates() }
+                else Action("Check now") { onCheckUpdates() }
+            }
+        }
+        Note(
+            "Once a day Vitals asks GitHub for its latest release, sending nothing but its own " +
+                "version number. Turn this off and the app never goes online at all."
         )
 
         Section("ABOUT")
@@ -382,6 +412,10 @@ fun SettingsPage(
             Detail("Battery", state.battery?.let { "$it%" } ?: "unknown")
             Divider()
             Detail("App", BuildConfig.VERSION_NAME)
+            Divider()
+            Detail("Developer", BuildConfig.DEVELOPER)
+            Divider()
+            Value("Source", "github.com/${BuildConfig.REPO}") { onOpen("https://github.com/${BuildConfig.REPO}") }
         }
             Note("Not a medical device. Blood pressure is estimated from the pulse, not measured.")
         }

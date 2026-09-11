@@ -19,7 +19,7 @@ import java.time.ZoneId
  * Hands readings to Health Connect, so other apps on the phone can use them.
  *
  * Health Connect is on-device inter-process communication, not a network service: nothing here
- * leaves the phone, and the app still declares no INTERNET permission. Whether anything is
+ * leaves the phone. Whether anything is
  * shared at all remains the wearer's decision, made once when they grant these permissions and
  * revocable in Android's own settings rather than in this app.
  */

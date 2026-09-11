@@ -281,7 +281,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="18dp"
             android:lineSpacingExtra="3dp"
-            android:text="Readings stay on this phone. This app has no internet permission, so it cannot send them anywhere. Not a medical device."
+            android:text="Readings stay on this phone. Nothing sends them anywhere: the only thing this app asks the internet is whether a newer version is out. Not a medical device."
             android:textColor="@color/muted"
             android:textSize="12sp" />
     </LinearLayout>

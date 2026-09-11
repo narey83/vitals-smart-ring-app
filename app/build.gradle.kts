@@ -2,6 +2,9 @@ plugins {
     id("com.android.application")
 }
 
+// One version for the repository — see gradle.properties, and vitals/build.gradle.kts for the code.
+val release = providers.gradleProperty("r99.version").get()
+
 android {
     namespace = "uk.co.r99companion"
     compileSdk = 37
@@ -10,8 +13,9 @@ android {
         applicationId = "uk.co.r99companion"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        val (major, minor, patch) = release.split('.').map { it.toInt() }
+        versionCode = major * 10_000 + minor * 100 + patch
+        versionName = release
     }
 
     buildFeatures {

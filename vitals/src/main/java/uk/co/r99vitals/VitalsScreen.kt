@@ -233,8 +233,8 @@ fun VitalsScreen(
         )
         Spacer(Modifier.height(20.dp))
         Text(
-            "Readings stay on this phone. This app has no internet permission, so it cannot " +
-                "send them anywhere. Not a medical device.",
+            "Readings stay on this phone. Nothing sends them anywhere: the only thing this app " +
+                "asks the internet is whether a newer version is out. Not a medical device.",
             color = Ink.muted, fontSize = 12.sp, lineHeight = 17.sp
         )
     }

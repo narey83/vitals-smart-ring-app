@@ -6,7 +6,7 @@
   <img src="https://img.shields.io/badge/platform-Android%208.0%2B-3DDC84?style=flat-square&logo=android&logoColor=white" alt="Android 8.0+">
   <img src="https://img.shields.io/badge/Kotlin-2.x-A78BFA?style=flat-square&logo=kotlin&logoColor=white" alt="Kotlin">
   <img src="https://img.shields.io/badge/UI-Jetpack%20Compose-45C4F5?style=flat-square" alt="Jetpack Compose">
-  <img src="https://img.shields.io/badge/network-none-4ADE8C?style=flat-square" alt="No network permission">
+  <img src="https://img.shields.io/badge/readings%20sent-none-4ADE8C?style=flat-square" alt="No reading ever leaves the phone">
   <img src="https://img.shields.io/badge/commands%20mapped-329-FFC24B?style=flat-square" alt="329 commands mapped">
   <img src="https://img.shields.io/badge/licence-MIT-8b9bb0?style=flat-square" alt="MIT licence">
 </p>
@@ -26,7 +26,8 @@
 
 Two Android apps for the generic **R99** health ring, which reports itself internally as
 **R11M**. One takes the ring apart; the other wears it. They install side by side, and neither
-has any network access at all.
+sends a reading anywhere: the debugger has no network access at all, and the only thing Vitals
+asks the internet is whether a newer version of itself is out.
 
 The protocol was recovered by capture and replay rather than documentation — the vendor app
 (`com.zhuoting.healthyucheng`) through an Android HCI snoop log, then every frame replayed from
@@ -105,9 +106,15 @@ vital tab carries its own chart, statistics and day-by-day history.
   the ring remembering.
 - **Optionally hands readings to Health Connect**, so other apps on the phone can use them.
 
+- **Tells you when a newer version is out.** Once a day it asks GitHub for this repository's
+  latest release, and says so in Settings and with a quiet notification if it is newer than the
+  one installed. Settings → Updates also has **Check now**, and a switch to stop checking.
+
 > [!NOTE]
-> Health Connect is on-device inter-process communication, not a network service. Vitals declares
-> no `INTERNET` permission at all, which is a stronger guarantee than promising not to use one.
+> Health Connect is on-device inter-process communication, not a network service. The update
+> check is the only reason Vitals holds the `INTERNET` permission, and the request carries nothing
+> but the app's own version number. Until 0.2.0 it held no network permission at all; switch the
+> check off in Settings and it never goes online.
 
 ## Finding a workout nobody started
 
@@ -240,6 +247,20 @@ once.
 
 `targetSdk` stays at 36 on purpose: moving it changes Bluetooth and foreground-service runtime
 behaviour, which is not worth doing without the ring in hand to retest.
+
+### Versions and releases
+
+There is one version for the whole repository, `r99.version` in
+[`gradle.properties`](gradle.properties). Both apps are built from it, and the version code is
+worked out from it (0.2.0 is 200), so each release installs over the last. What changed in each
+version is in [CHANGELOG.md](CHANGELOG.md). To cut a release:
+
+1. Bump `r99.version`, and add the release to `CHANGELOG.md` under that number.
+2. Commit, then tag it: `git tag -a v0.3.0 -m "Vitals 0.3.0"`.
+3. Push the commit and the tag, and publish a GitHub release for the tag with the APKs attached.
+
+Vitals only offers a release that is published on GitHub. Drafts and pre-releases never reach
+it, and tags without a release are never seen.
 
 ## Use it
 

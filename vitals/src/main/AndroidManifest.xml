@@ -1,15 +1,18 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!--
-        There is deliberately no INTERNET permission. This app cannot send your readings
-        anywhere, which is a stronger guarantee than promising not to.
-    -->
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="true" />
+
+    <!--
+        For one request only: asking GitHub, once a day, whether a newer release is out. No
+        reading is ever sent anywhere, and the check can be switched off in Settings — see
+        Updates.kt. Until 0.2.0 there was no INTERNET permission at all.
+    -->
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <!-- connectedDevice, not health: the work is holding a Bluetooth link open. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <!-- Alarms do not survive a restart; this is only to book the bedtime reminder again. -->
+    <!-- Alarms and the collector do not survive a restart; this books and starts them again. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- Asks, once, to be left off battery optimisation — see VitalsActivity.runInBackground. -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />

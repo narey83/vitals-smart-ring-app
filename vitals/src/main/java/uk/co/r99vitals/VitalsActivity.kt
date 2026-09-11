@@ -75,6 +75,8 @@ class VitalsActivity : AppCompatActivity() {
     private var settingsOpen by mutableStateOf(false)
     /** Whether Android leaves the collector alone rather than rationing it; read again on resume. */
     private var unrestricted by mutableStateOf(false)
+    /** What Settings says about updates — see Updates, and checkForUpdates for the words. */
+    private var updates by mutableStateOf(UpdateState())
     /** Null once done. Every screen it passes through writes as it goes, same as Settings does. */
     private var onboarding by mutableStateOf<OnboardingStep?>(null)
     private var nightMode by mutableStateOf(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
@@ -267,6 +269,13 @@ class VitalsActivity : AppCompatActivity() {
                     },
                     unrestricted = unrestricted,
                     onBackground = { runInBackground(asked = true) },
+                    updates = updates,
+                    onUpdateChecks = { on ->
+                        Updates.setEnabled(this, on)
+                        updates = updates.copy(enabled = on, status = null)
+                    },
+                    onCheckUpdates = { checkForUpdates() },
+                    onOpen = { url -> runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) } },
                     onRepair = { forgetRing() },
                     onExport = { report = history.report(); sheet = Sheet.Export },
                     onBack = { closeSettings() }
@@ -365,6 +374,25 @@ class VitalsActivity : AppCompatActivity() {
             ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
                 PackageManager.PERMISSION_GRANTED
         if (already) advanceOnboarding() else onboardingNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
+    }
+
+    /** Settings' "Check now": asks GitHub straight away rather than waiting for the daily check. */
+    private fun checkForUpdates() {
+        updates = updates.copy(status = "Checking…")
+        kotlin.concurrent.thread(name = "update-check") {
+            val asked = runCatching { Updates.check(this) }
+            runOnUiThread {
+                val available = Updates.available(this)
+                updates = updates.copy(
+                    available = available,
+                    status = when {
+                        asked.isFailure -> "Couldn't reach GitHub"
+                        available != null -> null
+                        else -> "Up to date"
+                    }
+                )
+            }
+        }
     }
 
     private fun isUnrestricted() =
@@ -855,7 +883,7 @@ class VitalsActivity : AppCompatActivity() {
 
     /**
      * Hands the readings to Health Connect so other apps on this phone can use them. On-device
-     * only: nothing leaves the phone, and this app still has no INTERNET permission.
+     * only: nothing leaves the phone.
      */
     private val healthPermission = registerForActivityResult(
         androidx.health.connect.client.PermissionController.createRequestPermissionResultContract()
@@ -1117,6 +1145,8 @@ class VitalsActivity : AppCompatActivity() {
         watching = true
         // Coming back from the system's dialog, or from the app's own settings page.
         unrestricted = isUnrestricted()
+        // The collector may have found a release while the app was closed.
+        updates = updates.copy(enabled = Updates.enabled(this), available = Updates.available(this))
         handler.removeCallbacks(askBattery)
         handler.post(askBattery)
         // Collection continues with the app closed; starting it here is idempotent.

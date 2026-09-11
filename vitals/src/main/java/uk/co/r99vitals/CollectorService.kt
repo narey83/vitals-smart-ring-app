@@ -30,7 +30,8 @@ import androidx.core.content.ContextCompat
  * is to stay connected and write down what arrives rather than to poll. A connected BLE link is
  * cheap when idle; waking the radio every fifteen minutes to reconnect would cost more.
  *
- * Nothing here reaches the network. The app has no INTERNET permission.
+ * No reading reaches the network. The one request this service makes is a daily check for a
+ * newer release of the app — see Updates.
  */
 class CollectorService : Service() {
 
@@ -109,6 +110,7 @@ class CollectorService : Service() {
         saved.edit().remove("detectedSport").remove("detectedSince").apply()
         handler.post(watchForTheEnd)
         handler.postDelayed(watchSteps, 60_000)
+        handler.postDelayed(watchForUpdates, 2 * 60_000)
         connect()
     }
 
@@ -298,6 +300,23 @@ class CollectorService : Service() {
         override fun run() {
             handle(detector.quiet(System.currentTimeMillis()))
             handler.postDelayed(this, 60_000)
+        }
+    }
+
+    /**
+     * Asks GitHub whether a newer Vitals is out, once a day — see Updates. Here because this
+     * service is always running, so a release is noticed without the app being opened. Looked
+     * at hourly, so a check that failed for want of signal is tried again within the hour.
+     */
+    private val watchForUpdates = object : Runnable {
+        override fun run() {
+            handler.postDelayed(this, 60 * 60_000L)
+            if (!Updates.due(this@CollectorService)) return
+            kotlin.concurrent.thread(name = "update-check") {
+                runCatching { Updates.check(this@CollectorService) }
+                    .onSuccess { Updates.available(this@CollectorService)?.let { Updates.announce(this@CollectorService, it) } }
+                    .onFailure { log.note("could not ask GitHub for updates: ${it.message}") }
+            }
         }
     }
 

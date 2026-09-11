@@ -471,4 +471,6 @@ APK. Guessing costs hours and teaches nothing; the table is right there.
 ## Privacy note
 
 The vendor app uploads health data to `web-api.ycaviation.com` (`upheart`, `upblood`,
-`upsleep`, `upsport`, `upHrv`, `upmac`). Nothing in this repository contacts a network.
+`upsleep`, `upsport`, `upHrv`, `upmac`). Nothing in this repository sends a reading anywhere. The
+only network request either app makes is Vitals asking GitHub, once a day, whether a newer release
+is out, and that can be switched off.
