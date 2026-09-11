@@ -311,6 +311,11 @@ version, or if an APK is not signed with the key the phone's app was installed w
 signed with any other key cannot be installed as an update, and uninstalling to get round that
 deletes the readings.
 
+What each build downloads is kept between runs: the JDK and Android SDK on Gitea, where every
+job starts in a fresh container, and Gradle, its dependencies and Robolectric's Android images on
+both. Gradle's build cache travels with them, so a module that has not changed is not rebuilt.
+The first build after a dependency changes pays the full cost again.
+
 The same file runs in two places:
 
 - **GitHub Actions**, on GitHub's machines. It signs with this PC's debug key, held as a
