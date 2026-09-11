@@ -29,10 +29,10 @@ class UpdatesTest {
     }
 
     @Test fun `a release is read for its tag and its page`() {
-        val json = """{"tag_name":"v0.3.0","html_url":"https://github.com/narey83/r99-smart-ring/releases/tag/v0.3.0","draft":false}"""
-        val release = Updates.parse(json, "narey83/r99-smart-ring")!!
+        val json = """{"tag_name":"v0.3.0","html_url":"https://github.com/narey83/vitals-smart-ring-app/releases/tag/v0.3.0","draft":false}"""
+        val release = Updates.parse(json, "narey83/vitals-smart-ring-app")!!
         assertEquals("0.3.0", release.version)
-        assertEquals("https://github.com/narey83/r99-smart-ring/releases/tag/v0.3.0", release.page)
+        assertEquals("https://github.com/narey83/vitals-smart-ring-app/releases/tag/v0.3.0", release.page)
     }
 
     @Test fun `a release without a tag is not one`() {

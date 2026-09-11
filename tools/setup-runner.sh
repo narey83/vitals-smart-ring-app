@@ -75,7 +75,7 @@ say "Service"
 mkdir -p "$HOME/.config/systemd/user"
 cat > "$HOME/.config/systemd/user/gitea-runner.service" <<EOF
 [Unit]
-Description=Gitea Actions runner for r99-smart-ring
+Description=Gitea Actions runner for vitals-smart-ring-app
 After=network-online.target
 
 [Service]

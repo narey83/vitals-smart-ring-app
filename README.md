@@ -105,7 +105,6 @@ vital tab carries its own chart, statistics and day-by-day history.
   ring's internal store is small and rotates records away as it fills — history cannot depend on
   the ring remembering.
 - **Optionally hands readings to Health Connect**, so other apps on the phone can use them.
-
 - **Tells you when a newer version is out.** Once a day it asks GitHub for this repository's
   latest release, and says so in Settings and with a quiet notification if it is newer than the
   one installed. Settings → Updates also has **Check now**, and a switch to stop checking.
@@ -257,7 +256,10 @@ version is in [CHANGELOG.md](CHANGELOG.md). To cut a release:
 
 1. Bump `r99.version`, and add the release to `CHANGELOG.md` under that number.
 2. Commit, then tag it: `git tag -a v0.3.0 -m "Vitals 0.3.0"`.
-3. Push the commit and the tag: `git push github main v0.3.0`. CI does the rest.
+3. Push the commit, then the tag, as two pushes: `git push github main`, then
+   `git push github v0.3.0`. CI does the rest. Pushed together, GitHub started a run for the
+   branch and none for the tag. If that happens anyway, `gh workflow run build.yml --ref v0.3.0`
+   builds and publishes it.
 
 Vitals only offers a release that is published on GitHub. Drafts and pre-releases never reach
 it, and tags without a release are never seen.
@@ -276,7 +278,7 @@ The same file runs in two places:
 
 - **GitHub Actions**, on GitHub's machines. It signs with this PC's debug key, held as a
   repository secret, set once with:
-  `base64 -w0 ~/.android/debug.keystore | gh secret set R99_DEBUG_KEYSTORE --repo narey83/r99-smart-ring`
+  `base64 -w0 ~/.android/debug.keystore | gh secret set R99_DEBUG_KEYSTORE --repo narey83/vitals-smart-ring-app`
 - **Gitea Actions**, on the home server, run by a runner on this PC. Set it up once with
   `tools/setup-runner.sh <token>`, using the token from the repository's Settings → Actions →
   Runners. It builds on the PC itself, with the SDK already there and the key already on disk,
