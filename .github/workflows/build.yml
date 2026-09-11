@@ -63,7 +63,17 @@ jobs:
           cp vitals/build/outputs/apk/debug/vitals-debug.apk "out/vitals-$version.apk"
           cp app/build/outputs/apk/debug/app-debug.apk "out/ring-debugger-$version.apk"
 
+      # v4 refuses any host but github.com: on Gitea it fails with "not currently supported on
+      # GHES", after the build it was meant to keep has already passed. Gitea supports v3, which
+      # GitHub itself has retired, so each host gets the version that works there.
       - uses: actions/upload-artifact@v4
+        if: github.server_url == 'https://github.com'
+        with:
+          name: vitals-apks-${{ env.VERSION }}-build${{ github.run_number }}
+          path: out/*.apk
+
+      - uses: actions/upload-artifact@v3
+        if: github.server_url != 'https://github.com'
         with:
           name: vitals-apks-${{ env.VERSION }}-build${{ github.run_number }}
           path: out/*.apk
