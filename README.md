@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/assets/banner.svg" alt="R99 Smart Ring — two Android apps for a ring that documents nothing" width="100%">
+<img src="docs/assets/banner.svg" alt="Vitals Smart Ring App — two Android apps for a ring that documents nothing" width="100%">
 
 <p>
   <img src="https://img.shields.io/badge/platform-Android%208.0%2B-3DDC84?style=flat-square&logo=android&logoColor=white" alt="Android 8.0+">
@@ -24,10 +24,11 @@
 
 ---
 
-Two Android apps for the generic **R99** health ring, which reports itself internally as
-**R11M**. One takes the ring apart; the other wears it. They install side by side, and neither
-sends a reading anywhere: the debugger has no network access at all, and the only thing Vitals
-asks the internet is whether a newer version of itself is out.
+**Vitals Smart Ring App** is two Android apps for the generic **R99** health ring, which reports
+itself internally as **R11M**. One takes the ring apart; the other, **Vitals**, wears it. They
+install side by side, and neither sends a reading anywhere: the debugger has no network access at
+all, and the only thing Vitals asks the internet is whether a newer version of itself is out —
+see [why](#why-vitals-uses-the-internet).
 
 The protocol was recovered by capture and replay rather than documentation — the vendor app
 (`com.zhuoting.healthyucheng`) through an Android HCI snoop log, then every frame replayed from
@@ -110,10 +111,37 @@ vital tab carries its own chart, statistics and day-by-day history.
   one installed. Settings → Updates also has **Check now**, and a switch to stop checking.
 
 > [!NOTE]
-> Health Connect is on-device inter-process communication, not a network service. The update
-> check is the only reason Vitals holds the `INTERNET` permission, and the request carries nothing
-> but the app's own version number. Until 0.2.0 it held no network permission at all; switch the
-> check off in Settings and it never goes online.
+> Health Connect is on-device inter-process communication, not a network service. Handing
+> readings to it sends nothing over a network.
+
+### Why Vitals uses the internet
+
+Only to find out whether a newer version is out.
+
+Vitals is installed from this repository's releases rather than from an app store, so nothing
+on the phone knows when a new version appears. An app store would check on its behalf; without
+one, the app has to ask. Android lets an app open a network connection only if it declares the
+`INTERNET` permission, so Vitals declares it, from 0.2.0 onwards, for this one request:
+
+```
+GET https://api.github.com/repos/narey83/vitals-smart-ring-app/releases/latest
+User-Agent: R99-Vitals/<installed version>
+```
+
+- **When:** once a day from the background service, and whenever you tap **Check now** in
+  Settings → Updates.
+- **What goes with it:** the app's own version number, and nothing else. No reading, no
+  identifier, no account and nothing about the ring. GitHub sees what any web request shows,
+  the phone's IP address.
+- **What comes back:** the latest release's version and its page. If that's newer than the
+  installed version, Settings says so and a quiet notification links to the page. The app does
+  not download or install anything by itself. You choose whether to install the update.
+- **Turning it off:** switch off **Check GitHub for new versions** in Settings → Updates, and
+  Vitals never goes online at all.
+
+Android grants `INTERNET` without asking, which is why it is spelled out here. The code is
+[`Updates.kt`](vitals/src/main/java/uk/co/r99vitals/Updates.kt). The debugger has no network
+permission at all.
 
 ## Finding a workout nobody started
 

@@ -60,12 +60,12 @@ jobs:
           version=$(sed -n 's/^r99\.version=//p' gradle.properties)
           echo "VERSION=$version" >> "$GITHUB_ENV"
           mkdir -p out
-          cp vitals/build/outputs/apk/debug/vitals-debug.apk "out/r99-vitals-$version.apk"
-          cp app/build/outputs/apk/debug/app-debug.apk "out/r99-debugger-$version.apk"
+          cp vitals/build/outputs/apk/debug/vitals-debug.apk "out/vitals-$version.apk"
+          cp app/build/outputs/apk/debug/app-debug.apk "out/ring-debugger-$version.apk"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: r99-apks-${{ env.VERSION }}-build${{ github.run_number }}
+          name: vitals-apks-${{ env.VERSION }}-build${{ github.run_number }}
           path: out/*.apk
 
       - name: Check the release is what it says it is
@@ -100,4 +100,4 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v') && github.server_url == 'https://github.com'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" out/*.apk --title "R99 Smart Ring $VERSION" --notes-file notes.md
+        run: gh release create "$GITHUB_REF_NAME" out/*.apk --title "Vitals $VERSION" --notes-file notes.md
