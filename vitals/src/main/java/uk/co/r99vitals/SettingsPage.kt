@@ -189,6 +189,9 @@ fun SettingsPage(
     updates: UpdateState,
     onUpdateChecks: (Boolean) -> Unit,
     onCheckUpdates: () -> Unit,
+    /** Looks for newer ring firmware and downloads it; the flash itself is [onUpdateFirmware]. */
+    onCheckFirmware: () -> Unit,
+    onUpdateFirmware: () -> Unit,
     /** Opens a web address in the phone's browser — a release page, or the source. */
     onOpen: (String) -> Unit,
     onRepair: () -> Unit,
@@ -402,6 +405,28 @@ fun SettingsPage(
             "Once a day Vitals asks GitHub for its latest release, sending nothing but its own " +
                 "version number. Turn this off and the app never goes online at all."
         )
+
+        if (ringAddress != null) {
+            Section("RING FIRMWARE")
+            Panel {
+                Detail("Installed", firmware ?: "unknown")
+                Divider()
+                if (state.firmwareStatus != null) Value("Check for update", state.firmwareStatus) { onCheckFirmware() }
+                else Action("Check for update") { onCheckFirmware() }
+                if (state.firmwareUpgradable) {
+                    Divider()
+                    // Deliberately worded as the hazard it is: this rewrites the ring's own
+                    // software, and a link that drops mid-flash can leave it unusable.
+                    Action("Update ring firmware…") { onUpdateFirmware() }
+                }
+            }
+            Note(
+                "The ring is a JieLi chip; updating it runs the maker's own flashing process over " +
+                    "Bluetooth. Only the maker's server is asked, and only when you tap Check. Keep " +
+                    "the ring on its charger and the phone beside it during an update — a dropped " +
+                    "link partway through can brick the ring."
+            )
+        }
 
         Section("ABOUT")
         Panel {

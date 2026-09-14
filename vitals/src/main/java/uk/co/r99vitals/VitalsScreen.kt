@@ -136,6 +136,9 @@ data class VitalsState(
     val charging: Boolean = false,
     /** Whether the ring is on a finger, as the last measurement said — see VitalsActivity. */
     val worn: Boolean = true,
+    /** Firmware-update line in Settings: what the last check or flash said, and if one is ready. */
+    val firmwareStatus: String? = null,
+    val firmwareUpgradable: Boolean = false,
     val heart: Int? = null,
     val heartAt: Long? = null,
     val oxygen: Int? = null,

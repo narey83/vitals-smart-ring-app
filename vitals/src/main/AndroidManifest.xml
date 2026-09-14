@@ -1,5 +1,16 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="true" />
+
+    <!--
+        The JieLi firmware-update AAR declares these for its own file-picker and task handling;
+        Vitals needs neither — it writes the image only to its own cache and never reorders tasks
+        — so they are stripped rather than let the update feature widen the app's permissions. See
+        FirmwareUpdate.kt and vitals/libs.
+    -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" tools:node="remove" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" tools:node="remove" />
+    <uses-permission android:name="android.permission.REORDER_TASKS" tools:node="remove" />
 
     <!--
         For one request only: asking GitHub, once a day, whether a newer release is out. No

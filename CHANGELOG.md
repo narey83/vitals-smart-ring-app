@@ -4,6 +4,34 @@ One version covers the whole repository. Both apps are built from `r99.version` 
 [`gradle.properties`](gradle.properties), and each release is tagged `v<version>`. See
 "Versions and releases" in the [README](README.md#versions-and-releases).
 
+## 0.4.0 — 14 September 2026
+
+Vitals can update the ring's firmware.
+
+### Added
+
+- **Ring firmware updates**, in Settings → Ring firmware. Vitals checks the maker's server for a
+  newer build for this ring, downloads it, and — behind a plain warning — flashes it over
+  Bluetooth. The R99 is a JieLi AC632N, so the flash is driven by JieLi's own OTA library
+  (bundled in `vitals/libs`) rather than hand-rolled; see [PROTOCOL.md](PROTOCOL.md)'s "Updating
+  the firmware". Only the maker's static host is asked, and only when you tap Check.
+
+  **The flash is experimental and not yet proven on hardware.** It rewrites the ring's own
+  software, and a Bluetooth link dropped partway through — most likely at the ring's mid-flash
+  reboot — can leave it unusable. Keep the ring on its charger and the phone beside it. Note that
+  most rings will simply be told they are current: the maker publishes no general update for the
+  R11M, only a build gated to specific rings.
+
+### Fixed
+
+- PROTOCOL.md and the README described the ring as a Nordic chip using Nordic DFU. It is a JieLi
+  AC632N, and its update path is JieLi's authenticated RCSP OTA over the `ae01`/`ae02`
+  characteristics — the "authentication handshake" those docs could not place. Recovered by
+  disassembling the firmware; the docs are corrected and the update path documented.
+- The JieLi update library would have added external-storage and task-reordering permissions to
+  the app; these are stripped in the manifest, so the update feature does not widen what Vitals
+  can do — the image is written only to the app's own cache.
+
 ## 0.3.0 — 14 September 2026
 
 The ring measures on a timer whether or not it is on a finger, and while it sits in its charging

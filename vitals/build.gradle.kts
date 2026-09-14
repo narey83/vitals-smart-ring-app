@@ -77,6 +77,14 @@ dependencies {
     // asks the network is whether a newer release is out — see Updates.kt.
     implementation("androidx.health.connect:connect-client:1.1.0")
 
+    // Ring firmware update. The R99 is a JieLi AC632N; its OTA is JieLi's authenticated RCSP
+    // protocol, so the flash is driven by JieLi's own published SDK rather than hand-rolled. The
+    // AARs live in vitals/libs (resolved via the flatDir repo in settings.gradle.kts); jl_bt_ota
+    // carries its own libjl_ota_auth.so and needs only jl-component-lib alongside it. See
+    // RingOta.kt and PROTOCOL.md's "Updating the firmware".
+    implementation(":jl_bt_ota_V1.11.0_11015-release@aar")
+    implementation(":jl-component-lib_V1.4.0_10400-release@aar")
+
     // Ring speaks in frames, which are pure bytes and so testable on the JVM without a ring.
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.robolectric:robolectric:4.16.1")

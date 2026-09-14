@@ -355,8 +355,8 @@ ring.
 Those capability bits are zero, whatever the listing said. No amount of protocol work will produce
 that data.
 
-**Firmware cannot be read off the ring.** The OTA group is upload-only, Nordic DFU has no read-out
-command, and nRF52 parts ship with readback protection that also blocks SWD.
+**Firmware cannot be read off the ring.** The OTA group is upload-only, no read-out command
+exists, and the JieLi AC632N (this ring's chip) locks SWD readback.
 
 ## Licence
 

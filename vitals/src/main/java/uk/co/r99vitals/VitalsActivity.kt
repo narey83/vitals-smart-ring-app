@@ -275,6 +275,8 @@ class VitalsActivity : AppCompatActivity() {
                         updates = updates.copy(enabled = on, status = null)
                     },
                     onCheckUpdates = { checkForUpdates() },
+                    onCheckFirmware = { checkFirmware() },
+                    onUpdateFirmware = { confirmFirmwareUpdate() },
                     onOpen = { url -> runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) } },
                     onRepair = { forgetRing() },
                     onExport = { report = history.report(); sheet = Sheet.Export },
@@ -402,6 +404,95 @@ class VitalsActivity : AppCompatActivity() {
                 )
             }
         }
+    }
+
+    // ---- Ring firmware update -----------------------------------------------------------------
+
+    /** The downloaded image waiting to be flashed, if a check found a newer one. */
+    private var firmwareFile: java.io.File? = null
+    @Volatile private var firmwareBusy = false
+    private var ota: RingOta? = null
+
+    /**
+     * Looks for newer ring firmware and downloads it — network and disk, so off the main thread,
+     * and only when the wearer asks. The flash itself is [confirmFirmwareUpdate]; this only
+     * prepares it. See FirmwareUpdate and PROTOCOL.md's "Updating the firmware".
+     */
+    private fun checkFirmware() {
+        if (firmwareBusy) return
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.INTERNET) != PackageManager.PERMISSION_GRANTED) {
+            askNetwork.launch(Manifest.permission.INTERNET)
+            return
+        }
+        val address = ringAddress ?: return
+        val version = ui.firmware ?: run { ui = ui.copy(firmwareStatus = "Connect the ring first"); return }
+        firmwareBusy = true
+        ui = ui.copy(firmwareStatus = "Checking…", firmwareUpgradable = false)
+        kotlin.concurrent.thread(name = "firmware-check") {
+            val result = FirmwareUpdate.check(this, address, version)
+            runOnUiThread {
+                firmwareBusy = false
+                ui = when (result) {
+                    is FirmwareUpdate.Result.UpToDate -> ui.copy(firmwareStatus = "Up to date", firmwareUpgradable = false)
+                    is FirmwareUpdate.Result.Available -> {
+                        firmwareFile = result.ufw
+                        ui.copy(firmwareStatus = "Update ready: ${result.version}", firmwareUpgradable = true)
+                    }
+                    is FirmwareUpdate.Result.Failed -> ui.copy(firmwareStatus = result.reason, firmwareUpgradable = false)
+                }
+            }
+        }
+    }
+
+    /** The point of no return, so it is a plain question with the hazard spelled out. */
+    private fun confirmFirmwareUpdate() {
+        val ufw = firmwareFile ?: return
+        val address = ringAddress ?: return
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Update ring firmware?")
+            .setMessage(
+                "This rewrites the ring's own software over Bluetooth using the maker's flashing " +
+                    "process. Keep the ring on its charger and the phone right beside it, and leave " +
+                    "the app open. If the link drops partway through, the ring can be left unusable."
+            )
+            .setPositiveButton("Update") { _, _ -> flashFirmware(address, ufw) }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    /**
+     * Hands the ring to [RingOta] with the link to itself: the always-on collector is stopped and
+     * this screen's own connection dropped, so nothing else is driving the ring mid-flash. Either
+     * outcome gives collection the ring back — see [resumeAfterFlash].
+     */
+    @SuppressLint("MissingPermission")
+    private fun flashFirmware(address: String, ufw: java.io.File) {
+        firmwareBusy = true
+        ui = ui.copy(firmwareStatus = "Starting…")
+        stopService(Intent(this, CollectorService::class.java))
+        handler.removeCallbacks(askBattery)
+        gatt?.disconnect(); gatt?.close(); gatt = null; command = null
+        ota = RingOta(applicationContext, address, ufw.absolutePath, object : RingOta.Listener {
+            override fun onProgress(percent: Int) = runOnUiThread { ui = ui.copy(firmwareStatus = "Updating… $percent%") }
+            override fun onReconnecting() = runOnUiThread { ui = ui.copy(firmwareStatus = "Ring restarting…") }
+            override fun onSuccess() = runOnUiThread {
+                firmwareBusy = false; firmwareFile = null
+                ui = ui.copy(firmwareStatus = "Updated", firmwareUpgradable = false)
+                ota?.stop(); ota = null; resumeAfterFlash()
+            }
+            override fun onFailure(message: String) = runOnUiThread {
+                firmwareBusy = false
+                ui = ui.copy(firmwareStatus = "Failed: $message")
+                ota?.stop(); ota = null; resumeAfterFlash()
+            }
+        }).also { it.start() }
+    }
+
+    /** After a flash ends either way, give the ring back to ordinary collection. */
+    private fun resumeAfterFlash() {
+        CollectorService.start(this)
+        handler.post(askBattery)
+        if (ringAddress != null) askThenConnect()
     }
 
     private fun isUnrestricted() =

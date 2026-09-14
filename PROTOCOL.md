@@ -204,13 +204,52 @@ the rises between readings instead, and treat a drop as a reset.
 
 ## Firmware
 
-The ring is a Nordic nRF5x running Nordic DFU (`no.nordicsemi.android.dfu` appears throughout
-the vendor app). Vendor images are served from `https://staticpage.ycaviation.com/firmware/`.
+The ring is a **JieLi AC632N** (BD19 family, a `q32s` core) — not the Nordic part this section
+once named. That was inferred from `no.nordicsemi.android.dfu` in the vendor app, which bundles
+several chip vendors' updaters (`NordicDfuUpdateUtil`, `RealtekDfuUpdateUtil`, `RealMegaOtaManager`,
+`JLOTAManager`) and uses none of them for this ring. The app chooses one by the `GetChipScheme`
+(`02 27`) reply: this ring answers a JieLi scheme, routing to JieLi's `jl_bt_ota` library. Its OTA
+rides the `ae01`/`ae02` characteristics — the "vendor authentication handshake" listed below — as
+JieLi's authenticated RCSP protocol, **not** Nordic DFU. See "Updating the firmware" below.
 
-**Firmware cannot be read off the ring.** The OTA group is `OTADownload`, `OtaSend` and
-`OtaBlock` — all push. No read-out command exists anywhere in the 329-command table, Nordic DFU
-is upload-only, and nRF52 parts ship with readback protection that also blocks SWD. Obtaining
-the vendor's image from their server is possible; extracting the running image is not.
+Images are served from `https://staticpage.ycaviation.com/firmware/`: a per-model `<name>.plist`
+(here `R11M.plist`) names a `…-DFU-KEY1-V<ver>.zip` holding one `update.ufw`. `update.ufw` is a
+standard JieLi new-firmware image — chip name `AC632N`, chipkey in `isd_config.ini` (`2F1B` on
+this build) — decryptable with kagaimiq's `fwunpack_newfw.py` and disassemblable as `q32s`. This
+is how the finger-detection and clock behaviour above were read straight from the firmware.
+
+**The running image cannot be read back off the ring.** The OTA group is `OTADownload`, `OtaSend`
+and `OtaBlock` — all push — and no read-out command exists anywhere in the 329-command table; the
+AC632N also locks SWD readback. The server image is obtainable, as above; the running one is not.
+
+### Updating the firmware — JieLi RCSP OTA
+
+The flash is **not** a sequence of the frames above. It is JieLi's authenticated RCSP OTA,
+carried over the `ae00` service — write to `ae01`, notify on `ae02` (the "vendor authentication
+handshake" in the GATT map is this channel). The protocol is stateful and authenticated by
+`libjl_ota_auth.so`, so it is driven by JieLi's own published library, **not** reimplemented here:
+
+- SDK: [`Jieli-Tech/Android-JL_OTA`](https://github.com/Jieli-Tech/Android-JL_OTA), `jl_bt_ota`
+  (with `jl-component-lib`). Vitals bundles both AARs in `vitals/libs` and drives them from
+  `RingOta`, which supplies the BLE transport (the AARs manage no GATT of their own): write
+  `ae01` in MTU-sized pieces, feed `ae02` notifications back, hand the library the connection.
+  This mirrors the vendor app's own `JLOTAManager`, the only worked example of this ring updating.
+- Config that works on this ring (from the vendor): `setUseAuthDevice(false)`, `bleInterval 500`,
+  `timeout 3000`, `needChangeMtu(false)`, `useReconnect(true)`, and the `update.ufw` path.
+- **Mid-flash the ring reboots into its loader and re-advertises at its MAC + 1.** The library
+  reports this as `onNeedReconnect`; the app must connect to that incremented address, re-subscribe
+  `ae02`, and hand the link back. This is normal, not a fault.
+
+Images: `…/firmware/<model>.plist` (this ring is `R11M`) names a `…-DFU-KEY1-V<ver>.zip` holding
+one `update.ufw`. A manifest carries a general offer (`url`, `bNo`/`sNo`) and a MAC-targeted one
+(`mac_url`, `mac_bNo`/`mac_sNo`, a `mac` allowlist). **The R11M manifest's general `url` is empty**
+and only a MAC-gated V2.34 exists, so a ring not on the allowlist is genuinely up to date. Vitals'
+`FirmwareUpdate` checks and downloads on this; `RingOta` performs the flash.
+
+**A wrong write here can brick the ring**, since it is rewriting the running image over a link that
+must not drop. Keep the ring on the charger and the phone beside it, give the OTA the link to
+itself (stop `CollectorService`), and prove the path on a ring you can afford to lose before
+trusting it. The reboot-at-MAC+1 step is the one most likely to strand a half-written ring.
 
 ## What this ring actually supports — verified
 
