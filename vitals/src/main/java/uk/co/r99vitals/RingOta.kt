@@ -57,6 +57,8 @@ class RingOta(
     }
 
     private val handler = Handler(Looper.getMainLooper())
+    private val linkLog = LinkLog(context)
+    private fun note(line: String) = linkLog.note("ota: $line")
     private val adapter = (context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager).adapter
     private var gatt: BluetoothGatt? = null
     private var device: BluetoothDevice? = null
@@ -94,6 +96,7 @@ class RingOta(
         val target = runCatching { adapter.getRemoteDevice(address) }.getOrNull()
             ?: return fail("$address is not a usable address")
         device = target
+        note("start: connecting to $address, image $ufwPath")
         gatt = target.connectGatt(context, false, callback, BluetoothDevice.TRANSPORT_LE)
     }
 
@@ -107,21 +110,24 @@ class RingOta(
     }
 
     private fun beginUpgrade() {
+        note("handshake complete: starting the flash")
         getBluetoothOption().setFirmwareFilePath(ufwPath)
         startOTA(object : IUpgradeCallback {
             override fun onStartOTA() {}
-            override fun onProgress(type: Int, progress: Float) =
-                listener.onProgress((progress * 100).toInt())
+            override fun onProgress(type: Int, progress: Float) {
+                note("progress ${(progress * 100).toInt()}%"); listener.onProgress((progress * 100).toInt())
+            }
             override fun onNeedReconnect(addr: String?, reconnect: Boolean) {
                 // The ring reboots into its loader partway through and comes back advertising at
                 // the next address up. Pick it up there and hand the library the fresh link; it
                 // carries on from where it was. (The vendor app does exactly this, MAC + 1.)
+                note("need reconnect at $addr")
                 listener.onReconnecting()
                 reconnectAt(macPlusOne(addr ?: address))
             }
-            override fun onStopOTA() { finished = true; listener.onSuccess() }
+            override fun onStopOTA() { note("done"); finished = true; listener.onSuccess() }
             override fun onCancelOTA() { fail("update cancelled") }
-            override fun onError(error: BaseError?) = fail(error?.message ?: "update failed")
+            override fun onError(error: BaseError?) { note("upgrade error: ${error?.message}"); fail(error?.message ?: "update failed") }
         })
     }
 
@@ -136,6 +142,7 @@ class RingOta(
 
     private fun fail(message: String) {
         if (finished) return
+        note("fail: $message")
         finished = true
         handler.post { listener.onFailure(message) }
         stop()
@@ -146,6 +153,7 @@ class RingOta(
     private val callback = object : BluetoothGattCallback() {
         @SuppressLint("MissingPermission")
         override fun onConnectionStateChange(g: BluetoothGatt, status: Int, state: Int) {
+            note("link state=$state status=$status")
             if (state == BluetoothProfile.STATE_CONNECTED) {
                 g.requestMtu(517)
             } else {
@@ -154,6 +162,7 @@ class RingOta(
         }
 
         override fun onMtuChanged(g: BluetoothGatt, mtu: Int, status: Int) {
+            note("mtu=$mtu status=$status")
             chunk = (mtu - 3).coerceAtLeast(DEFAULT_CHUNK)
             getBluetoothOption().setMtu(mtu)
             device?.let { this@RingOta.onMtuChanged(g, mtu, status) }
@@ -165,6 +174,7 @@ class RingOta(
             val service = g.getService(SERVICE) ?: return fail("the ring is not exposing its update channel")
             val notify = service.getCharacteristic(NOTIFY) ?: return fail("the ring is not exposing its update channel")
             if (service.getCharacteristic(WRITE) == null) return fail("the update channel has no write endpoint")
+            note("services discovered: ae00/ae01/ae02 present, subscribing ae02")
             g.setCharacteristicNotification(notify, true)
             val cccd = notify.getDescriptor(CLIENT_CONFIG) ?: return fail("update channel has no config descriptor")
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -179,6 +189,7 @@ class RingOta(
             // Subscribed to ae02: the link is ready, so tell the library it is connected and let
             // it run its handshake. The BtEventCallback above fires when that succeeds.
             if (descriptor.characteristic.uuid == NOTIFY) {
+                note("ae02 subscribed (status $status): telling the library we are connected")
                 device?.let { onBtDeviceConnection(it, StateCode.CONNECTION_OK) }
             }
         }
@@ -194,7 +205,7 @@ class RingOta(
         }
 
         override fun onCharacteristicChanged(g: BluetoothGatt, ch: BluetoothGattCharacteristic, value: ByteArray) {
-            if (ch.uuid == NOTIFY) device?.let { onReceiveDeviceData(it, value) }
+            if (ch.uuid == NOTIFY) { note("recv ${value.size} bytes on ae02"); device?.let { onReceiveDeviceData(it, value) } }
         }
     }
 
@@ -224,6 +235,7 @@ class RingOta(
     @Synchronized
     override fun sendDataToDevice(dev: BluetoothDevice, data: ByteArray?): Boolean {
         if (data == null) return false
+        note("send ${data.size} bytes to ae01")
         var offset = 0
         while (offset < data.size) {
             val end = minOf(offset + chunk, data.size)
