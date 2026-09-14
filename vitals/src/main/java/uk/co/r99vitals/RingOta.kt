@@ -19,6 +19,7 @@ import com.jieli.jl_bt_ota.interfaces.BtEventCallback
 import com.jieli.jl_bt_ota.interfaces.IUpgradeCallback
 import com.jieli.jl_bt_ota.model.BluetoothOTAConfigure
 import com.jieli.jl_bt_ota.model.base.BaseError
+import com.jieli.jl_bt_ota.model.response.TargetInfoResponse
 import java.util.UUID
 
 /**
@@ -33,8 +34,9 @@ import java.util.UUID
  *
  * **This drives a firmware write and can brick the ring if the link is wrong.** It runs on its own
  * connection and must have the ring to itself: stop [CollectorService] first, and keep the phone
- * beside the ring throughout. It has not been proven against the hardware yet — see the caution in
- * the update flow before it is ever run for real.
+ * beside the ring throughout. The connect + auth + device-info handshake is proven against the
+ * hardware; the write and the mid-flash reboot are not — [verifyOnly] rehearses everything up to
+ * the write without touching the firmware.
  *
  * The RCSP channel is the `ae00` service: writes go to `ae01`, the ring answers on `ae02` — the
  * "authentication handshake" characteristics in PROTOCOL.md, which are in fact this OTA transport.
@@ -44,6 +46,11 @@ class RingOta(
     private val address: String,
     private val ufwPath: String,
     private val listener: Listener,
+    /**
+     * Runs the auth handshake and reads the ring's update info, then stops **without writing any
+     * firmware** — a safe way to prove the link and the auth work before risking a real flash.
+     */
+    private val verifyOnly: Boolean = false,
 ) : BluetoothOTAManager(context) {
 
     /** What the flow reports back to whoever started it. All calls are on the main thread. */
@@ -52,6 +59,8 @@ class RingOta(
         fun onProgress(percent: Int)
         /** The ring has rebooted into its loader and is being picked up again — see onNeedReconnect. */
         fun onReconnecting()
+        /** verifyOnly: auth and info succeeded, nothing was flashed. [info] is what the ring reports. */
+        fun onVerified(info: String) {}
         fun onSuccess()
         fun onFailure(message: String)
     }
@@ -68,12 +77,16 @@ class RingOta(
     private var finished = false
 
     init {
-        // The same options the vendor app sets, which is the only combination known to work on
-        // this ring: no separate auth device, the library paces its own writes, and it keeps the
-        // link across the ring's mid-flash reboot rather than expecting the caller to.
+        // Mostly the vendor app's own options — the library paces its writes and keeps the link
+        // across the ring's mid-flash reboot — but with auth turned on where the vendor left it
+        // off (see below), because we come in on a fresh, un-authenticated connection.
         val options = BluetoothOTAConfigure.createDefault()
             .setPriority(0)
-            .setUseAuthDevice(false)
+            // On a fresh connection the ring will not talk RCSP until the library's auth handshake
+            // has run (it ends in the "pass" the ae01/ae02 channel expects). The vendor app leaves
+            // this off only because its main connection was already authenticated elsewhere; ours
+            // is not, so the library must do the auth itself. See PROTOCOL.md and RcspAuth.
+            .setUseAuthDevice(true)
             .setBleIntervalMs(500)
             .setTimeoutMs(3000)
             .setMtu(517)
@@ -110,6 +123,19 @@ class RingOta(
     }
 
     private fun beginUpgrade() {
+        if (verifyOnly) {
+            // Reaching here means the auth handshake and the target-info exchange already
+            // succeeded — the library reports the connection ready only once they have — so the
+            // cached device info is the proof. No need to ask again: queryMandatoryUpdate reports
+            // the healthy "Device is connected" as an error (with code 0), which only looks like a
+            // failure. This confirms the whole path short of the write itself.
+            val info: TargetInfoResponse? = getDeviceInfo()
+            note("verified: firmware ${info?.versionName}")
+            finished = true
+            listener.onVerified("ring firmware ${info?.versionName ?: "?"}")
+            stop()
+            return
+        }
         note("handshake complete: starting the flash")
         getBluetoothOption().setFirmwareFilePath(ufwPath)
         startOTA(object : IUpgradeCallback {

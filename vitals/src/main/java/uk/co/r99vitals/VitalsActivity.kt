@@ -276,6 +276,7 @@ class VitalsActivity : AppCompatActivity() {
                     },
                     onCheckUpdates = { checkForUpdates() },
                     onCheckFirmware = { checkFirmware() },
+                    onTestFirmware = { testFirmware() },
                     onUpdateFirmware = { confirmFirmwareUpdate() },
                     onOpen = { url -> runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) } },
                     onRepair = { forgetRing() },
@@ -475,16 +476,28 @@ class VitalsActivity : AppCompatActivity() {
      * this screen's own connection dropped, so nothing else is driving the ring mid-flash. Either
      * outcome gives collection the ring back — see [resumeAfterFlash].
      */
+    /** The safe half of the flow: run the auth + info exchange but write nothing. */
+    private fun testFirmware() {
+        val ufw = firmwareFile ?: return
+        val address = ringAddress ?: return
+        flashFirmware(address, ufw, verifyOnly = true)
+    }
+
     @SuppressLint("MissingPermission")
-    private fun flashFirmware(address: String, ufw: java.io.File) {
+    private fun flashFirmware(address: String, ufw: java.io.File, verifyOnly: Boolean = false) {
         firmwareBusy = true
-        ui = ui.copy(firmwareStatus = "Starting…")
+        ui = ui.copy(firmwareStatus = if (verifyOnly) "Testing…" else "Starting…")
         stopService(Intent(this, CollectorService::class.java))
         handler.removeCallbacks(askBattery)
         gatt?.disconnect(); gatt?.close(); gatt = null; command = null
         ota = RingOta(applicationContext, address, ufw.absolutePath, object : RingOta.Listener {
             override fun onProgress(percent: Int) = runOnUiThread { ui = ui.copy(firmwareStatus = "Updating… $percent%") }
             override fun onReconnecting() = runOnUiThread { ui = ui.copy(firmwareStatus = "Ring restarting…") }
+            override fun onVerified(info: String) = runOnUiThread {
+                firmwareBusy = false
+                ui = ui.copy(firmwareStatus = "Link OK — $info (nothing flashed)")
+                ota?.stop(); ota = null; resumeAfterFlash()
+            }
             override fun onSuccess() = runOnUiThread {
                 firmwareBusy = false; firmwareFile = null
                 ui = ui.copy(firmwareStatus = "Updated", firmwareUpgradable = false)
@@ -492,10 +505,10 @@ class VitalsActivity : AppCompatActivity() {
             }
             override fun onFailure(message: String) = runOnUiThread {
                 firmwareBusy = false
-                ui = ui.copy(firmwareStatus = "Failed: $message")
+                ui = ui.copy(firmwareStatus = "${if (verifyOnly) "Test failed" else "Failed"}: $message")
                 ota?.stop(); ota = null; resumeAfterFlash()
             }
-        }).also { it.start() }
+        }, verifyOnly = verifyOnly).also { it.start() }
     }
 
     /** After a flash ends either way, give the ring back to ordinary collection. */

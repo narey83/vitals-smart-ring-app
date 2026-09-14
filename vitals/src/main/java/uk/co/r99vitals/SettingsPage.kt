@@ -191,6 +191,8 @@ fun SettingsPage(
     onCheckUpdates: () -> Unit,
     /** Looks for newer ring firmware and downloads it; the flash itself is [onUpdateFirmware]. */
     onCheckFirmware: () -> Unit,
+    /** Runs the auth + info exchange without writing — a safe check before the real flash. */
+    onTestFirmware: () -> Unit,
     onUpdateFirmware: () -> Unit,
     /** Opens a web address in the phone's browser — a release page, or the source. */
     onOpen: (String) -> Unit,
@@ -414,6 +416,9 @@ fun SettingsPage(
                 if (state.firmwareStatus != null) Value("Check for update", state.firmwareStatus) { onCheckFirmware() }
                 else Action("Check for update") { onCheckFirmware() }
                 if (state.firmwareUpgradable) {
+                    Divider()
+                    // The safe rehearsal: proves the link and the ring's auth without writing.
+                    Action("Test update connection") { onTestFirmware() }
                     Divider()
                     // Deliberately worded as the hazard it is: this rewrites the ring's own
                     // software, and a link that drops mid-flash can leave it unusable.
