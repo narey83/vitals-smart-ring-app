@@ -4,6 +4,27 @@ One version covers the whole repository. Both apps are built from `r99.version` 
 [`gradle.properties`](gradle.properties), and each release is tagged `v<version>`. See
 "Versions and releases" in the [README](README.md#versions-and-releases).
 
+## 0.4.1 — 14 September 2026
+
+The firmware update actually flashes now.
+
+### Fixed
+
+- **Ring firmware updates work end to end.** 0.4.0's flash stalled at the start: the ring will
+  not talk to the update channel until an authentication handshake has run, which the update
+  library skips by default (the vendor app relies on its main connection having authenticated
+  already; Vitals connects fresh, so it must do the auth itself). Turning that on, plus reading
+  the progress figure correctly and reconnecting to the ring's loader at the right address, makes
+  the flash complete. Proven by re-flashing the installed version on a real ring.
+
+### Added
+
+- **Test update connection** and **Re-flash current version** (Settings → Ring firmware). The
+  first runs the auth and reads the ring's info without writing anything — a safe rehearsal. The
+  second re-flashes the version already installed, the least risky real write, for proving the
+  update works before trusting a genuine upgrade. Both keep the same brick warning: ring on the
+  charger, phone beside it.
+
 ## 0.4.0 — 14 September 2026
 
 Vitals can update the ring's firmware.

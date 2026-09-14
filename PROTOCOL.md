@@ -234,11 +234,21 @@ handshake" in the GATT map is this channel). The protocol is stateful and authen
   `RingOta`, which supplies the BLE transport (the AARs manage no GATT of their own): write
   `ae01` in MTU-sized pieces, feed `ae02` notifications back, hand the library the connection.
   This mirrors the vendor app's own `JLOTAManager`, the only worked example of this ring updating.
-- Config that works on this ring (from the vendor): `setUseAuthDevice(false)`, `bleInterval 500`,
-  `timeout 3000`, `needChangeMtu(false)`, `useReconnect(true)`, and the `update.ufw` path.
-- **Mid-flash the ring reboots into its loader and re-advertises at its MAC + 1.** The library
-  reports this as `onNeedReconnect`; the app must connect to that incremented address, re-subscribe
-  `ae02`, and hand the link back. This is normal, not a fault.
+- Config that works: `setUseAuthDevice(true)`, `bleInterval 500`, `timeout 3000`,
+  `needChangeMtu(false)`, `useReconnect(true)`, and the `update.ufw` path. **The auth flag is the
+  crux.** On a fresh connection the ring stays silent on `ae02` until the library's `RcspAuth`
+  challenge–response has run — a reset-auth frame, then a random challenge, the ring's reply, and
+  `02 "pass"`, keyed on a device link key the native `libjl_ota_auth.so` supplies from a built-in
+  default. The vendor app sets this flag `false` only because its *main* connection was already
+  authenticated elsewhere; `RingOta` comes in fresh, so it must run the auth itself (`true`).
+- **Mid-flash the ring may reboot into its loader and re-advertise at its own address + 1** (the
+  vendor reconnects to `macAddOne(boundMac)`, **not** to the address `onNeedReconnect` reports,
+  which is a different, unusable value). Reconnect there, re-subscribe `ae02`, hand the link back.
+- **Verified working, 2026-09-14:** a same-version re-flash of V2.32 completed end to end —
+  auth, image transfer 0→100%, `ota: done`, and the ring back healthy. `queryMandatoryUpdate`
+  reports the healthy "Device is connected" state as an *error* with code 0; read `getDeviceInfo()`
+  instead. That run finished **in place without the loader reboot**, so the MAC+1 reconnect above
+  is coded from the vendor's approach but not yet exercised — a real version change may trigger it.
 
 Images: `…/firmware/<model>.plist` (this ring is `R11M`) names a `…-DFU-KEY1-V<ver>.zip` holding
 one `update.ufw`. A manifest carries a general offer (`url`, `bNo`/`sNo`) and a MAC-targeted one
