@@ -15,9 +15,14 @@ package uk.co.r99vitals
  */
 object RingCompatibility {
 
-    /** The ring advertises its model in its name — this ring and its images are the R99 family. */
+    /**
+     * The ring advertises its model in its name — this ring and its images are the R99 family. A
+     * name that is present must look like an R99; a missing one does not block, because Android
+     * often will not resolve a bonded device's name, and the firmware check below is the real gate
+     * (a version is only ever read from a ring that has already answered the R99 command channel).
+     */
     fun isSupportedRing(name: String?): Boolean =
-        name != null && name.trim().startsWith("R99", ignoreCase = true)
+        name.isNullOrBlank() || name.trim().startsWith("R99", ignoreCase = true)
 
     /**
      * Whether the ring's current firmware is one this app recognises and can update from: a

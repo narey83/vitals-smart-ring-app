@@ -355,14 +355,6 @@ fun SettingsPage(
                 "cycling or yoga either way: neither makes steps."
         )
 
-        // Deliberately no manual "set the ring's clock" action here: VitalsActivity and
-        // CollectorService already self-heal a stopped clock on every connection — see
-        // Ring.clockLooksStopped — so a button would only ever fire on ordinary drift a
-        // person cannot usefully judge, at the cost of a day's steps for no reason.
-        Panel {
-            Action("Forget this ring and pick another") { onRepair() }
-        }
-
         Section("APPEARANCE")
         Panel {
             listOf(
@@ -375,17 +367,63 @@ fun SettingsPage(
             }
         }
 
-        Section("RING & DATA")
+        // Everything about the ring in one place: what it is, keeping it connected, its firmware,
+        // and picking it up again if the app ever loses track of it.
+        Section("RING")
         Panel {
-            Value("Run in background", if (unrestricted) "Unrestricted" else "Optimised") { onBackground() }
+            Detail("Device", state.ringName ?: (ringAddress ?: "not paired"))
             Divider()
-            Action("Export readings") { onExport() }
+            Detail("Firmware", firmware ?: "unknown")
+            Divider()
+            Detail("Battery", state.battery?.let { "$it%" } ?: "unknown")
+            Divider()
+            Value("Run in background", if (unrestricted) "Unrestricted" else "Optimised") { onBackground() }
         }
         if (!unrestricted) {
             Note(
                 "Optimised lets Android put off reconnecting to the ring while the phone sleeps, " +
                     "which is how hours of steps go missing. Tap to let it run unrestricted."
             )
+        }
+        if (ringAddress != null) {
+            // Flashing is the one operation that can brick the ring, so the firmware actions show
+            // only for a ring the app is sure it can safely write — see RingCompatibility. The
+            // re-pair action stays available whatever the firmware, so a ring the app has lost
+            // track of can always be found again.
+            val canUpdate = RingCompatibility.canUpdate(state.ringName, firmware)
+            Panel {
+                if (canUpdate) {
+                    if (state.firmwareStatus != null) Value("Check for firmware update", state.firmwareStatus) { onCheckFirmware() }
+                    else Action("Check for firmware update") { onCheckFirmware() }
+                    // A first real-write test: re-flash the version already installed.
+                    Divider()
+                    Action("Re-flash current version") { onReflash() }
+                    if (state.firmwareUpgradable) {
+                        Divider()
+                        // The safe rehearsal: proves the link and the ring's auth without writing.
+                        Action("Test update connection") { onTestFirmware() }
+                        Divider()
+                        // The hazard, worded plainly: this rewrites the ring's own software.
+                        Action("Update ring firmware…") { onUpdateFirmware() }
+                    }
+                    Divider()
+                }
+                Action("Forget this ring and pick another") { onRepair() }
+            }
+            val block = RingCompatibility.reason(state.ringName, firmware)
+            Note(
+                block ?: ("Updating the firmware runs the maker's own flashing process over " +
+                    "Bluetooth — only the maker's server is asked, and only when you tap Check. Keep " +
+                    "the ring on its charger and the phone beside it: a dropped link mid-update can " +
+                    "brick it.")
+            )
+        } else {
+            Panel { Action("Find your ring") { onRepair() } }
+        }
+
+        Section("DATA")
+        Panel {
+            Action("Export readings") { onExport() }
         }
         Note(
             "Your readings stay on this phone. Nothing sends them anywhere: the only thing this " +
@@ -410,49 +448,8 @@ fun SettingsPage(
                 "version number. Turn this off and the app never goes online at all."
         )
 
-        if (ringAddress != null) {
-            Section("RING FIRMWARE")
-            // Flashing is the one operation that can brick the ring, and the images fit only this
-            // ring on its own firmware family, so the update actions appear only for a ring the app
-            // is sure it can safely write — see RingCompatibility.
-            val canUpdate = RingCompatibility.canUpdate(state.ringName, firmware)
-            Panel {
-                Detail("Installed", firmware ?: "unknown")
-                if (canUpdate) {
-                    Divider()
-                    if (state.firmwareStatus != null) Value("Check for update", state.firmwareStatus) { onCheckFirmware() }
-                    else Action("Check for update") { onCheckFirmware() }
-                    // A first real-write test: re-flash the version already installed.
-                    Divider()
-                    Action("Re-flash current version") { onReflash() }
-                    if (state.firmwareUpgradable) {
-                        Divider()
-                        // The safe rehearsal: proves the link and the ring's auth without writing.
-                        Action("Test update connection") { onTestFirmware() }
-                        Divider()
-                        // Deliberately worded as the hazard it is: this rewrites the ring's own
-                        // software, and a link that drops mid-flash can leave it unusable.
-                        Action("Update ring firmware…") { onUpdateFirmware() }
-                    }
-                }
-            }
-            val block = RingCompatibility.reason(state.ringName, firmware)
-            Note(
-                block ?: ("The ring is a JieLi chip; updating it runs the maker's own flashing " +
-                    "process over Bluetooth. Only the maker's server is asked, and only when you tap " +
-                    "Check. Keep the ring on its charger and the phone beside it during an update — a " +
-                    "dropped link partway through can brick the ring.")
-            )
-        }
-
         Section("ABOUT")
         Panel {
-            Detail("Ring", ringAddress ?: "not paired")
-            Divider()
-            Detail("Firmware", firmware ?: "unknown")
-            Divider()
-            Detail("Battery", state.battery?.let { "$it%" } ?: "unknown")
-            Divider()
             Detail("App", BuildConfig.VERSION_NAME)
             Divider()
             Detail("Developer", BuildConfig.DEVELOPER)

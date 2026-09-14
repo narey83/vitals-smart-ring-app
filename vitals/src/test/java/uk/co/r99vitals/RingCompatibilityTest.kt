@@ -13,11 +13,13 @@ import org.junit.Test
  */
 class RingCompatibilityTest {
 
-    @Test fun `an R99 ring is a supported ring, other devices are not`() {
+    @Test fun `an R99 or unnamed device is supported, a differently-named one is not`() {
         assertTrue(RingCompatibility.isSupportedRing("R99 8D43"))
         assertTrue(RingCompatibility.isSupportedRing("r99"))
         assertFalse(RingCompatibility.isSupportedRing("Galaxy Buds"))
-        assertFalse(RingCompatibility.isSupportedRing(null))
+        // A bonded ring often reports no name on Android; the firmware check is the real gate, so
+        // a missing name must not block a ring that has already proved itself on the command channel.
+        assertTrue(RingCompatibility.isSupportedRing(null))
     }
 
     @Test fun `firmware in the V2 family is updatable, anything else is left alone`() {
@@ -31,8 +33,10 @@ class RingCompatibilityTest {
 
     @Test fun `only a supported ring on recognised firmware may be updated`() {
         assertTrue(RingCompatibility.canUpdate("R99 8D43", "V2.32"))
-        assertFalse(RingCompatibility.canUpdate("R99 8D43", "V3.0"))
-        assertFalse(RingCompatibility.canUpdate("Some Watch", "V2.32"))
+        assertTrue(RingCompatibility.canUpdate(null, "V2.32"))          // bonded ring, name unresolved
+        assertFalse(RingCompatibility.canUpdate("R99 8D43", "V3.0"))    // unfamiliar firmware
+        assertFalse(RingCompatibility.canUpdate("Some Watch", "V2.32")) // wrong device
+        assertFalse(RingCompatibility.canUpdate(null, null))            // nothing known
     }
 
     @Test fun `the reason is null when updatable, and explains which check failed otherwise`() {

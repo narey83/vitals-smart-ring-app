@@ -102,6 +102,14 @@ class VitalsActivity : AppCompatActivity() {
      */
     private var verifying = false
 
+    /**
+     * A device the wearer just chose that is being checked, held separately so it does not
+     * overwrite a ring that already works until it has proved itself a ring. Without this, choosing
+     * the wrong device — or the real ring caught mid-firmware-update, when it answers as its update
+     * loader with no command channel — used to wipe the good pairing on the spot.
+     */
+    private var pendingAddress: String? = null
+
     private val handler = Handler(Looper.getMainLooper())
     private var gatt: BluetoothGatt? = null
     private var command: BluetoothGattCharacteristic? = null
@@ -692,7 +700,9 @@ class VitalsActivity : AppCompatActivity() {
     private fun connect() {
         val bluetooth = adapter
         if (bluetooth == null || !bluetooth.isEnabled) { ui = ui.copy(link = "Turn Bluetooth on"); return }
-        val address = ringAddress
+        // A candidate being verified takes precedence, so a device the wearer just chose is tried
+        // without yet replacing a ring that already works — see [pendingAddress] and rejectNonRing.
+        val address = pendingAddress ?: ringAddress
         if (address == null) { pair(); return }
         ui = ui.copy(link = "Connecting to your ring")
         // A paired ring stops advertising, so it is reached by address rather than by scanning.
@@ -733,7 +743,9 @@ class VitalsActivity : AppCompatActivity() {
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Which one is your ring?")
             .setItems(labels) { _, which ->
-                ringAddress = choices[which].first
+                // Held as a candidate, not committed: only a device that proves itself a ring
+                // replaces the stored one — see the verify-success path and rejectNonRing.
+                pendingAddress = choices[which].first
                 verifying = true
                 connect()
             }
@@ -741,14 +753,22 @@ class VitalsActivity : AppCompatActivity() {
             .show()
     }
 
-    /** The chosen device answered, but not as a ring would. Undoes the pairing rather than keeping it. */
+    /** The chosen device answered, but not as a ring would. Drops that candidate; a ring already
+     *  paired is kept and reconnected, not thrown away. */
     @SuppressLint("MissingPermission")
     private fun rejectNonRing() {
         verifying = false
-        gatt?.disconnect(); gatt?.close(); gatt = null
-        ringAddress = null
-        ringName = null
-        ui = ui.copy(link = "That wasn't a ring — tap to choose again", connected = false, ringName = null)
+        pendingAddress = null
+        gatt?.disconnect(); gatt?.close(); gatt = null; command = null
+        if (ringAddress != null) {
+            // A ring is already remembered — the chosen device simply was not it. Keep the pairing
+            // and go back to it, rather than throwing away a ring that works (which is how a ring
+            // caught mid-update, answering only as its loader, used to be forgotten).
+            ui = ui.copy(link = "That wasn't your ring — reconnecting", connected = false)
+            connect()
+        } else {
+            ui = ui.copy(link = "That wasn't a ring — tap to choose again", connected = false, ringName = null)
+        }
     }
 
     private val scanCallback = object : ScanCallback() {
@@ -1237,10 +1257,14 @@ class VitalsActivity : AppCompatActivity() {
                     return@runOnUiThread
                 }
                 verifying = false
+                // Proved itself a ring: now, and only now, the candidate becomes the stored ring.
+                pendingAddress?.let { ringAddress = it; pendingAddress = null }
                 clockSyncedThisConnect = false
                 // The name it actually answers to, rather than a placeholder — read once, here,
                 // because this is the one moment already gated on the ring having proved itself.
-                ringName = runCatching { gatt.device.name }.getOrNull()
+                // Kept if the name will not resolve this time: Android often returns null for a
+                // bonded device, and a good name once read should not be lost to that.
+                ringName = runCatching { gatt.device.name }.getOrNull() ?: ringName
                 ui = ui.copy(ringName = ringName)
                 CollectorService.start(this@VitalsActivity)
                 if (onboarding == OnboardingStep.Pairing) advanceOnboarding()
