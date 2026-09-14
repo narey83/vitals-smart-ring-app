@@ -430,6 +430,9 @@ class VitalsActivity : AppCompatActivity() {
         }
         val address = ringAddress ?: return
         val version = ui.firmware ?: run { ui = ui.copy(firmwareStatus = "Connect the ring first"); return }
+        if (!RingCompatibility.canUpdate(ui.ringName, version)) {
+            ui = ui.copy(firmwareStatus = RingCompatibility.reason(ui.ringName, version) ?: "Unsupported ring"); return
+        }
         firmwareBusy = true
         ui = ui.copy(firmwareStatus = "Checking…", firmwareUpgradable = false)
         kotlin.concurrent.thread(name = "firmware-check") {
@@ -524,6 +527,12 @@ class VitalsActivity : AppCompatActivity() {
 
     @SuppressLint("MissingPermission")
     private fun flashFirmware(address: String, ufw: java.io.File, verifyOnly: Boolean = false) {
+        // Never write to a ring the app is not sure it can safely flash — the last line of defence
+        // behind the UI gate. See RingCompatibility.
+        if (!RingCompatibility.canUpdate(ui.ringName, ui.firmware)) {
+            ui = ui.copy(firmwareStatus = RingCompatibility.reason(ui.ringName, ui.firmware) ?: "Unsupported ring")
+            return
+        }
         firmwareBusy = true
         ui = ui.copy(firmwareStatus = if (verifyOnly) "Testing…" else "Starting…")
         stopService(Intent(this, CollectorService::class.java))

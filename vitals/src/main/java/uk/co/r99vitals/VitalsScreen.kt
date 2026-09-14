@@ -290,7 +290,10 @@ private fun Header(state: VitalsState, onLink: () -> Unit, onSettings: () -> Uni
             )
             state.battery?.let { level ->
                 Spacer(Modifier.width(10.dp))
-                // Charging is worth showing plainly: it is the one battery state you act on.
+                // Charging is worth showing plainly: it is the one battery state you act on. On the
+                // charger at full, it says "fully charged" rather than still claiming to charge —
+                // the ring keeps reporting the charging state even once it has topped up.
+                val full = state.charging && level >= 100
                 val tone = when {
                     state.charging -> Ink.motion
                     level > 20 -> Ink.muted
@@ -304,7 +307,11 @@ private fun Header(state: VitalsState, onLink: () -> Unit, onSettings: () -> Uni
                         level > 20 -> Icons.Rounded.Battery3Bar
                         else -> Icons.Rounded.Battery1Bar
                     },
-                    contentDescription = if (state.charging) "Ring charging" else "Ring battery",
+                    contentDescription = when {
+                        full -> "Ring fully charged"
+                        state.charging -> "Ring charging"
+                        else -> "Ring battery"
+                    },
                     tint = tone,
                     modifier = Modifier.size(15.dp)
                 )
@@ -312,7 +319,7 @@ private fun Header(state: VitalsState, onLink: () -> Unit, onSettings: () -> Uni
                 Text("$level%", color = tone, fontSize = 14.sp)
                 if (state.charging) {
                     Spacer(Modifier.width(6.dp))
-                    Text("charging", color = Ink.motion, fontSize = 13.sp)
+                    Text(if (full) "fully charged" else "charging", color = Ink.motion, fontSize = 13.sp)
                 }
             }
             // Whether the ring is on a finger. Only while connected and off the charger: in the

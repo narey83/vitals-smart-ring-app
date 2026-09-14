@@ -412,32 +412,36 @@ fun SettingsPage(
 
         if (ringAddress != null) {
             Section("RING FIRMWARE")
+            // Flashing is the one operation that can brick the ring, and the images fit only this
+            // ring on its own firmware family, so the update actions appear only for a ring the app
+            // is sure it can safely write — see RingCompatibility.
+            val canUpdate = RingCompatibility.canUpdate(state.ringName, firmware)
             Panel {
                 Detail("Installed", firmware ?: "unknown")
-                Divider()
-                if (state.firmwareStatus != null) Value("Check for update", state.firmwareStatus) { onCheckFirmware() }
-                else Action("Check for update") { onCheckFirmware() }
-                // A first real-write test: re-flash the version already installed. Always offered
-                // once a firmware version is known, independent of whether a newer one exists.
-                if (firmware != null) {
+                if (canUpdate) {
+                    Divider()
+                    if (state.firmwareStatus != null) Value("Check for update", state.firmwareStatus) { onCheckFirmware() }
+                    else Action("Check for update") { onCheckFirmware() }
+                    // A first real-write test: re-flash the version already installed.
                     Divider()
                     Action("Re-flash current version") { onReflash() }
-                }
-                if (state.firmwareUpgradable) {
-                    Divider()
-                    // The safe rehearsal: proves the link and the ring's auth without writing.
-                    Action("Test update connection") { onTestFirmware() }
-                    Divider()
-                    // Deliberately worded as the hazard it is: this rewrites the ring's own
-                    // software, and a link that drops mid-flash can leave it unusable.
-                    Action("Update ring firmware…") { onUpdateFirmware() }
+                    if (state.firmwareUpgradable) {
+                        Divider()
+                        // The safe rehearsal: proves the link and the ring's auth without writing.
+                        Action("Test update connection") { onTestFirmware() }
+                        Divider()
+                        // Deliberately worded as the hazard it is: this rewrites the ring's own
+                        // software, and a link that drops mid-flash can leave it unusable.
+                        Action("Update ring firmware…") { onUpdateFirmware() }
+                    }
                 }
             }
+            val block = RingCompatibility.reason(state.ringName, firmware)
             Note(
-                "The ring is a JieLi chip; updating it runs the maker's own flashing process over " +
-                    "Bluetooth. Only the maker's server is asked, and only when you tap Check. Keep " +
-                    "the ring on its charger and the phone beside it during an update — a dropped " +
-                    "link partway through can brick the ring."
+                block ?: ("The ring is a JieLi chip; updating it runs the maker's own flashing " +
+                    "process over Bluetooth. Only the maker's server is asked, and only when you tap " +
+                    "Check. Keep the ring on its charger and the phone beside it during an update — a " +
+                    "dropped link partway through can brick the ring.")
             )
         }
 
