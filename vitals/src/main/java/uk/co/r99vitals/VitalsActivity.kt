@@ -277,6 +277,7 @@ class VitalsActivity : AppCompatActivity() {
                     onCheckUpdates = { checkForUpdates() },
                     onCheckFirmware = { checkFirmware() },
                     onTestFirmware = { testFirmware() },
+                    onReflash = { reflashCurrent() },
                     onUpdateFirmware = { confirmFirmwareUpdate() },
                     onOpen = { url -> runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) } },
                     onRepair = { forgetRing() },
@@ -476,6 +477,44 @@ class VitalsActivity : AppCompatActivity() {
      * this screen's own connection dropped, so nothing else is driving the ring mid-flash. Either
      * outcome gives collection the ring back — see [resumeAfterFlash].
      */
+    /**
+     * Deliberately re-flash the version the ring already runs, as a first real-write test: the
+     * image is the one known-correct for this ring, so it is the least risky way to prove the
+     * flash mechanism before trusting it with a genuine upgrade.
+     */
+    private fun reflashCurrent() {
+        if (firmwareBusy) return
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.INTERNET) != PackageManager.PERMISSION_GRANTED) {
+            askNetwork.launch(Manifest.permission.INTERNET); return
+        }
+        val address = ringAddress ?: return
+        val version = ui.firmware ?: run { ui = ui.copy(firmwareStatus = "Connect the ring first"); return }
+        firmwareBusy = true
+        ui = ui.copy(firmwareStatus = "Fetching $version…")
+        kotlin.concurrent.thread(name = "firmware-reflash") {
+            val ufw = FirmwareUpdate.imageForVersion(this, version)
+            runOnUiThread {
+                firmwareBusy = false
+                if (ufw == null) ui = ui.copy(firmwareStatus = "Could not fetch $version")
+                else confirmReflash(address, version, ufw)
+            }
+        }
+    }
+
+    private fun confirmReflash(address: String, version: String, ufw: java.io.File) {
+        androidx.appcompat.app.AlertDialog.Builder(this)
+            .setTitle("Re-flash $version?")
+            .setMessage(
+                "This writes the same firmware the ring already runs ($version), to prove the update " +
+                    "works before trusting a real upgrade. It carries the same risk as any flash: keep " +
+                    "the ring on its charger and the phone beside it, and leave the app open. If the " +
+                    "link drops partway through, the ring can be left unusable."
+            )
+            .setPositiveButton("Re-flash") { _, _ -> flashFirmware(address, ufw) }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
     /** The safe half of the flow: run the auth + info exchange but write nothing. */
     private fun testFirmware() {
         val ufw = firmwareFile ?: return

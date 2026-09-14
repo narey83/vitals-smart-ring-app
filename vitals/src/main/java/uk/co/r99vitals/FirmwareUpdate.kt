@@ -100,6 +100,17 @@ object FirmwareUpdate {
         return Result.Available(upgrade.version, ufw, upgrade.approved)
     }
 
+    /**
+     * Downloads a specific firmware version's image by its predictable URL, for deliberately
+     * re-flashing the version the ring already runs — the safest real-write test of the update
+     * path, since the image is the one known-correct for this ring. [version] is like "V2.32" or
+     * "2.32". Blocking; call off the main thread.
+     */
+    fun imageForVersion(context: Context, version: String, model: String = MODEL): File? {
+        val v = version.trimStart('V', 'v')
+        return runCatching { download(context, "${BASE}$model-APP-DFU-KEY1-V$v.zip") }.getOrNull()
+    }
+
     private fun fetchText(url: String): String? {
         val connection = (URL(url).openConnection() as HttpURLConnection).apply {
             connectTimeout = 15_000; readTimeout = 15_000

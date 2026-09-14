@@ -141,15 +141,19 @@ class RingOta(
         startOTA(object : IUpgradeCallback {
             override fun onStartOTA() {}
             override fun onProgress(type: Int, progress: Float) {
-                note("progress ${(progress * 100).toInt()}%"); listener.onProgress((progress * 100).toInt())
+                // This library reports [progress] already as a percentage (0..100), not a fraction.
+                val pct = progress.toInt().coerceIn(0, 100)
+                note("progress $pct%"); listener.onProgress(pct)
             }
             override fun onNeedReconnect(addr: String?, reconnect: Boolean) {
                 // The ring reboots into its loader partway through and comes back advertising at
-                // the next address up. Pick it up there and hand the library the fresh link; it
-                // carries on from where it was. (The vendor app does exactly this, MAC + 1.)
-                note("need reconnect at $addr")
+                // its own address + 1. Reconnect to exactly that — the vendor app reconnects to
+                // macAddOne(boundMac), *not* to the address the library reports here, which is
+                // something else and is what stranded the first real attempt at "Ring restarting…".
+                val loader = macPlusOne(address)
+                note("need reconnect: library said $addr, connecting to loader $loader")
                 listener.onReconnecting()
-                reconnectAt(macPlusOne(addr ?: address))
+                reconnectAt(loader)
             }
             override fun onStopOTA() { note("done"); finished = true; listener.onSuccess() }
             override fun onCancelOTA() { fail("update cancelled") }
@@ -163,7 +167,9 @@ class RingOta(
         val target = runCatching { adapter.getRemoteDevice(newAddress) }.getOrNull()
             ?: return fail("$newAddress is not a usable address")
         device = target
-        handler.postDelayed({ gatt = target.connectGatt(context, false, callback, BluetoothDevice.TRANSPORT_LE) }, 1000)
+        // autoConnect so the request waits for the loader to start advertising rather than firing
+        // once and failing if it is a beat slow — the loader appears a moment after the reboot.
+        handler.postDelayed({ gatt = target.connectGatt(context, true, callback, BluetoothDevice.TRANSPORT_LE) }, 1000)
     }
 
     private fun fail(message: String) {

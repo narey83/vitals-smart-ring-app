@@ -193,6 +193,8 @@ fun SettingsPage(
     onCheckFirmware: () -> Unit,
     /** Runs the auth + info exchange without writing — a safe check before the real flash. */
     onTestFirmware: () -> Unit,
+    /** Re-flashes the version the ring already runs — the safest first real write. */
+    onReflash: () -> Unit,
     onUpdateFirmware: () -> Unit,
     /** Opens a web address in the phone's browser — a release page, or the source. */
     onOpen: (String) -> Unit,
@@ -415,6 +417,12 @@ fun SettingsPage(
                 Divider()
                 if (state.firmwareStatus != null) Value("Check for update", state.firmwareStatus) { onCheckFirmware() }
                 else Action("Check for update") { onCheckFirmware() }
+                // A first real-write test: re-flash the version already installed. Always offered
+                // once a firmware version is known, independent of whether a newer one exists.
+                if (firmware != null) {
+                    Divider()
+                    Action("Re-flash current version") { onReflash() }
+                }
                 if (state.firmwareUpgradable) {
                     Divider()
                     // The safe rehearsal: proves the link and the ring's auth without writing.
