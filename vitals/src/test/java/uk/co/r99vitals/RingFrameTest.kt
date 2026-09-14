@@ -98,6 +98,22 @@ class RingFrameTest {
     }
 
     /**
+     * The two `04 0E` completions seen on hardware: `00 01` on a finger, `00 02` off it. The
+     * result byte is the ring's only on-finger signal over BLE — see PROTOCOL.md — so a reader
+     * that dropped it, as this one once did, would lose the one thing that tells them apart.
+     */
+    @Test fun `a measurement that ran reads as worn`() {
+        val finished = Ring.read(Ring.frame(0x04, 0x0E, byteArrayOf(0x00, Ring.MEASURE_OK.toByte())))
+        assertEquals(Ring.Reading.Finished(type = 0x00, result = Ring.MEASURE_OK), finished)
+        assertEquals(false, (finished as Ring.Reading.Finished).notWorn)
+    }
+
+    @Test fun `a measurement refused for want of a finger reads as not worn`() {
+        val finished = Ring.read(Ring.frame(0x04, 0x0E, byteArrayOf(0x00, Ring.MEASURE_NOT_WORN.toByte())))
+        assertEquals(true, (finished as Ring.Reading.Finished).notWorn)
+    }
+
+    /**
      * Captured from the ring, and decoded here to what the debugger displayed for the same
      * bytes: `2026-08-04 00:49:20  116/76` and `04:36:32  117/78`. Both halves come from one
      * record, so a shifted offset would read a plausible pressure with the wrong diastolic.

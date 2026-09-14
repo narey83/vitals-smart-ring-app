@@ -929,8 +929,14 @@ class MainActivity : AppCompatActivity() {
             group == 0x06 && command == 0x02 && payload.isNotEmpty() -> "${byte(0)}% blood oxygen"
             // Bytes beyond the first two are left raw: their meaning is not established.
             group == 0x06 && command == 0x03 && payload.size >= 2 -> "blood pressure ${byte(0)}/${byte(1)}"
+            // Payload is <type> <result>: 01 measured, 02 refused for want of a finger (the
+            // firmware's tp_wear check) — the one on-finger signal this ring gives. See PROTOCOL.md.
             group == 0x04 && command == 0x0E && payload.isNotEmpty() ->
-                "${measurementName(byte(0))} measurement finished"
+                "${measurementName(byte(0))} measurement " + when (if (payload.size >= 2) byte(1) else 1) {
+                    0x01 -> "finished"
+                    0x02 -> "refused — not on a finger"
+                    else -> "ended (code ${byte(1)})"
+                }
             // The ring is not a Bluetooth keyboard: this reaches whichever app holds the
             // connection, so no other camera app can ever see it.
             group == 0x04 && command == 0x03 -> "shutter pressed on the ring"

@@ -1,6 +1,7 @@
 package uk.co.r99vitals
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -149,5 +150,39 @@ class HistoryTest {
         val stuckFrom = history.all().last().at
         repeat(3) { history.add("steps", 175) }
         assertEquals(stuckFrom, history.stepsFlatSince())
+    }
+
+    /** The collector and the open app both hear the same spell; it is one row, not two. */
+    @Test fun `a charging spell is written down once however often it is heard`() {
+        val history = history()
+        assertTrue(history.charging(true, at = 1_000L))
+        assertFalse(history.charging(true, at = 2_000L))
+        assertTrue(history.charging(false, at = 3_000L))
+        assertEquals(listOf(1, 0), history.all().filter { it.kind == "charging" }.map { it.value })
+    }
+
+    @Test fun `a ring is on the charger only between going on and coming off`() {
+        val history = history()
+        history.charging(true, at = 10_000L)
+        history.charging(false, at = 20_000L)
+        assertFalse(history.chargingAt(5_000L))
+        assertTrue(history.chargingAt(10_000L))
+        assertTrue(history.chargingAt(19_999L))
+        assertFalse(history.chargingAt(20_000L))
+    }
+
+    /** The ring goes on measuring in its case; what it stored there is not the wearer's. */
+    @Test fun `a backfill drops what the ring stored while it was charging`() {
+        val history = history()
+        val on = 1_700_000_000_000L
+        val off = on + 60 * 60 * 1000L
+        history.charging(true, at = on)
+        history.charging(false, at = off)
+        history.backfill("heart", listOf(
+            Triple(on - 10 * 60 * 1000L, 64, 0),
+            Triple(on + 30 * 60 * 1000L, 118, 0),
+            Triple(off + 10 * 60 * 1000L, 70, 0)
+        ))
+        assertEquals(listOf(64, 70), history.all().filter { it.kind == "heart" }.map { it.value })
     }
 }

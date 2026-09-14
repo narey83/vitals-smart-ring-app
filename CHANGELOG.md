@@ -4,6 +4,34 @@ One version covers the whole repository. Both apps are built from `r99.version` 
 [`gradle.properties`](gradle.properties), and each release is tagged `v<version>`. See
 "Versions and releases" in the [README](README.md#versions-and-releases).
 
+## 0.3.0 — 14 September 2026
+
+The ring measures on a timer whether or not it is on a finger, and while it sits in its charging
+case, so Vitals now tells a reading of the wearer from one of the case or the air.
+
+### Added
+
+- **Readings pause while the ring is on the charger.** The collector asks every couple of
+  minutes; going on or off the charger is written to the history and shown on the notification.
+  Heart rate, blood oxygen and blood pressure measured while charging are dropped, and any the
+  ring stored meanwhile are dropped when its history is read back. A reading you take yourself is
+  always kept.
+- **Readings pause while the ring is off your finger.** This firmware answers no wear-status
+  command, but a measurement started off the finger is refused in about a second — the one
+  on-finger signal it gives over BLE. The collector probes on it every ten minutes off the
+  charger and pauses the automatic readings when it comes back unworn. Recovered by
+  disassembling the ring's firmware; see [PROTOCOL.md](PROTOCOL.md).
+- **The Today page shows whether the ring is on a finger**, beside the battery: a fingerprint
+  reading "on finger" or "off finger", hidden while charging or disconnected.
+
+### Fixed
+
+- The `04 0E` measurement-complete frame's second byte is a result code — `01` measured, `02`
+  refused for want of a finger — not the literal `01` PROTOCOL.md once recorded from only ever
+  having captured successful measurements. The debugger now decodes an off-finger abort as
+  "refused — not on a finger", and PROTOCOL.md's finger-detection section is rewritten from the
+  firmware rather than from the vendor SDK's command list alone.
+
 ## 0.2.2 — 11 September 2026
 
 Setup asks for everything the app needs in one go.

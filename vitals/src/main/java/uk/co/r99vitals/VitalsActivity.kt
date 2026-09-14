@@ -792,6 +792,9 @@ class VitalsActivity : AppCompatActivity() {
     private val askBattery = object : Runnable {
         override fun run() {
             if (command != null) enqueue { write(Ring.deviceInfo()) }
+            // The collector runs the wear probe on its own connection; the screen just reflects
+            // its latest word so the home page stays in step with what is being recorded.
+            ui = ui.copy(worn = saved.getBoolean("worn", true))
             // Often while the screen is being looked at, rarely otherwise. The ring never
             // announces going on or off charge, so the only way to notice is to keep asking.
             handler.postDelayed(this, if (watching) 20_000 else 180_000)
@@ -1163,10 +1166,15 @@ class VitalsActivity : AppCompatActivity() {
             resyncClockIfStopped(readings.map { it.first })
             return
         }
+        // On the charger the sensor reads the case. Shown, since someone looking at the screen can
+        // see where the ring is, but not written down unless they asked for it themselves.
+        // A reading the wearer asked for is always theirs. Otherwise the ring must be on a finger
+        // and off the charger for the sensor to be reading a person rather than the case or air.
+        val keep = userAsked || (!ui.charging && ui.worn)
         when (val reading = Ring.read(value)) {
             is Ring.Reading.Heart -> {
                 ui = ui.copy(heart = reading.bpm, heartAt = System.currentTimeMillis())
-                history.record(
+                if (keep) history.record(
                     "heart", reading.bpm,
                     burst = if (ui.workout != null) 10_000L else 90_000L,
                     manual = userAsked
@@ -1176,11 +1184,11 @@ class VitalsActivity : AppCompatActivity() {
             }
             is Ring.Reading.Oxygen -> {
                 ui = ui.copy(oxygen = reading.percent, oxygenAt = System.currentTimeMillis())
-                history.record("oxygen", reading.percent, manual = userAsked)
+                if (keep) history.record("oxygen", reading.percent, manual = userAsked)
             }
             is Ring.Reading.Pressure -> {
                 ui = ui.copy(systolic = reading.systolic, diastolic = reading.diastolic, pressureAt = System.currentTimeMillis())
-                history.record("pressure", reading.systolic, reading.diastolic, manual = userAsked)
+                if (keep) history.record("pressure", reading.systolic, reading.diastolic, manual = userAsked)
             }
             // GetNowStep's reply. No Finished event follows a single request/reply command like
             // this one, so the manual flag is cleared here rather than left for that event.
@@ -1188,16 +1196,30 @@ class VitalsActivity : AppCompatActivity() {
                 showSteps(reading, manual = userAsked)
                 userAsked = false
             }
-            is Ring.Reading.Power -> ui = ui.copy(
-                link = greeting(), battery = reading.percent, charging = reading.charging,
-                firmware = reading.firmware
-            )
+            is Ring.Reading.Power -> {
+                // Written down here as well as by the collector, which asks less often; History
+                // only keeps a change, so the two never record one spell twice.
+                history.charging(reading.charging)
+                ui = ui.copy(
+                    link = greeting(), battery = reading.percent, charging = reading.charging,
+                    firmware = reading.firmware
+                )
+            }
             // Pushed on its own schedule, ahead of the next poll — see the Battery doc comment
             // in Ring.kt for why the poll stays in place alongside it regardless.
             is Ring.Reading.Battery -> ui = ui.copy(battery = reading.percent)
             is Ring.Reading.Finished -> {
                 setButtonsEnabled(true)
                 userAsked = false
+                // The ring says here when it refused a measurement for want of a finger. A reading
+                // the wearer took themselves is trusted as theirs, so this only steers the
+                // automatic ones — see [keep]. Written to the shared pref too, so the battery tick
+                // reads back what this just learned rather than overwriting it.
+                val wornNow = if (reading.notWorn) false else if (reading.result == Ring.MEASURE_OK) true else ui.worn
+                if (wornNow != ui.worn) {
+                    ui = ui.copy(worn = wornNow)
+                    saved.edit().putBoolean("worn", wornNow).apply()
+                }
                 ui = ui.copy(measuring = null)
                 showTrend()
                 if (ui.workout != null && !ui.workoutDetected) keepMeasuring()

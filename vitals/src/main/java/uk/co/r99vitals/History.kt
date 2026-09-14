@@ -62,10 +62,32 @@ class History private constructor(private val dbFile: File, legacy: File?) {
         }
     }
 
+    /**
+     * Writes down the ring going on or off the charger, as a `charging` row of 1 or 0, and
+     * answers whether that was news. Only a change is written, so the activity and the collector
+     * can both report what they hear without the spell being recorded twice.
+     */
+    fun charging(on: Boolean, at: Long = System.currentTimeMillis()): Boolean = synchronized(writing) {
+        if (chargingAt(at) == on) return false
+        // Past the burst window on purpose: a ring lifted off and dropped back within a minute
+        // is two changes, not a correction of one.
+        insert(at, "charging", if (on) 1 else 0, 0, false)
+        true
+    }
+
+    /** Whether the ring was on the charger at [at], as far as the recorded spells say. */
+    fun chargingAt(at: Long = System.currentTimeMillis()): Boolean =
+        latestBefore("charging", at + 1)?.value == 1
+
+    /**
+     * Readings the ring stored while nothing was listening. Any taken while it sat on the charger
+     * are dropped: the sensor was reading the case, not a finger.
+     */
     fun backfill(kind: String, readings: List<Triple<Long, Int, Int>>) {
         if (readings.isEmpty()) return
         synchronized(writing) { transaction {
             readings.forEach { (at, value, extra) ->
+                if (chargingAt(at)) return@forEach
                 db.rawQuery("SELECT 1 FROM readings WHERE kind=? AND at>? AND at<? LIMIT 1",
                     arrayOf(kind, (at - BURST).toString(), (at + BURST).toString())).use {
                     if (!it.moveToFirst()) insert(at, kind, value, extra, false)
@@ -130,7 +152,7 @@ class History private constructor(private val dbFile: File, legacy: File?) {
         return buildString {
             append("${entries.size} readings held on this phone\n\n")
             entries.takeLast(200).reversed().forEach { e ->
-                val v = when (e.kind) { "heart" -> "${e.value} bpm"; "oxygen" -> "${e.value}%"; "pressure" -> "${e.value}/${e.extra} (estimated)"; "steps" -> "${e.value} steps"; else -> e.value.toString() }
+                val v = when (e.kind) { "heart" -> "${e.value} bpm"; "oxygen" -> "${e.value}%"; "pressure" -> "${e.value}/${e.extra} (estimated)"; "steps" -> "${e.value} steps"; "charging" -> if (e.value == 1) "on the charger" else "off the charger"; else -> e.value.toString() }
                 append(stamp.format(e.at)).append("  ").append(e.kind.padEnd(9)).append(v).append('\n')
             }
         }

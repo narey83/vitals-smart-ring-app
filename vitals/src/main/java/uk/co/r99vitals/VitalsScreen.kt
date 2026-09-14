@@ -40,6 +40,7 @@ import androidx.compose.material.icons.rounded.Battery3Bar
 import androidx.compose.material.icons.rounded.Battery5Bar
 import androidx.compose.material.icons.rounded.BatteryFull
 import androidx.compose.material.icons.rounded.DirectionsWalk
+import androidx.compose.material.icons.rounded.Fingerprint
 import androidx.compose.material.icons.rounded.Favorite
 import androidx.compose.material.icons.rounded.MonitorHeart
 import androidx.compose.material.icons.rounded.Settings
@@ -133,6 +134,8 @@ data class VitalsState(
     val connected: Boolean = false,
     val battery: Int? = null,
     val charging: Boolean = false,
+    /** Whether the ring is on a finger, as the last measurement said — see VitalsActivity. */
+    val worn: Boolean = true,
     val heart: Int? = null,
     val heartAt: Long? = null,
     val oxygen: Int? = null,
@@ -308,6 +311,21 @@ private fun Header(state: VitalsState, onLink: () -> Unit, onSettings: () -> Uni
                     Spacer(Modifier.width(6.dp))
                     Text("charging", color = Ink.motion, fontSize = 13.sp)
                 }
+            }
+            // Whether the ring is on a finger. Only while connected and off the charger: in the
+            // case it is neither worn nor measuring anyone, and "charging" already says so. Off
+            // the finger, readings are paused — which is exactly what this is here to explain.
+            if (state.connected && !state.charging) {
+                val wornTone = if (state.worn) Ink.motion else Ink.muted
+                Spacer(Modifier.width(10.dp))
+                Icon(
+                    Icons.Rounded.Fingerprint,
+                    contentDescription = if (state.worn) "On a finger" else "Off a finger",
+                    tint = wornTone,
+                    modifier = Modifier.size(15.dp)
+                )
+                Spacer(Modifier.width(4.dp))
+                Text(if (state.worn) "on finger" else "off finger", color = wornTone, fontSize = 13.sp)
             }
         }
     }

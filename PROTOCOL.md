@@ -103,7 +103,7 @@ The full 329-command table, lifted from the vendor SDK, is in [COMMANDS.md](COMM
 | `06 01` | `<bpm>` | live heart rate, one byte | **verified** — matches `2a37` reading for reading |
 | `06 02` | `<percent>` | live blood oxygen, one byte | **verified** — 93–99% observed |
 | `06 03` | `<systolic> <diastolic> …` | live blood pressure | **verified** — 115/75, 116/76 observed |
-| `04 0E` | `<type> 01` | measurement complete, `type` as above; app acknowledges with `04 0E` + `00` | **verified** |
+| `04 0E` | `<type> <result>` | measurement complete: `type` as above, `result` `01` measured / `02` refused because nothing was on the finger; app acknowledges with `04 0E` + `00` | **verified** — both codes seen |
 | `05 15` | six bytes a record: seconds-from-2000 uint32 LE, a spare byte, then bpm | stored heart rates, following a `05 06` query | **verified** — 25 records read back, including two taken overnight |
 | `05 17` | eight bytes a record: the same timestamp, a spare byte, systolic, diastolic, then a third value | stored blood pressure, following `05 08` | **verified** — `80 E5 03 32 00 74 4C 4E` is `00:49:20  116/76` |
 | `05 18` | twenty bytes a record: the same timestamp, then the percentage at byte 9 | stored blood oxygen, following `05 09` | **verified** — 93–99%, on timestamps matching the pressure records |
@@ -169,12 +169,17 @@ nothing at all.
 3. Write `03 2F 08 00 01 00 4F 1B` to `be940001`.
 4. The ring acknowledges `03 2F 07 00 00 EE 99` and its LED begins flashing.
 5. Readings arrive for ~30 s on both `2a37` and as `06 01` frames on `be940003`.
-6. The ring sends `04 0E 08 00 00 01 FB 52` when finished.
+6. The ring sends `04 0E 08 00 00 01 FB 52` when finished — payload `00 01`, heart / measured.
+   Off the finger the same command aborts in about a second with `04 0E 08 00 00 02` (`00 02`,
+   heart / refused) and no readings at all. That result byte is the wear signal — see the
+   finger-detection section.
 
 **The `2a37` sensor-contact bit is unreliable on this firmware** — it reports "not detected"
 even while returning genuine, varying readings. Treat a non-zero value as the signal, not the
-contact flag. Note also that `2a37` holds its last value indefinitely when idle, so a plausible
-number does not mean a fresh one; only trust readings during an active measurement.
+contact flag. The real wear detector is the capacitive touch read behind `04 0E`'s result byte,
+which is not wired to this SIG bit — see the finger-detection section. Note also that `2a37`
+holds its last value indefinitely when idle, so a plausible number does not mean a fresh one;
+only trust readings during an active measurement.
 
 ## Steps — verified
 
@@ -224,6 +229,78 @@ Running, Riding, RopeSkipping, Walking, Yoga, Golf, Dance.
 do these: HRV, ECG, body temperature, respiratory rate, stress/pressure, blood sugar, blood
 fat, VO2 max, and every associated alarm. Those bits are zero. No protocol work will produce
 that data; the firmware does not implement it.
+
+## Whether the ring is on a finger — the ring knows, but will not tell over BLE
+
+The short answer for a client: **there is no BLE command that reads finger presence on this
+firmware**, so Vitals falls back on charging. But the ring itself detects wear perfectly well —
+this was settled by disassembling the firmware, not by guessing — and the detail matters for
+which false readings can be filtered and how.
+
+### Over the air — verified against hardware, 14 September 2026
+
+Tested with the ring on a finger throughout. Every route the vendor SDK exposes came back empty:
+
+- `Real_WearingStatus` (`06 13`) answers `FB`, refused. `Health_HistoryWearingStatus` (`05 66`)
+  answers `FC`, not implemented.
+- The SIG heart-rate characteristic (`2a37`) sends flags `04` — contact supported, not detected
+  — on every push, including throughout a real measurement taken from the finger. The bit is
+  stuck, not a reading.
+- The SDK's other `wearingState` is byte `[14]` of `Real_UploadComprehensive` (`06 0A`).
+  `AppControlReal` (`03 09`, payload `<on> <type> 02`) accepts types `00`–`05` and refuses
+  `06`–`08`, but no type produced an `06 0A`, idle or during a measurement; `00` streams `06 00`
+  sport data. The capability bitmap has `RealTimeMonitoringMode` clear, which fits.
+
+### Inside the firmware — verified by disassembly
+
+The vendor images are JieLi AC632N (`update.ufw`, `R11M-APP-DFU-KEY1-V<ver>.zip` under
+`staticpage.ycaviation.com/firmware/`; the plist names the ring `R11M`, not `R99`). The chipkey
+is in `isd_config.ini` (`2F1B` here); kagaimiq's `fwunpack_newfw.py` decrypts the flash image
+and kagaimiq's `ghidra-jieli` (q32s) disassembles `app.bin` at base `0x1E00120`. The firmware
+carries three separate wear detectors:
+
+- **`tp_state`** — a live capacitive-touch read through a driver vtable
+  (`[0x4b40+0xdc]`/`+0xe0]`), returning Succ (4) / Idle (5) / Fail. This is the one that gates a
+  measurement: `bphr_user_meas_open` reads it and, unless an override bit is set, aborts with
+  `bphr_user_meas_open tp_wear fail` when the touch reads Idle. That the on-finger measurements
+  above *succeeded* means `tp_state` correctly saw the finger — the working detector and the
+  stuck `2a37` bit simply are not wired to each other.
+- **`tp_wear`** — a stored wear byte (`[0x3990+0x1c8]`, gated by an enable flag at `+0x1c9`)
+  that feeds a status word at `+0x1c4`. Guarded by the enable flag, which is clear here.
+- **PPG bio-proximity and the sleep algorithm** — `bio Prox ok`, `BIO: Wear off!`, `Device wear
+  on now!`, and a whole run of `Maybe not wear` / `Wear off goto START` transitions the staging
+  code uses to decide a night was slept. The sleep algorithm also separates `Maybe is on finger
+  now...` from `...on wrist now...`.
+
+So the hardware knows. The `06 13` refusal is a locked/disabled command in this build, not a
+missing sensor.
+
+### Why the false readings happen — verified by disassembly
+
+`auto_monitor_check`, the gate for the ring's own periodic sampling, checks **only** two things:
+`pm_is_charging` (skip while charging) and whether the clock is synced. **It does not check
+wear.** So the timer fires and the PPG measures whatever is in front of it — a finger, the case,
+or air — whenever the ring is not actively charging. That is the source of the stored junk: a
+ring off the finger but not on the charger still samples on schedule.
+
+Two consequences for Vitals:
+
+- **Charging is a real gate in the firmware too**, which is why pausing on `deviceBatteryState`
+  (`GetDeviceInfo` `02 00` payload `[4]`, `00` off the charger) lines up with the ring's own
+  behaviour. A ring left in the case *after* it finishes charging, though, resumes sampling.
+- **A distinct wear signal, verified.** Because an off-finger measurement aborts in
+  `bphr_user_meas_open`, its `04 0E` completion frame carries a non-success code. Confirmed on
+  hardware 14 September 2026: on a finger, `03 2F 01 00` runs ~30 s and finishes `04 0E … 00 01`
+  with varying live readings; off a finger the same start aborts in ~1 s with `04 0E … 00 02`
+  and no readings. So Vitals can tell worn from unworn by starting a measurement and reading that
+  byte — the only such signal over BLE, and stronger than charging alone. Vitals' collector
+  probes on this every ten minutes off the charger and pauses recording when it comes back
+  unworn; see `watchWear` in the Vitals sources.
+
+This corrected an earlier under-observation: the `04 0E` row once recorded the second payload
+byte as a literal `01`, because only successful measurements had been captured. The vendor SDK's
+`DeviceMeasurementResult` always treated it as a result code (`01`/`02`/other) — the SDK was
+right and the note was wrong.
 
 ## Stored history — verified
 

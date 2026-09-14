@@ -20,6 +20,16 @@ object Ring {
     const val PRESSURE = 0x01
     const val OXYGEN = 0x02
 
+    /**
+     * The result byte of a `04 0E` measurement-complete frame. The ring measured (`01`), or it
+     * refused because nothing was on the finger (`02`) — the firmware's `bphr_user_meas_open`
+     * aborts with `tp_wear fail` when its capacitive touch read comes back untouched. This is the
+     * one on-finger signal this firmware exposes over BLE; the wear-status commands are refused
+     * and the SIG contact bit is stuck. See PROTOCOL.md's finger-detection section.
+     */
+    const val MEASURE_OK = 0x01
+    const val MEASURE_NOT_WORN = 0x02
+
     /** CRC-16/CCITT-FALSE, appended little endian. */
     private fun crc(data: ByteArray): Int {
         var reg = 0xFFFF
@@ -203,7 +213,13 @@ object Ring {
          * contains — see PROTOCOL.md.
          */
         data class Battery(val percent: Int) : Reading
-        data class Finished(val type: Int) : Reading
+        /**
+         * A measurement the ring ran to completion, and how it ended. [result] is the ring's own
+         * code — [MEASURE_OK] or [MEASURE_NOT_WORN]; [notWorn] reads the one that matters here.
+         */
+        data class Finished(val type: Int, val result: Int) : Reading {
+            val notWorn: Boolean get() = result == MEASURE_NOT_WORN
+        }
     }
 
     /** Decodes a frame the ring pushed, or null if it carries nothing this app displays. */
@@ -216,7 +232,9 @@ object Ring {
             0x06 to 0x02 -> payload.takeIf { it.isNotEmpty() }?.let { Reading.Oxygen(at(0)) }
             0x06 to 0x03 -> payload.takeIf { it.size >= 2 }?.let { Reading.Pressure(at(0), at(1)) }
             0x06 to 0x15 -> payload.takeIf { it.isNotEmpty() }?.let { Reading.Battery(at(0)) }
-            0x04 to 0x0E -> payload.takeIf { it.isNotEmpty() }?.let { Reading.Finished(at(0)) }
+            0x04 to 0x0E -> payload.takeIf { it.isNotEmpty() }?.let {
+                Reading.Finished(at(0), if (payload.size >= 2) at(1) else MEASURE_OK)
+            }
             0x02 to 0x00 -> payload.takeIf { it.size >= 6 }?.let {
                 Reading.Power(at(5), at(4) != 0, "V${at(3)}.${at(2)}")
             }
