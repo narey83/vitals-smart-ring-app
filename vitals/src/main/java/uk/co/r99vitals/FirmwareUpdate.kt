@@ -28,10 +28,15 @@ object FirmwareUpdate {
     const val MODEL = "R11M"
 
     sealed interface Result {
-        /** Nothing newer applies to this ring. */
+        /** Nothing newer is on the server. */
         data object UpToDate : Result
-        /** A newer build is available; [ufw] is the extracted image, ready for [RingOta]. */
-        data class Available(val version: String, val ufw: File) : Result
+        /**
+         * A newer build is available; [ufw] is the extracted image, ready for [RingOta].
+         * [approved] is whether the vendor lists this ring for it: `false` means the build exists
+         * and is newer but was withheld from this ring's group — offered anyway at the wearer's
+         * word, with the extra risk made plain, since a build gated away can be gated for a reason.
+         */
+        data class Available(val version: String, val ufw: File, val approved: Boolean) : Result
         data class Failed(val reason: String) : Result
     }
 
@@ -51,24 +56,31 @@ object FirmwareUpdate {
         return pairs.findAll(xml).associate { it.groupValues[1].trim() to it.groupValues[2].trim() }
     }
 
+    /** A version to fetch: its number, the zip URL, and whether the vendor lists this ring for it. */
+    internal data class Upgrade(val version: String, val url: String, val approved: Boolean)
+
     /**
-     * Which offer in [manifest] applies to [mac] and beats [currentVersion], if any. The
-     * MAC-targeted offer wins when the ring is on its allowlist; otherwise the general offer, when
-     * it has a URL at all. Returns the version string and the zip URL to fetch.
+     * The newest offer in [manifest] that beats [currentVersion], or null when nothing on the
+     * server is newer. The general offer (`url`) is always the ring's own and counts as approved.
+     * The MAC-targeted offer (`mac_url`) is taken whenever it is newer — approved only when [mac]
+     * is on the `mac` allowlist. A build outside the list is still returned so the wearer can
+     * choose it, with [Upgrade.approved] false; whichever offer names the higher version wins.
      */
-    internal fun chooseUpgrade(manifest: Map<String, String>, mac: String, currentVersion: String): Pair<String, String>? {
-        val macUrl = manifest["mac_url"].orEmpty()
-        val allow = manifest["mac"].orEmpty().split(",").map { it.trim().uppercase() }
-        if (macUrl.isNotEmpty() && mac.uppercase() in allow) {
-            val v = (manifest["mac_bNo"]?.toIntOrNull() ?: return null) to (manifest["mac_sNo"]?.toIntOrNull() ?: return null)
-            if (isNewer(v, currentVersion)) return "${v.first}.${v.second}" to macUrl
+    internal fun chooseUpgrade(manifest: Map<String, String>, mac: String, currentVersion: String): Upgrade? {
+        val offers = buildList {
+            val macUrl = manifest["mac_url"].orEmpty()
+            val macV = manifest["mac_bNo"]?.toIntOrNull() to manifest["mac_sNo"]?.toIntOrNull()
+            if (macUrl.isNotEmpty() && macV.first != null && macV.second != null) {
+                val approved = mac.uppercase() in manifest["mac"].orEmpty().split(",").map { it.trim().uppercase() }
+                add(Upgrade("${macV.first}.${macV.second}", macUrl, approved) to (macV.first!! to macV.second!!))
+            }
+            val url = manifest["url"].orEmpty()
+            val v = manifest["bNo"]?.toIntOrNull() to manifest["sNo"]?.toIntOrNull()
+            if (url.isNotEmpty() && v.first != null && v.second != null) {
+                add(Upgrade("${v.first}.${v.second}", url, true) to (v.first!! to v.second!!))
+            }
         }
-        val url = manifest["url"].orEmpty()
-        if (url.isNotEmpty()) {
-            val v = (manifest["bNo"]?.toIntOrNull() ?: return null) to (manifest["sNo"]?.toIntOrNull() ?: return null)
-            if (isNewer(v, currentVersion)) return "${v.first}.${v.second}" to url
-        }
-        return null
+        return offers.filter { isNewer(it.second, currentVersion) }.maxByOrNull { it.second.first * 1000 + it.second.second }?.first
     }
 
     /**
@@ -81,11 +93,11 @@ object FirmwareUpdate {
             .getOrElse { return Result.Failed("could not reach the update server: ${it.message}") }
             ?: return Result.Failed("no firmware manifest for this ring")
         val manifest = parsePlist(manifestXml)
-        val (version, zipUrl) = chooseUpgrade(manifest, mac, currentVersion) ?: return Result.UpToDate
-        val ufw = runCatching { download(context, zipUrl) }
+        val upgrade = chooseUpgrade(manifest, mac, currentVersion) ?: return Result.UpToDate
+        val ufw = runCatching { download(context, upgrade.url) }
             .getOrElse { return Result.Failed("could not download the firmware: ${it.message}") }
             ?: return Result.Failed("the downloaded firmware held no update.ufw")
-        return Result.Available(version, ufw)
+        return Result.Available(upgrade.version, ufw, upgrade.approved)
     }
 
     private fun fetchText(url: String): String? {

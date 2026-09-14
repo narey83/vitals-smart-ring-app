@@ -43,17 +43,21 @@ class FirmwareUpdateTest {
         assertEquals("", map["url"])
     }
 
-    @Test fun `a ring on the allowlist is offered the MAC-gated build`() {
+    @Test fun `a ring on the allowlist is offered the MAC-gated build, approved`() {
         val choice = FirmwareUpdate.chooseUpgrade(FirmwareUpdate.parsePlist(manifest), "AA:BB:CC:DD:EE:FF", "V2.32")
-        assertEquals("2.34", choice?.first)
-        assertTrue(choice!!.second.endsWith("V2.34.zip"))
+        assertEquals("2.34", choice?.version)
+        assertTrue(choice!!.approved)
+        assertTrue(choice.url.endsWith("V2.34.zip"))
     }
 
-    @Test fun `a ring off the allowlist is told it is current, because the general offer is empty`() {
-        assertNull(FirmwareUpdate.chooseUpgrade(FirmwareUpdate.parsePlist(manifest), "11:22:33:44:55:66", "V2.32"))
+    @Test fun `a ring off the allowlist is still offered the newer build, marked not approved`() {
+        val choice = FirmwareUpdate.chooseUpgrade(FirmwareUpdate.parsePlist(manifest), "11:22:33:44:55:66", "V2.32")
+        assertEquals("2.34", choice?.version)
+        assertFalse(choice!!.approved)
     }
 
-    @Test fun `an allowlisted ring already on that build is not offered it again`() {
+    @Test fun `a ring already on that build is not offered it again, listed or not`() {
         assertNull(FirmwareUpdate.chooseUpgrade(FirmwareUpdate.parsePlist(manifest), "AA:BB:CC:DD:EE:FF", "V2.34"))
+        assertNull(FirmwareUpdate.chooseUpgrade(FirmwareUpdate.parsePlist(manifest), "11:22:33:44:55:66", "V2.34"))
     }
 }

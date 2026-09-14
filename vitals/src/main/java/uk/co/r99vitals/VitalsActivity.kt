@@ -410,6 +410,8 @@ class VitalsActivity : AppCompatActivity() {
 
     /** The downloaded image waiting to be flashed, if a check found a newer one. */
     private var firmwareFile: java.io.File? = null
+    /** Whether the vendor lists this ring for that build — see [FirmwareUpdate.Result.Available]. */
+    private var firmwareApproved = true
     @Volatile private var firmwareBusy = false
     private var ota: RingOta? = null
 
@@ -436,7 +438,10 @@ class VitalsActivity : AppCompatActivity() {
                     is FirmwareUpdate.Result.UpToDate -> ui.copy(firmwareStatus = "Up to date", firmwareUpgradable = false)
                     is FirmwareUpdate.Result.Available -> {
                         firmwareFile = result.ufw
-                        ui.copy(firmwareStatus = "Update ready: ${result.version}", firmwareUpgradable = true)
+                        firmwareApproved = result.approved
+                        val note = if (result.approved) "Update ready: ${result.version}"
+                            else "Update ready: ${result.version} · not vendor-approved for this ring"
+                        ui.copy(firmwareStatus = note, firmwareUpgradable = true)
                     }
                     is FirmwareUpdate.Result.Failed -> ui.copy(firmwareStatus = result.reason, firmwareUpgradable = false)
                 }
@@ -448,13 +453,18 @@ class VitalsActivity : AppCompatActivity() {
     private fun confirmFirmwareUpdate() {
         val ufw = firmwareFile ?: return
         val address = ringAddress ?: return
+        val base = "This rewrites the ring's own software over Bluetooth using the maker's flashing " +
+            "process. Keep the ring on its charger and the phone right beside it, and leave the app " +
+            "open. If the link drops partway through, the ring can be left unusable."
+        // A build the vendor withheld from this ring may have been withheld for a reason; say so
+        // plainly rather than bury it, since it raises the odds of exactly that dead ring.
+        val message = if (firmwareApproved) base
+            else "$base\n\nThe maker does not list your ring for this build — it may not be meant " +
+                "for your ring's hardware, which makes a bad flash more likely. Only go on if you " +
+                "accept that risk."
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Update ring firmware?")
-            .setMessage(
-                "This rewrites the ring's own software over Bluetooth using the maker's flashing " +
-                    "process. Keep the ring on its charger and the phone right beside it, and leave " +
-                    "the app open. If the link drops partway through, the ring can be left unusable."
-            )
+            .setMessage(message)
             .setPositiveButton("Update") { _, _ -> flashFirmware(address, ufw) }
             .setNegativeButton("Cancel", null)
             .show()
