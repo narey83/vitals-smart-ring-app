@@ -376,14 +376,6 @@ fun SettingsPage(
             Detail("Firmware", firmware ?: "unknown")
             Divider()
             Detail("Battery", state.battery?.let { "$it%" } ?: "unknown")
-            Divider()
-            Value("Run in background", if (unrestricted) "Unrestricted" else "Optimised") { onBackground() }
-        }
-        if (!unrestricted) {
-            Note(
-                "Optimised lets Android put off reconnecting to the ring while the phone sleeps, " +
-                    "which is how hours of steps go missing. Tap to let it run unrestricted."
-            )
         }
         if (ringAddress != null) {
             // Flashing is the one operation that can brick the ring, so the firmware actions show
@@ -419,6 +411,19 @@ fun SettingsPage(
             )
         } else {
             Panel { Action("Find your ring") { onRepair() } }
+        }
+
+        // A phone setting, not the ring's: whether Android lets the collector keep the link up
+        // while the phone sleeps.
+        Section("BACKGROUND")
+        Panel {
+            Value("Run in background", if (unrestricted) "Unrestricted" else "Optimised") { onBackground() }
+        }
+        if (!unrestricted) {
+            Note(
+                "Optimised lets Android put off reconnecting to the ring while the phone sleeps, " +
+                    "which is how hours of steps go missing. Tap to let it run unrestricted."
+            )
         }
 
         Section("DATA")
