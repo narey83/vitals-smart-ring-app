@@ -54,7 +54,9 @@ fun WorkoutPage(
     state: VitalsState,
     onStart: (String) -> Unit,
     onStop: () -> Unit,
-    onRelabel: (Long, String) -> Unit = { _, _ -> }
+    onRelabel: (Long, String) -> Unit = { _, _ -> },
+    routeOf: (Long) -> List<Route.Fix> = { emptyList() },
+    onDeleteRoute: (Long) -> Unit = {}
 ) {
     var pending by remember { mutableStateOf<String?>(null) }
     // Which finished session has its sports opened for correction, by its start time.
@@ -98,6 +100,10 @@ fun WorkoutPage(
                     PastSession(
                         session = session,
                         correcting = correcting == session.at.time,
+                        metric = state.distanceMetric,
+                        hasRoute = session.at.time in state.routes,
+                        routeOf = routeOf,
+                        onDeleteRoute = onDeleteRoute,
                         onCorrect = {
                             correcting = if (correcting == session.at.time) null else session.at.time
                         },
@@ -147,6 +153,11 @@ fun WorkoutPage(
                         "corrected afterwards.",
                     color = Ink.muted, fontSize = 13.sp, lineHeight = 18.sp
                 )
+            }
+
+            if (state.workoutRouting) {
+                Spacer(Modifier.height(16.dp))
+                LiveRoute(state.workout, state.workoutRoute, state.distanceMetric)
             }
 
             Spacer(Modifier.height(20.dp))
@@ -202,13 +213,58 @@ fun WorkoutPage(
  * A detected one says so, and its sport can be corrected: the app worked it out from cadence
  * alone, which tells a walk from a run and nothing else, so the wearer has the last word.
  */
+/**
+ * Distance, pace and the shape of the route so far, for a session following the GPS.
+ *
+ * Worked out here from the route file the collector is writing, with the same [Track] the
+ * notification uses, so the two cannot show different distances.
+ */
+@Composable
+private fun LiveRoute(sport: String, fixes: List<Route.Fix>, metric: Boolean) {
+    val track = remember(fixes, metric) { Track.of(sport, fixes, metric) }
+    Card(
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = Ink.card),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(Modifier.padding(vertical = 18.dp, horizontal = 16.dp)) {
+            if (!track.started) {
+                Text(
+                    fixes.lastOrNull()?.accuracy?.let { "Waiting for GPS · ±${it.toInt()} m" } ?: "Waiting for GPS…",
+                    color = Ink.muted, fontSize = 14.sp
+                )
+                Text(
+                    "It needs a view of the sky. Distance starts once the position is good to " +
+                        "within ${Track.WORST_ACCURACY.toInt()} m.",
+                    color = Ink.muted, fontSize = 12.sp, lineHeight = 16.sp
+                )
+                return@Column
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Figure("DISTANCE", Units.distance(track.metres.toInt(), metric))
+                Figure(if (sport == "Ride") "SPEED" else "PACE", track.currentSpeed()?.let { Track.rate(sport, it, metric) } ?: "––")
+                Figure("AVERAGE", track.averageSpeed()?.let { Track.rate(sport, it, metric) } ?: "––")
+            }
+            if (fixes.size > 1) {
+                Spacer(Modifier.height(14.dp))
+                RouteMap(fixes, Ink.motion, Modifier.fillMaxWidth().height(170.dp))
+            }
+        }
+    }
+}
+
 @Composable
 private fun PastSession(
     session: Workouts.Session,
     correcting: Boolean = false,
+    metric: Boolean = false,
+    hasRoute: Boolean = false,
+    routeOf: (Long) -> List<Route.Fix> = { emptyList() },
+    onDeleteRoute: (Long) -> Unit = {},
     onCorrect: () -> Unit = {},
     onRelabel: (String) -> Unit = {}
 ) {
+    var showingRoute by remember { mutableStateOf(false) }
     Card(
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(containerColor = Ink.card),
@@ -229,6 +285,8 @@ private fun PastSession(
             Text(
                 buildString {
                     append("${session.minutes} min")
+                    if (session.metres > 0) append(" · ${Units.distance(session.metres, metric)}")
+                    session.speed?.let { append(" · ${Track.rate(session.sport, it, metric)}") }
                     if (session.steps > 0) append(" · %,d steps".format(session.steps))
                     if (session.beats.isNotEmpty()) {
                         append(" · average ${session.average} · peak ${session.high}")
@@ -239,6 +297,17 @@ private fun PastSession(
             if (session.beats.size > 1) {
                 Spacer(Modifier.height(12.dp))
                 TrendChart(session.beats, Ink.motion, Modifier.fillMaxWidth().height(72.dp), showScale = false)
+            }
+            if (hasRoute) {
+                Spacer(Modifier.height(12.dp))
+                if (showingRoute) {
+                    RouteDetail(session, metric, routeOf, onDelete = { onDeleteRoute(session.at.time); showingRoute = false })
+                } else {
+                    Text(
+                        "Show route", color = Ink.motion, fontSize = 13.sp,
+                        modifier = Modifier.clickableNoRippleShared { showingRoute = true }
+                    )
+                }
             }
             if (session.detected) {
                 Spacer(Modifier.height(12.dp))
@@ -263,6 +332,69 @@ private fun PastSession(
             }
         }
     }
+}
+
+/**
+ * A finished route: its shape, and how long each kilometre or mile took.
+ *
+ * Read from the file only when opened, since a list of sessions would otherwise parse every
+ * route on the phone to draw cards that mostly stay closed. Deleting takes two taps: a route
+ * cannot be recorded again.
+ */
+@Composable
+private fun RouteDetail(
+    session: Workouts.Session,
+    metric: Boolean,
+    routeOf: (Long) -> List<Route.Fix>,
+    onDelete: () -> Unit
+) {
+    val fixes = remember(session.at.time) { routeOf(session.at.time) }
+    val track = remember(fixes, metric) { Track.of(session.sport, fixes, metric) }
+    var confirming by remember { mutableStateOf(false) }
+    Column {
+        RouteMap(fixes, Ink.motion, Modifier.fillMaxWidth().height(190.dp))
+        if (track.splits.isNotEmpty()) {
+            Spacer(Modifier.height(12.dp))
+            Text(
+                if (metric) "SPLITS · PER KM" else "SPLITS · PER MILE",
+                color = Ink.muted, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.4.sp
+            )
+            Spacer(Modifier.height(6.dp))
+            val fastest = track.splits.min()
+            track.splits.forEachIndexed { i, millis ->
+                Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("${i + 1}", color = Ink.muted, fontSize = 13.sp, modifier = Modifier.width(28.dp))
+                    // Bar length against the slowest, so the quick ones stand out as the long ones.
+                    val share = fastest.toFloat() / millis
+                    Spacer(
+                        Modifier
+                            .height(8.dp)
+                            .fillMaxWidth(0.62f * share)
+                            .background(Ink.motion.copy(alpha = if (millis == fastest) 0.9f else 0.45f), CircleShape)
+                    )
+                    Spacer(Modifier.weight(1f))
+                    Text(clock(millis), color = Ink.text, fontSize = 13.sp)
+                }
+            }
+        }
+        if (session.movingSeconds > 0) {
+            Spacer(Modifier.height(8.dp))
+            Text("Moving ${clock(session.movingSeconds * 1000L)} of ${session.minutes} min", color = Ink.muted, fontSize = 12.sp)
+        }
+        Spacer(Modifier.height(10.dp))
+        Text(
+            if (confirming) "Tap again to delete this route for good" else "Delete route",
+            color = if (confirming) Ink.heart else Ink.muted, fontSize = 13.sp,
+            modifier = Modifier.clickableNoRippleShared { if (confirming) onDelete() else confirming = true }
+        )
+    }
+}
+
+/** 5:32, or 1:04:10 past the hour. */
+private fun clock(millis: Long): String {
+    val seconds = millis / 1000
+    return if (seconds >= 3600) "%d:%02d:%02d".format(seconds / 3600, seconds / 60 % 60, seconds % 60)
+    else "%d:%02d".format(seconds / 60, seconds % 60)
 }
 
 /** Marks a session the app found rather than one the wearer started. */

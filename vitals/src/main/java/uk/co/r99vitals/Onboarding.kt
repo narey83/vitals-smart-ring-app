@@ -46,7 +46,7 @@ import kotlinx.coroutines.delay
  * and [retreatOnboarding] step through, taken straight from [OnboardingStep.entries].
  */
 enum class OnboardingStep {
-    Splash, Name, Sex, Birthday, Height, Weight, Distance, SkinTone, Goals, Sleep, Notifications, Pairing
+    Splash, Name, Sex, Birthday, Height, Weight, Distance, SkinTone, Goals, Sleep, Notifications, Location, Pairing
 }
 
 @Composable
@@ -63,6 +63,7 @@ fun OnboardingFlow(
     onNext: () -> Unit,
     onBack: () -> Unit,
     onEnableNotifications: () -> Unit,
+    onEnableLocation: () -> Unit,
     onFindRing: () -> Unit
 ) {
     Box(Modifier.fillMaxSize().background(Ink.canvas)) {
@@ -78,6 +79,7 @@ fun OnboardingFlow(
             OnboardingStep.Goals -> GoalsPage(stepGoal, onGoal, onNext, onBack)
             OnboardingStep.Sleep -> SleepGoalPage(plan, onPlan, onNext, onBack)
             OnboardingStep.Notifications -> NotificationsPage(onEnableNotifications, onNext, onBack)
+            OnboardingStep.Location -> LocationPage(onEnableLocation, onNext, onBack)
             OnboardingStep.Pairing -> PairingPage(link, onFindRing, onNext, onBack)
         }
     }
@@ -381,6 +383,36 @@ private fun NotificationsPage(onEnable: () -> Unit, onSkip: () -> Unit, onBack: 
         secondaryLabel = "Not now",
         onSecondary = onSkip
     ) {}
+}
+
+/**
+ * Location, for workout routes. Asked here so it is not a surprise mid-run, and skippable, since
+ * everything else in the app works without it — a walk started later asks again.
+ *
+ * Only ever "while using the app": a route is followed for a workout started from the app, and
+ * the collector holds it from there with its notification showing. Allowing it all the time would
+ * add nothing, and Android would rightly warn about it.
+ */
+@Composable
+private fun LocationPage(onEnable: () -> Unit, onSkip: () -> Unit, onBack: () -> Unit) {
+    OnboardingScaffold(
+        step = OnboardingStep.Location,
+        title = "Map your workouts",
+        subtitle = "Walks, runs and rides you start can record their route, distance and pace from " +
+            "your phone's GPS. Only while one is running, and it stays on this phone.",
+        onBack = onBack,
+        primaryLabel = "Allow location",
+        onPrimary = onEnable,
+        secondaryLabel = "Not now",
+        onSecondary = onSkip
+    ) {
+        Spacer(Modifier.height(4.dp))
+        Text(
+            "Choose \"While using the app\" when Android asks. That is all a route needs: the " +
+                "workout keeps it with the screen off. You can turn routes off per sport in Settings.",
+            color = Ink.muted, fontSize = 15.sp, lineHeight = 21.sp
+        )
+    }
 }
 
 @Composable

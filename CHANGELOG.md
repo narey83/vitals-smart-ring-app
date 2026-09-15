@@ -33,8 +33,17 @@ One version covers the whole repository. Both apps are built from `r99.version` 
   ride), in kilometres or miles as set. A phone standing still does not add distance: positions are
   averaged over a few seconds and count only once they have moved clearly past the GPS's own stated
   accuracy, and jumps nobody could make, such as reflections off buildings, are dropped. Until the
-  GPS has a good enough fix it says "Waiting for GPS". The drawn route and splits on screen follow
-  in a later change.
+  GPS has a good enough fix it says "Waiting for GPS".
+- **The Workout screen shows the route.** While a walk, run or ride is going, a card shows the
+  distance, current and average pace (speed for a ride) and the shape of the route so far. Each
+  finished session lists its distance and pace, and **Show route** opens the shape of the route
+  drawn without a map, its splits per kilometre or mile, and moving time against the whole. A
+  route can be deleted from there, with a second tap to be sure, keeping the session's distance.
+- **Settings → Workouts chooses which sports record a route**: walks, runs and rides, all on
+  unless turned off.
+- **Setup asks for location**, on a page of its own before finding the ring, saying to choose
+  "While using the app", which is all a route needs. It can be skipped; a walk started later asks
+  again.
 
 ## 0.4.1 — 14 September 2026
 

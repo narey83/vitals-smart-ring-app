@@ -508,7 +508,7 @@ class CollectorService : Service() {
      */
     private fun followRoute() {
         val own = manual ?: return
-        if (own.sport !in Route.SPORTS || recorder.running || !Route.permitted(this)) return
+        if (!Route.wanted(this, own.sport) || recorder.running || !Route.permitted(this)) return
         try {
             promote(location = true)
             val route = RouteFile(Route.folder(this), own.since)

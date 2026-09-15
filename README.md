@@ -112,6 +112,9 @@ vital tab carries its own chart, statistics and day-by-day history.
   sleeps; then Health Connect ("Fitness and wellness"). Anything already granted, or not a
   permission on your phone, is skipped. Vitals reads nothing from the phone's own sensors, since
   the ring's data arrives over Bluetooth, so refusing Sensors changes nothing.
+- **Records the route of a walk, run or ride you start**, from the phone's own GPS: distance,
+  pace or speed, per-kilometre or per-mile splits, and the shape of the route. See "Why Vitals
+  asks for location" below.
 - **Tells you when a newer version is out.** Once a day it asks GitHub for this repository's
   latest release, and says so in Settings and with a quiet notification if it is newer than the
   one installed. Settings → Updates also has **Check now**, and a switch to stop checking.
@@ -152,11 +155,34 @@ does not run and nothing else changes. The code is
 [`Updates.kt`](vitals/src/main/java/uk/co/r99vitals/Updates.kt). The debugger has no network
 permission at all.
 
+### Why Vitals asks for location
+
+Only to record the route of a workout you start yourself.
+
+The ring has no GPS, so distance and pace come from the phone's. Vitals asks for location once,
+during setup or the first time a walk, run or ride is started, and **"While using the app" is
+all it needs**: a workout is started from the app, and the background service keeps following
+the GPS from there, with its notification showing, until you finish. It never asks for location
+all the time, and never follows it outside a workout.
+
+- **What it uses:** Android's own GPS provider, not Google's location service, so it works on
+  phones without Google apps.
+- **Where it goes:** a file per workout in the app's own storage, `files/routes/<start>.csv`.
+  Nothing is sent anywhere. The route is drawn without a map, because map tiles would have to
+  be fetched from a server that would then know where you had been.
+- **Turning it off:** per sport in Settings → Workouts, or refuse the permission. A workout is
+  still recorded without it, just without a route. Any single route can be deleted from its
+  workout, which keeps the distance and time.
+
+The code is [`Route.kt`](vitals/src/main/java/uk/co/r99vitals/Route.kt),
+[`RouteRecorder.kt`](vitals/src/main/java/uk/co/r99vitals/RouteRecorder.kt) and
+[`Track.kt`](vitals/src/main/java/uk/co/r99vitals/Track.kt).
+
 ## Finding a workout nobody started
 
-The ring has no notion of an activity beginning. `Health_HistorySport` has answered with zero
-records on every capture, from this app and the vendor's alike, and nothing in the capability
-bitmap recognises exercise. What the ring *does* do, unprompted, is push its running step total
+The ring has no notion of an activity beginning. `Health_HistorySport` turns out to hold
+half-hour step totals rather than sessions, and nothing in the capability bitmap recognises
+exercise. What the ring *does* do, unprompted, is push its running step total
 every couple of seconds for as long as anything is connected.
 
 The difference between two of those pushes is cadence, and a cadence that holds is what a walk

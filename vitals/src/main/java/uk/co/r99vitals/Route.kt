@@ -29,6 +29,13 @@ object Route {
         val accuracy: Float? = null
     )
 
+    /**
+     * Whether the wearer wants a route kept for this sport, as chosen in Settings. On for all
+     * three unless turned off: it is why location is asked for, and it is asked for on first use.
+     */
+    fun wanted(context: Context, sport: String) =
+        sport in SPORTS && context.getSharedPreferences("ring", Context.MODE_PRIVATE).getBoolean("route$sport", true)
+
     fun permitted(context: Context) =
         context.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
 

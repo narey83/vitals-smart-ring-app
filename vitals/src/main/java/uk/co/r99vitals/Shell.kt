@@ -61,6 +61,8 @@ fun Shell(
     onStartWorkout: (String) -> Unit,
     onStopWorkout: () -> Unit,
     onRelabelWorkout: (Long, String) -> Unit,
+    routeOf: (Long) -> List<Route.Fix>,
+    onDeleteRoute: (Long) -> Unit,
     onCalibrate: () -> Unit,
     onRefreshSteps: () -> Unit,
     sleepTarget: Int,
@@ -94,7 +96,7 @@ fun Shell(
         Column(Modifier.fillMaxSize().padding(padding)) {
             when (tab) {
                 Tab.Today -> VitalsScreen(state, onSettings, onLink, onVital = onTab, sleepTarget)
-                Tab.Workout -> WorkoutPage(state, onStartWorkout, onStopWorkout, onRelabelWorkout)
+                Tab.Workout -> WorkoutPage(state, onStartWorkout, onStopWorkout, onRelabelWorkout, routeOf, onDeleteRoute)
                 Tab.Sleep -> SleepPage(state.nights, sleepTarget, dayOffset, onDay)
                 else -> VitalPage(
                     day = dayFor(tab),

@@ -183,6 +183,9 @@ fun SettingsPage(
     onMonitors: (Ring.Monitors) -> Unit,
     autoWorkouts: Boolean,
     onAutoWorkouts: (Boolean) -> Unit,
+    /** The sports whose route is recorded from the phone's GPS — see Route.wanted. */
+    routeSports: Set<String>,
+    onRouteSport: (String, Boolean) -> Unit,
     /** Whether Android has been told to leave the collector alone, rather than ration it. */
     unrestricted: Boolean,
     onBackground: () -> Unit,
@@ -353,6 +356,19 @@ fun SettingsPage(
                 "is what makes the curve worth keeping and what costs the ring's battery — turn " +
                 "it off and workouts are only the ones you start yourself. The ring cannot see " +
                 "cycling or yoga either way: neither makes steps."
+        )
+        Panel {
+            Route.SPORTS.forEachIndexed { i, sport ->
+                if (i > 0) Divider()
+                val on = sport in routeSports
+                Pick("Record the route of a ${sport.lowercase()}", on) { onRouteSport(sport, !on) }
+            }
+        }
+        Note(
+            "From the phone's own GPS, for workouts you start yourself, and only while one is " +
+                "running. The route stays on this phone and is drawn without a map, since map " +
+                "tiles would have to come from a server that would then know where you went. " +
+                "Location is asked for the first time it is needed."
         )
 
         Section("APPEARANCE")

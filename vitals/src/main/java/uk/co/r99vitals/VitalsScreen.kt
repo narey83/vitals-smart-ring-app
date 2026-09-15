@@ -160,6 +160,12 @@ data class VitalsState(
     /** Found in the step counter by the collector rather than started here — see [WorkoutDetector]. */
     val workoutDetected: Boolean = false,
     val pastWorkouts: List<Workouts.Session> = emptyList(),
+    /** The route of the session running now, as far as it has got. */
+    val workoutRoute: List<Route.Fix> = emptyList(),
+    /** Whether the session running now is following the GPS, so an empty route means waiting. */
+    val workoutRouting: Boolean = false,
+    /** Which finished sessions still have a route, by their start time. */
+    val routes: Set<Long> = emptySet(),
     val nights: List<Sleep.Night> = emptyList(),
     val stepGoal: Int = 10_000,
     val firmware: String? = null,

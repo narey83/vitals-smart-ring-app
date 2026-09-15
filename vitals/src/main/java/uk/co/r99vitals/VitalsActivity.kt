@@ -72,6 +72,7 @@ class VitalsActivity : AppCompatActivity() {
     private var interval = 15   // minutes; 0 means off
     /** Read by the collector, which does the detecting; held here only so Settings can show it. */
     private var autoWorkouts by mutableStateOf(true)
+    private var routeSports by mutableStateOf(emptySet<String>())
     private var monitors = Ring.Monitors()
     private var settingsOpen by mutableStateOf(false)
     /** Whether Android leaves the collector alone rather than rationing it; read again on resume. */
@@ -146,6 +147,11 @@ class VitalsActivity : AppCompatActivity() {
                     "pressure" -> measure(Ring.PRESSURE, "blood pressure")
                     "workout" -> startWorkout("Walk")
                     "stopworkout" -> stopWorkout()
+                    // One onboarding page on its own, to read it without a fresh install:
+                    //   --es do onboarding --es step Location
+                    "onboarding" -> onboarding = runCatching {
+                        OnboardingStep.valueOf(intent.getStringExtra("step") ?: "Splash")
+                    }.getOrNull()
                     // The morning report is posted on unlocking, which cannot be faked from a
                     // shell — this shows the same notification for the last night held, so its
                     // wording can be read without waiting for tomorrow morning.
@@ -184,6 +190,7 @@ class VitalsActivity : AppCompatActivity() {
         settingsOpen = savedInstanceState?.getBoolean("settings") == true
         interval = saved.getInt("interval", 15)
         autoWorkouts = saved.getBoolean("autoWorkouts", true)
+        routeSports = Route.SPORTS.filter { Route.wanted(this, it) }.toSet()
         monitors = Ring.Monitors(
             heart = saved.getBoolean("monitorHeart", true),
             oxygen = saved.getBoolean("monitorOxygen", true),
@@ -236,6 +243,7 @@ class VitalsActivity : AppCompatActivity() {
                     onNext = { advanceOnboarding() },
                     onBack = { retreatOnboarding() },
                     onEnableNotifications = { askNotificationThenAdvance() },
+                    onEnableLocation = { askLocationThenAdvance() },
                     onFindRing = { askThenConnect() }
                 )
             } else if (settingsOpen) {
@@ -266,6 +274,11 @@ class VitalsActivity : AppCompatActivity() {
                     onAutoWorkouts = { on ->
                         autoWorkouts = on
                         saved.edit().putBoolean("autoWorkouts", on).apply()
+                    },
+                    routeSports = routeSports,
+                    onRouteSport = { sport, on ->
+                        saved.edit().putBoolean("route$sport", on).apply()
+                        routeSports = if (on) routeSports + sport else routeSports - sport
                     },
                     onMonitors = { chosen ->
                         monitors = chosen
@@ -314,6 +327,11 @@ class VitalsActivity : AppCompatActivity() {
                     onStartWorkout = { startWorkout(it) },
                     onStopWorkout = { stopWorkout() },
                     onRelabelWorkout = { at, sport -> relabelWorkout(at, sport) },
+                    routeOf = { at -> RouteFile(Route.folder(this), at).fixes() },
+                    onDeleteRoute = { at ->
+                        RouteFile(Route.folder(this), at).delete()
+                        ui = ui.copy(routes = routesHeld())
+                    },
                     onCalibrate = { sheet = Sheet.Calibrate },
                     onRefreshSteps = { refreshSteps() },
                     dayFor = { pageFor(it) }
@@ -321,7 +339,7 @@ class VitalsActivity : AppCompatActivity() {
             }
         }
         showTrend()
-        ui = ui.copy(pastWorkouts = workouts.all(), nights = nights.all())
+        ui = ui.copy(pastWorkouts = workouts.all(), routes = routesHeld(), nights = nights.all())
         if (BuildConfig.DEBUG) {
             ContextCompat.registerReceiver(
                 this, overAdb, IntentFilter("uk.co.r99vitals.RUN"), ContextCompat.RECEIVER_EXPORTED
@@ -388,6 +406,20 @@ class VitalsActivity : AppCompatActivity() {
             ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
                 PackageManager.PERMISSION_GRANTED
         if (already) advanceOnboarding() else onboardingNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
+    }
+
+    private val onboardingLocation = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) {
+        // Refused is as good as skipped: a route is asked for again when a walk is first started.
+        advanceOnboarding()
+    }
+
+    private fun askLocationThenAdvance() {
+        if (Route.permitted(this)) advanceOnboarding()
+        else onboardingLocation.launch(
+            arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
+        )
     }
 
     /** "Check now" with the Network permission off asks for it first, then checks. */
@@ -882,7 +914,7 @@ class VitalsActivity : AppCompatActivity() {
         // A walk, run or ride records its route, and location is asked for here, the first time it
         // is wanted, rather than during setup for a feature someone may never use. The workout
         // starts whatever the answer: a route is a part of it, not a condition for it.
-        if (sport in Route.SPORTS && !Route.permitted(this)) {
+        if (Route.wanted(this, sport) && !Route.permitted(this)) {
             routeFor = sport
             askLocation.launch(
                 arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
@@ -907,7 +939,8 @@ class VitalsActivity : AppCompatActivity() {
         startedAt = System.currentTimeMillis()
         ui = ui.copy(
             workout = sport, workoutSince = startedAt,
-            workoutBeats = emptyList(), streaming = true, workoutDetected = false
+            workoutBeats = emptyList(), streaming = true, workoutDetected = false,
+            workoutRoute = emptyList(), workoutRouting = following(sport, detected = false)
         )
     }
 
@@ -926,22 +959,33 @@ class VitalsActivity : AppCompatActivity() {
         when {
             now != null -> {
                 val beats = live.beats()
+                val routing = following(now.sport, now.detected)
+                val route = if (routing) RouteFile(Route.folder(this), now.since).fixes() else emptyList()
                 if (now.sport != ui.workout || now.since != ui.workoutSince || now.detected != ui.workoutDetected ||
-                    beats != ui.workoutBeats
+                    beats != ui.workoutBeats || route.size != ui.workoutRoute.size || routing != ui.workoutRouting
                 ) ui = ui.copy(
                     workout = now.sport, workoutSince = now.since, workoutBeats = beats,
-                    workoutDetected = now.detected, streaming = true
+                    workoutDetected = now.detected, streaming = true,
+                    workoutRoute = route, workoutRouting = routing
                 )
             }
             ui.workout != null && System.currentTimeMillis() - startedAt > 3_000 -> {
                 ui = ui.copy(
                     workout = null, workoutDetected = false, workoutBeats = emptyList(),
-                    streaming = false, pastWorkouts = workouts.all()
+                    streaming = false, pastWorkouts = workouts.all(), routes = routesHeld()
                 )
                 showTrend()
             }
         }
     }
+
+    /** Whether a session is following the GPS: the wearer's own, for a sport they want a route for, with location allowed. */
+    private fun following(sport: String, detected: Boolean) =
+        !detected && Route.wanted(this, sport) && Route.permitted(this)
+
+    /** Finished sessions whose route is still on the phone, by start time. */
+    private fun routesHeld(): Set<Long> =
+        Route.folder(this).listFiles()?.mapNotNull { it.name.removeSuffix(".csv").toLongOrNull() }?.toSet() ?: emptySet()
 
     /** Only while the app is in front: nothing needs polling when there is no screen to update. */
     private val watchSession = object : Runnable {
@@ -954,7 +998,7 @@ class VitalsActivity : AppCompatActivity() {
     /** The wearer correcting a guess. Only the sport changes, and only for that one session. */
     private fun relabelWorkout(startedAt: Long, sport: String) {
         workouts.relabel(startedAt, sport)
-        ui = ui.copy(pastWorkouts = workouts.all())
+        ui = ui.copy(pastWorkouts = workouts.all(), routes = routesHeld())
     }
 
     /**
@@ -1428,7 +1472,7 @@ class VitalsActivity : AppCompatActivity() {
         if (command == null && ringAddress != null) askThenConnect()
         showTrend()
         // A walk taken with the app closed is already recorded by the time it is opened.
-        ui = ui.copy(pastWorkouts = workouts.all())
+        ui = ui.copy(pastWorkouts = workouts.all(), routes = routesHeld())
         handler.removeCallbacks(watchSession)
         handler.post(watchSession)
     }
