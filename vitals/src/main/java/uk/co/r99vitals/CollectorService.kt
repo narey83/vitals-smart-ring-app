@@ -69,6 +69,10 @@ class CollectorService : Service() {
     private lateinit var recorder: RouteRecorder
     private var lastFix: Route.Fix? = null
 
+    /** Distance and pace so far, from the fixes the route has kept. */
+    private var track: Track? = null
+    private var shownFixAt = 0L
+
     /** What the detected session is written down as, so a walk picking up into a run is noticed. */
     private var detectedSport: String? = null
 
@@ -234,12 +238,7 @@ class CollectorService : Service() {
             sport != null -> listOfNotNull(
                 sessionBeats.lastOrNull()?.let { "$it bpm" } ?: "Finding your heart rate",
                 "%,d steps".format(detector.steps).takeIf { manual == null },
-                // How sure the GPS is, so a route that is not being found says so.
-                when {
-                    !recorder.running -> null
-                    lastFix == null -> "Waiting for GPS"
-                    else -> lastFix?.accuracy?.let { "GPS ±${it.toInt()} m" } ?: "GPS"
-                }
+                routeSoFar()
             ).joinToString(" · ")
             // Said here rather than left looking like a quiet day: nothing is being counted.
             saidOutOfReach -> "Ring out of reach since ${clock.format(java.util.Date(lostAt))}"
@@ -512,9 +511,15 @@ class CollectorService : Service() {
         if (own.sport !in Route.SPORTS || recorder.running || !Route.permitted(this)) return
         try {
             promote(location = true)
-            recorder.start(RouteFile(Route.folder(this), own.since)) { fix ->
+            val route = RouteFile(Route.folder(this), own.since)
+            // Picked up from the file, so a collector restarted mid-run carries the distance on
+            // rather than starting it again from where the wearer happens to be now.
+            track = Track.of(own.sport, route.fixes())
+            recorder.start(route) { fix ->
                 lastFix = fix
-                refresh()
+                track?.add(fix)
+                // A fix a second; the lock screen does not need telling that often.
+                if (fix.at - shownFixAt >= 5_000) { shownFixAt = fix.at; refresh() }
             }
             log.note("following the route" + if (recorder.enabled) "" else ", but location is switched off")
         } catch (e: Exception) {
@@ -529,7 +534,26 @@ class CollectorService : Service() {
         if (!recorder.running) return
         recorder.stop()
         lastFix = null
+        track = null
         promote(location = false)
+    }
+
+    /**
+     * "2.41 km · 5:32 /km" once there is a route to speak of, and until then how the GPS is doing,
+     * so a phone that cannot see the sky says so rather than showing nothing.
+     */
+    private fun routeSoFar(): String? {
+        if (!recorder.running) return null
+        val sport = manual?.sport ?: return null
+        val so = track
+        if (so == null || !so.started) {
+            return lastFix?.accuracy?.let { "Waiting for GPS (±${it.toInt()} m)" } ?: "Waiting for GPS"
+        }
+        val metric = saved.getBoolean("distanceMetric", false)
+        return listOfNotNull(
+            Units.distance(so.metres.toInt(), metric),
+            so.currentSpeed()?.let { Track.rate(sport, it, metric) }
+        ).joinToString(" · ")
     }
 
     private fun startSession(sport: String, since: Long, detected: Boolean) {

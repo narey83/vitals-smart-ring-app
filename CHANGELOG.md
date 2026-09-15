@@ -28,9 +28,13 @@ One version covers the whole repository. Both apps are built from `r99.version` 
 
 - **Walks, runs and rides record their route** from the phone's own GPS (not Google's location
   service, so it works without Google apps). Location is asked for the first time one is started,
-  and followed only while that workout is running and its notification is showing, which reads
-  "GPS ±N m" until there is a fix worth showing. The route stays on the phone, in a file of its own.
-  Distance, pace and the drawn route follow in later changes.
+  and followed only while that workout is running. The route stays on the phone, in a file of its own.
+- **Distance and pace, live on the workout's notification** ("1.24 km · 5:32 /km", or speed for a
+  ride), in kilometres or miles as set. A phone standing still does not add distance: positions are
+  averaged over a few seconds and count only once they have moved clearly past the GPS's own stated
+  accuracy, and jumps nobody could make, such as reflections off buildings, are dropped. Until the
+  GPS has a good enough fix it says "Waiting for GPS". The drawn route and splits on screen follow
+  in a later change.
 
 ## 0.4.1 — 14 September 2026
 
