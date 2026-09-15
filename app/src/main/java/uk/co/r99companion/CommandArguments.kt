@@ -81,6 +81,7 @@ val COMMAND_ARGUMENTS: Map<Pair<Int, Int>, Pair<Int, String>> = mapOf(
         (0x02 to 0x28) to (2 to "getMeasurementFunction"),
         (0x03 to 0x00) to (3 to "appFindDevice"),
         (0x03 to 0x03) to (2 to "appBloodCalibration"),
+        (0x03 to 0x0C) to (2 to "appRunModeStart/appRunModeEnd"),
         (0x03 to 0x0E) to (1 to "appControlTakePhoto"),
         (0x03 to 0x16) to (1 to "appShutDown"),
         (0x03 to 0x17) to (2 to "appTemperatureCorrect"),

@@ -88,7 +88,8 @@ The ring is supposed to set its own clock at midnight. On this one it does not �
 does not tick" — so writing it is the only way to get a usable timestamp, at the cost of a step
 count the ring clears at midnight anyway. The debugger still marks it `risky` so it prompts
 before sending.
-| `05 02`/`04`/`06`/`1A` | none | stored history: sport, sleep, heart, blood oxygen | verified as reachable; all returned zero records |
+| `05 02`/`04`/`06`/`1A` | none | stored history: half-hour steps, sleep, heart, blood oxygen | verified; `05 02` is step buckets, not workouts — see "Stored steps, by the half hour" |
+| `03 0C` | `<01 start / 00 end> <sport>` | `AppRunMode` — the ring's own sport session | **verified**, accepted — see "Sport mode" |
 
 The two literal payloads `"GC"` and `"GF"` are copied from the vendor app. Queries the ring does
 not implement answer with a single payload byte `FC` — on this ring that covers
@@ -367,13 +368,57 @@ app and the vendor's. The ring reports `Sleep` as a supported feature, so this i
 store rather than an unsupported query: nothing had been recorded yet. Sleep has since filled
 in and is decoded below; sport is still empty.
 
-Sport has stayed empty through every capture since, days with long walks in them included, and
-the firmware's own log shows `Delete Sport Record` alongside the other housekeeping — the ring
-records a session only for a sport mode it was explicitly put into, and rotates that away like
-everything else. There is no event to subscribe to either: no flag in `GetDeviceSupportFunction`
+Sport stayed empty through every capture until 15 September 2026, when it answered five
+records — and those turned out not to be sessions at all but step buckets; see "Stored steps, by
+the half hour" below. The firmware's own log shows `Delete Sport Record` alongside the other
+housekeeping, so the store is rotated like everything else. There is no event to subscribe to either: no flag in `GetDeviceSupportFunction`
 recognises an activity, and the sport bits that are set are modes to enter, not things reported.
 Vitals therefore finds workouts on the phone instead, from the cadence between step pushes — see
 `WorkoutDetector` in the Vitals sources.
+
+### Stored steps, by the half hour — verified
+
+`Health_HistorySport` (`05 02`) answers a count, then pushes the records as `05 11`: fourteen
+bytes each, only for half-hours that had steps in them. Captured 15 September 2026:
+
+```
+<-- 05 02 | 05 00 ...                                     count = 5
+<-- 05 11 | F0 38 3B 32  F8 3F 3B 32  34 00  25 00  02 00 | ...
+            start        end          steps  metres kcal
+```
+
+Start and end are uint32 LE seconds since 2000-01-01, on the ring's UTC clock, half an hour
+apart; steps, distance in metres and calories are uint16 LE. The five decoded as 52, 88, 97, 31
+and 27 steps across the night and morning. This is the step counter's own record of what
+happened while nothing was connected, which the running total pushed on `fea1` cannot give after
+the fact. Vitals does not read it yet.
+
+### Sport mode — verified in part, 15 September 2026
+
+`AppRunMode` (`03 0C`) puts the ring into one of its sport modes. The payload is from the
+vendor's `YCBTClient.appRunModeStart`/`appRunModeEnd`: `01 <sport>` to start and `00 <sport>` to
+end, with the sport from `Constants.SportType` — `01` run, `03` ride, `08` walking, `1A` yoga,
+among 37.
+
+```
+--> 03 0C 08 00 01 01 08 ED          start, run
+<-- 03 0C 07 00 00 7C 35             accepted
+<-- 06 0D 25 00 | 4E 00 … 07 00 …    once a second: heart rate at [0], seconds elapsed at [21]
+--> 03 0C 08 00 00 01 39 DE          end, run
+<-- 03 0C 07 00 00 7C 35             accepted
+<-- 04 0C 08 00 00 00 59 06          DeviceSportModeControl: the session has ended
+```
+
+Offsets are into the payload, after the four header bytes. For the whole of a 77-second session
+the ring streamed `06 0D` — `Real_UploadOGA` in the SDK's table, reused here — every second, the
+heart rate climbing from 78 to 82 and the counter from 0 to 77; every other byte stayed zero,
+which may only be because the ring was not moving. The ring's `2a37` heart-rate push went on
+alongside.
+
+**Not yet known:** whether a sport session is stored. `Health_HistorySportMode` (`05 2D`)
+answered no records straight after that session, which was short and still; a session of several
+minutes with steps in it is the next capture to take, and so is whether the ring goes on
+measuring once the phone is out of reach.
 
 ### Stored sleep — verified
 
