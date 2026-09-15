@@ -64,6 +64,14 @@ class RingFrameTest {
         assertEquals(listOf("01", "00", "00"), frames.map { "%02X".format(it[4]) })
     }
 
+    @Test fun `phone side monitor policy rejects optical results the firmware still sends`() {
+        val heartOnly = Ring.Monitors(heart = true, oxygen = false, pressure = false)
+        assertEquals(true, heartOnly.allows(Ring.Reading.Heart(72)))
+        assertEquals(false, heartOnly.allows(Ring.Reading.Oxygen(98)))
+        assertEquals(false, heartOnly.allows(Ring.Reading.Pressure(120, 80)))
+        assertEquals(true, heartOnly.allows(Ring.Reading.Motion(1, 1, 1)))
+    }
+
     @Test fun `asking for stored heart rates is the frame the ring answered`() {
         assertEquals("05 06 06 00 83 20", Ring.storedHeart().hex())
     }
@@ -177,6 +185,10 @@ class RingFrameTest {
     /** This is the actual failure mode: a factory reset left the RTC days behind reality. */
     @Test fun `clockLooksStopped catches a ring stuck days behind the phone`() {
         assertEquals(true, Ring.clockLooksStopped(listOf(System.currentTimeMillis() - 2 * 24 * 60 * 60 * 1000L)))
+    }
+
+    @Test fun `clockLooksStopped catches a ring clock in the future`() {
+        assertEquals(true, Ring.clockLooksStopped(listOf(System.currentTimeMillis() + 60 * 60 * 1000L)))
     }
 
     @Test fun `clockLooksStopped has nothing to judge with no timestamps`() {

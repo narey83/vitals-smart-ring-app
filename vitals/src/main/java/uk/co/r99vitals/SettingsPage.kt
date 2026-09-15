@@ -370,20 +370,19 @@ fun SettingsPage(
         // Everything about the ring in one place: what it is, keeping it connected, its firmware,
         // and picking it up again if the app ever loses track of it.
         Section("RING")
+        val canUpdate = ringAddress != null && RingCompatibility.canUpdate(state.ringName, firmware)
         Panel {
             Detail("Device", state.ringName ?: (ringAddress ?: "not paired"))
             Divider()
             Detail("Firmware", firmware ?: "unknown")
             Divider()
             Detail("Battery", state.battery?.let { "$it%" } ?: "unknown")
-        }
-        if (ringAddress != null) {
+            Divider()
             // Flashing is the one operation that can brick the ring, so the firmware actions show
             // only for a ring the app is sure it can safely write — see RingCompatibility. The
             // re-pair action stays available whatever the firmware, so a ring the app has lost
             // track of can always be found again.
-            val canUpdate = RingCompatibility.canUpdate(state.ringName, firmware)
-            Panel {
+            if (ringAddress != null) {
                 if (canUpdate) {
                     if (state.firmwareStatus != null) Value("Check for firmware update", state.firmwareStatus) { onCheckFirmware() }
                     else Action("Check for firmware update") { onCheckFirmware() }
@@ -401,7 +400,11 @@ fun SettingsPage(
                     Divider()
                 }
                 Action("Forget this ring and pick another") { onRepair() }
+            } else {
+                Action("Find your ring") { onRepair() }
             }
+        }
+        if (ringAddress != null) {
             val block = RingCompatibility.reason(state.ringName, firmware)
             Note(
                 block ?: ("Updating the firmware runs the maker's own flashing process over " +
@@ -409,8 +412,6 @@ fun SettingsPage(
                     "the ring on its charger and the phone beside it: a dropped link mid-update can " +
                     "brick it.")
             )
-        } else {
-            Panel { Action("Find your ring") { onRepair() } }
         }
 
         // A phone setting, not the ring's: whether Android lets the collector keep the link up

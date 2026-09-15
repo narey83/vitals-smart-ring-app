@@ -4,6 +4,29 @@ One version covers the whole repository. Both apps are built from `r99.version` 
 [`gradle.properties`](gradle.properties), and each release is tagged `v<version>`. See
 "Versions and releases" in the [README](README.md#versions-and-releases).
 
+## Unreleased
+
+### Fixed
+
+- **A workout you start keeps recording with the app closed.** It used to live in the Workout
+  screen's own memory, so it ended whenever Android reclaimed the screen, as it often does during a
+  run with the phone in a pocket. The collector now runs it, as it already ran detected walks, and
+  writes it down as it goes. A collector restarted mid-session picks the session up again, readings
+  included, and starts the ring measuring again once it reconnects. This is groundwork for GPS routes,
+  which need a session that outlives the screen.
+- **Readings the ring took while out of reach arrive without opening the app.** The ring measures
+  on its schedule and keeps the results in its own store until asked, and only the open app used to
+  ask, so a long enough spell away could see them rotated off the ring first. The collector now asks
+  on every reconnection and every half hour.
+
+### Added
+
+- **Walks, runs and rides record their route** from the phone's own GPS (not Google's location
+  service, so it works without Google apps). Location is asked for the first time one is started,
+  and followed only while that workout is running and its notification is showing, which reads
+  "GPS ±N m" until there is a fix worth showing. The route stays on the phone, in a file of its own.
+  Distance, pace and the drawn route follow in later changes.
+
 ## 0.4.1 — 14 September 2026
 
 The firmware update actually flashes now.
@@ -67,7 +90,7 @@ case, so Vitals now tells a reading of the wearer from one of the case or the ai
   always kept.
 - **Readings pause while the ring is off your finger.** This firmware answers no wear-status
   command, but a measurement started off the finger is refused in about a second — the one
-  on-finger signal it gives over BLE. The collector probes on it every ten minutes off the
+  on-finger signal it gives over BLE. The collector probes on it every minute off the
   charger and pauses the automatic readings when it comes back unworn. Recovered by
   disassembling the ring's firmware; see [PROTOCOL.md](PROTOCOL.md).
 - **The Today page shows whether the ring is on a finger**, beside the battery: a fingerprint

@@ -82,7 +82,26 @@ object Ring {
         val oxygen: Boolean = true,
         /** Off by default — see [automaticMonitoring] for why. */
         val pressure: Boolean = false
-    )
+    ) {
+        /**
+         * The firmware may report all three optical results after only one monitor fires, and
+         * refuses the pressure setting command altogether. The phone therefore enforces the
+         * switches as well as sending them to the ring.
+         */
+        fun allows(type: Int) = when (type) {
+            HEART -> heart
+            OXYGEN -> oxygen
+            PRESSURE -> pressure
+            else -> true
+        }
+
+        fun allows(reading: Reading) = when (reading) {
+            is Reading.Heart -> heart
+            is Reading.Oxygen -> oxygen
+            is Reading.Pressure -> pressure
+            else -> true
+        }
+    }
 
     /**
      * Turns on the ring's own periodic sampling, so it gathers without being asked.
@@ -169,14 +188,18 @@ object Ring {
      * left at its post-factory-reset default of 2020-01-01 — see PROTOCOL.md's "The ring's
      * clock stops, and every later record inherits the stopped time". A day's slack means
      * ordinary drift, a genuinely slow radio link, or a night that simply ran past midnight
-     * never trips this by accident.
+     * never trips this by accident. A timestamp several minutes in the future is different: it
+     * means a reset or updater wrote local wall time into the UTC clock (one hour ahead during
+     * British summer time), so correct that promptly rather than waiting for a day's error.
      */
     fun clockLooksStopped(ringTimestamps: List<Long>): Boolean {
         val newest = ringTimestamps.maxOrNull() ?: return false
-        return kotlin.math.abs(System.currentTimeMillis() - newest) > CLOCK_STALE_THRESHOLD
+        val behindBy = System.currentTimeMillis() - newest
+        return behindBy > CLOCK_STALE_THRESHOLD || behindBy < -CLOCK_FUTURE_THRESHOLD
     }
 
     private const val CLOCK_STALE_THRESHOLD = 24 * 60 * 60 * 1000L
+    private const val CLOCK_FUTURE_THRESHOLD = 5 * 60 * 1000L
 
     /**
      * settingSkin: one byte, the vendor's own six-level scale, lightest to darkest — see
