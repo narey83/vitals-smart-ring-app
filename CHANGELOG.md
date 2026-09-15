@@ -18,6 +18,11 @@ One version covers the whole repository. Both apps are built from `r99.version` 
   on its schedule and keeps the results in its own store until asked, and only the open app used to
   ask, so a long enough spell away could see them rotated off the ring first. The collector now asks
   on every reconnection and every half hour.
+- **A reading stamped in the future no longer splinters the ones after it.** A record the ring
+  stored while its clock ran ahead sorted after every live reading, so each new heart rate became a
+  row of its own rather than settling into the last, several a second during a workout. Readings
+  now settle against the newest one that has actually happened, and such a record is not shown as
+  the latest.
 
 ### Added
 

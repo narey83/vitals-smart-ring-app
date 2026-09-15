@@ -123,6 +123,23 @@ class HistoryTest {
         assertEquals(listOf(89, 91), entries.map { it.value }.sorted())
     }
 
+    /** What happened on 15 September: a future row turned a workout into a row a reading. */
+    @Test fun `readings after a future-dated one still settle into one another`() {
+        val history = history()
+        history.backfill("heart", listOf(Triple(System.currentTimeMillis() + 40 * 60 * 1000, 79, 0)))
+        history.record("heart", 72, burst = 10_000L)
+        history.record("heart", 73, burst = 10_000L)
+        history.record("heart", 74, burst = 10_000L)
+        assertEquals(listOf(74, 79), history.all().map { it.value }.sorted())
+    }
+
+    @Test fun `the latest reading is not one from the future`() {
+        val history = history()
+        history.record("heart", 70)
+        history.backfill("heart", listOf(Triple(System.currentTimeMillis() + 60 * 60 * 1000, 88, 0)))
+        assertEquals(70, history.latest("heart")?.value)
+    }
+
     /** Blood pressure is two numbers. A backfill that kept only the systolic would lose half. */
     @Test fun `a backfilled blood pressure keeps both halves`() {
         val history = history()

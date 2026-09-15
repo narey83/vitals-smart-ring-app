@@ -54,10 +54,14 @@ class History private constructor(private val dbFile: File, legacy: File?) {
     fun record(kind: String, value: Int, extra: Int = 0, burst: Long = BURST, manual: Boolean = false) = synchronized(writing) {
         transaction {
             val now = System.currentTimeMillis()
-            val old = latest(kind)
+            // Settled into the newest row that has actually happened. A record the ring stamped
+            // while its clock ran ahead sorts after now, and measuring against that one made every
+            // reading after it a row of its own — several a second during a workout.
+            val old = latest(kind, now)
             if (old != null && now - old.at.time in 0 until burst) {
                 db.update("readings", values(value, extra, manual || old.manual),
-                    "id = (SELECT id FROM readings WHERE kind = ? ORDER BY at DESC, id DESC LIMIT 1)", arrayOf(kind))
+                    "id = (SELECT id FROM readings WHERE kind = ? AND at <= ? ORDER BY at DESC, id DESC LIMIT 1)",
+                    arrayOf(kind, now.toString()))
             } else insert(now, kind, value, extra, manual)
         }
     }
@@ -121,9 +125,8 @@ class History private constructor(private val dbFile: File, legacy: File?) {
         arrayOf(kind, start.toString(), end.toString())
     ).use { c -> buildList { while (c.moveToNext()) add(c.entry()) } }
 
-    fun latest(kind: String): Entry? = db.rawQuery(
-        "SELECT at,kind,value,extra,manual FROM readings WHERE kind=? ORDER BY at DESC,id DESC LIMIT 1", arrayOf(kind)
-    ).use { if (it.moveToFirst()) it.entry() else null }
+    /** The newest reading as of [now]. One dated after it is a wrong clock, not the latest news. */
+    fun latest(kind: String, now: Long = System.currentTimeMillis()): Entry? = latestBefore(kind, now + 1)
 
     fun latestBefore(kind: String, at: Long): Entry? = db.rawQuery(
         "SELECT at,kind,value,extra,manual FROM readings WHERE kind=? AND at<? ORDER BY at DESC,id DESC LIMIT 1",
