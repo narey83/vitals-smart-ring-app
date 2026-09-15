@@ -50,7 +50,7 @@ full 329-command table.
 | Ring commands | all 329, searchable | the handful a health app needs |
 | Runs when closed | no | yes, a foreground service holds the link |
 | Keeps history | a frame log, shareable as a file | readings and workouts, on the phone |
-| Health Connect | no | writes heart rate, SpO₂, blood pressure, steps |
+| Health Connect | no | writes heart rate, SpO₂, blood pressure, steps, sleep, workouts with their routes and distance |
 | Finds the ring | scan, or a hardcoded address | pick once, then remembered |
 
 The short version: **the debugger is the microscope, Vitals is the product.** Everything Vitals
