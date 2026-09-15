@@ -8,6 +8,13 @@ One version covers the whole repository. Both apps are built from `r99.version` 
 
 ### Fixed
 
+- **Workout heart rate stays with the workout.** Readings taken during a workout were written
+  into the day's readings as well, so a run's hour of high heart rates sat among the scheduled
+  resting ones and pulled up the day's averages and trends. A workout's readings now go to the
+  workout only, including any the ring stored during it, and the day's readings are only the
+  scheduled ones and the ones you take. A workout also keeps its heart rate when scheduled heart
+  readings are switched off, which used to drop it. Workout heart rate goes to Health Connect
+  with its workout instead of among the day's readings.
 - **Pace no longer carries on through a stop.** Stood at a crossing, the pace shown was the pace
   from before the stop, since nothing new arrived to replace it. It now clears after half a minute
   without moving.

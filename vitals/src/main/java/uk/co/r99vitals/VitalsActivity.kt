@@ -1409,7 +1409,7 @@ class VitalsActivity : AppCompatActivity() {
                 "oxygen" -> Ring.OXYGEN
                 else -> Ring.PRESSURE
             }
-            if (interval > 0 && monitors.allows(type)) history.backfill(kind, readings)
+            if (interval > 0 && monitors.allows(type)) history.backfill(kind, readings, outside = workouts.spans(live))
             resyncClockIfStopped(readings.map { it.first })
             return
         }
@@ -1426,10 +1426,11 @@ class VitalsActivity : AppCompatActivity() {
         when (val reading = Ring.read(value)) {
             is Ring.Reading.Heart -> {
                 ui = ui.copy(heart = reading.bpm, heartAt = System.currentTimeMillis())
-                if (keep(reading)) history.record(
-                    "heart", reading.bpm,
-                    burst = if (ui.workout != null) 10_000L else 90_000L,
-                    manual = userAsked
+                // A workout's readings belong to the workout, which the collector keeps; only one
+                // the wearer asked for mid-workout also goes into the day's. Read from the session
+                // file rather than the screen, which learns of a detected session seconds late.
+                if (keep(reading) && (userAsked || live.read() == null)) history.record(
+                    "heart", reading.bpm, manual = userAsked
                 )
                 showTrend()
             }

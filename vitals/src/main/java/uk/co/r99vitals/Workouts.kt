@@ -103,6 +103,15 @@ class Workouts(private val file: File) {
         Unit
     }
 
+    /**
+     * When sessions ran, so readings the ring stored during one are kept out of the day's
+     * readings, as the live ones are. The minute a session is kept to is rounded down, so each
+     * span runs a minute past it; the session running now, if any, counts up to this moment.
+     */
+    fun spans(live: LiveSession? = null, now: Long = System.currentTimeMillis()): List<LongRange> =
+        all().map { it.at.time..(it.at.time + (it.minutes + 1) * 60_000L) } +
+            listOfNotNull(live?.read()?.let { it.since..now })
+
     /** Every session held, oldest first. Lines written before sessions were detected, or had routes, still read. */
     fun all(): List<Session> = synchronized(writing) {
         runCatching {

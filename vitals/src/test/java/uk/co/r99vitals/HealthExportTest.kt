@@ -44,6 +44,18 @@ class HealthExportTest {
         assertTrue(exercise.endTime.toEpochMilli() > start + 10 * 60_000L + 40_000)
     }
 
+    /** Kept out of the day's readings, a workout's heart rate has to travel with the workout. */
+    @Test fun `a workout's heart rate goes across as its own, inside the session`() {
+        val timed = session(sport = "Yoga").copy(beats = listOf(80, 95, 101), beatSeconds = listOf(5, 300, 640))
+        val records = HealthExport.workoutRecords(timed, emptyList(), ZoneOffset.UTC)
+        val heart = records.filterIsInstance<androidx.health.connect.client.records.HeartRateRecord>().single()
+        assertEquals(listOf(80L, 95L, 101L), heart.samples.map { it.beatsPerMinute })
+        val exercise = records.filterIsInstance<ExerciseSessionRecord>().single()
+        // 640 s is past the ten minutes the session was kept to; the session stretches to hold it.
+        assertTrue(!exercise.endTime.isBefore(heart.samples.last().time))
+        assertEquals("workout-$start-heart", heart.metadata.clientRecordId)
+    }
+
     @Test fun `yoga has no route and no distance`() {
         val records = HealthExport.workoutRecords(session(sport = "Yoga"), emptyList(), ZoneOffset.UTC)
         assertEquals(1, records.size)

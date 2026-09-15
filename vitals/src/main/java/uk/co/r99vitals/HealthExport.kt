@@ -60,7 +60,8 @@ class HealthExport(private val context: Context) {
             val good = fixes.filter { it.at >= start && (it.accuracy ?: 0f) <= Track.WORST_ACCURACY }
             // The session is kept to the minute, and a route's last fix can land in the seconds
             // after it; Health Connect refuses a route that runs past the end of its session.
-            val end = maxOf(start + session.minutes * 60_000L, (good.lastOrNull()?.at ?: 0L) + 1_000L)
+            val lastBeat = session.beatSeconds.lastOrNull()?.let { start + it * 1000L } ?: 0L
+            val end = maxOf(start + session.minutes * 60_000L, (good.lastOrNull()?.at ?: 0L) + 1_000L, lastBeat + 1_000L)
             val id = "workout-$start"
             // Started by the wearer is actively recorded; found in the step counter is not.
             val phone = Device(type = Device.TYPE_PHONE)
@@ -99,7 +100,20 @@ class HealthExport(private val context: Context) {
                     metadata = meta("distance")
                 )
             }
-            return listOfNotNull(exercise, distance)
+            // A workout's heart rate is kept with the workout rather than among the day's readings,
+            // so it goes across here, as the workout's own, or other apps would never see it.
+            val beats = session.beatSeconds.takeIf { it.size == session.beats.size && it.isNotEmpty() }?.let { seconds ->
+                HeartRateRecord(
+                    startTime = Instant.ofEpochMilli(start), startZoneOffset = zone,
+                    endTime = Instant.ofEpochMilli(end), endZoneOffset = zone,
+                    samples = session.beats.zip(seconds).map { (bpm, second) ->
+                        HeartRateRecord.Sample(Instant.ofEpochMilli(start + second * 1000L), bpm.toLong())
+                    },
+                    metadata = if (session.detected) Metadata.autoRecorded(Device(type = Device.TYPE_RING), "$id-heart", 1)
+                        else Metadata.activelyRecorded(Device(type = Device.TYPE_RING), "$id-heart", 1)
+                )
+            }
+            return listOfNotNull(exercise, distance, beats)
         }
     }
 

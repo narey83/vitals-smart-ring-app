@@ -85,13 +85,14 @@ class History private constructor(private val dbFile: File, legacy: File?) {
 
     /**
      * Readings the ring stored while nothing was listening. Any taken while it sat on the charger
-     * are dropped: the sensor was reading the case, not a finger.
+     * are dropped: the sensor was reading the case, not a finger. So are any inside [outside] —
+     * the spans workouts ran for, whose readings belong to the workout and not to the day.
      */
-    fun backfill(kind: String, readings: List<Triple<Long, Int, Int>>) {
+    fun backfill(kind: String, readings: List<Triple<Long, Int, Int>>, outside: List<LongRange> = emptyList()) {
         if (readings.isEmpty()) return
         synchronized(writing) { transaction {
             readings.forEach { (at, value, extra) ->
-                if (chargingAt(at)) return@forEach
+                if (chargingAt(at) || outside.any { at in it }) return@forEach
                 db.rawQuery("SELECT 1 FROM readings WHERE kind=? AND at>? AND at<? LIMIT 1",
                     arrayOf(kind, (at - BURST).toString(), (at + BURST).toString())).use {
                     if (!it.moveToFirst()) insert(at, kind, value, extra, false)

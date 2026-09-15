@@ -140,6 +140,18 @@ class HistoryTest {
         assertEquals(70, history.latest("heart")?.value)
     }
 
+    /** A run's readings are the run's. Stored ones from inside it stay out of the day's. */
+    @Test fun `a backfill drops what the ring stored during a workout`() {
+        val history = history()
+        val run = 1_700_000_000_000L..(1_700_000_000_000L + 30 * 60_000L)
+        history.backfill("heart", listOf(
+            Triple(run.first - 60_000L, 62, 0),
+            Triple(run.first + 10 * 60_000L, 151, 0),
+            Triple(run.last + 60_000L, 88, 0)
+        ), outside = listOf(run))
+        assertEquals(listOf(62, 88), history.all().filter { it.kind == "heart" }.map { it.value })
+    }
+
     /** Blood pressure is two numbers. A backfill that kept only the systolic would lose half. */
     @Test fun `a backfilled blood pressure keeps both halves`() {
         val history = history()

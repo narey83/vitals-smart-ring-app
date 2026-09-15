@@ -632,12 +632,20 @@ class CollectorService : Service() {
     private fun elapsedMinutes() = ((System.currentTimeMillis() - (manual?.since ?: detector.since)) / 60_000)
 
     /**
-     * How close together two heart readings may be and still count as the same one.
+     * A heart rate, to whichever record it belongs to — never both.
      *
-     * The day's default settles a burst of readings into one row, which is right for a ring
-     * measuring every fifteen minutes and wrong for a workout, where the climb is the point.
+     * While a workout runs, the sensor is streaming for the workout, and its readings are the
+     * workout's curve: written into the day's readings too, a run's hour of 150s sat among the
+     * resting 60s and dragged every average and trend. So a session's readings go to the session
+     * alone, and the day's readings are what the ring measured on its schedule or when asked.
      */
-    private fun duringAWorkout() = if (sessionRunning) 10_000L else 90_000L
+    private fun heard(bpm: Int) {
+        latest = "$bpm bpm"
+        if (sessionRunning) keepBeat(bpm)
+        else if (chosenMonitors().heart) history.record("heart", bpm)
+        refresh()
+    }
+
 
     /**
      * A beat, if it belongs to a session and is not one the last few seconds already hold.
@@ -1086,12 +1094,8 @@ class CollectorService : Service() {
                 // A changed value here during a probe is the ring measuring a finger, which is the
                 // probe's whole answer: on, and end it. Off the finger this bit stays put.
                 if (probing) markWorn(true)
-                if (charging || !worn || System.currentTimeMillis() < probeVitalsUntil ||
-                    !chosenMonitors().heart) return
-                history.record("heart", it, burst = duringAWorkout())
-                latest = "$it bpm"
-                keepBeat(it)
-                refresh()
+                if (charging || !worn || System.currentTimeMillis() < probeVitalsUntil) return
+                heard(it)
             }
             return
         }
@@ -1108,7 +1112,7 @@ class CollectorService : Service() {
             Triple("pressure", Ring.PRESSURE, Ring.readStoredPressure(value))
         ).firstOrNull { it.third.isNotEmpty() }?.let { (kind, type, readings) ->
             log.note("${readings.size} stored $kind records, newest ${readings.maxOf { it.first }.let { clock.format(java.util.Date(it)) }}")
-            if (chosenMonitors().allows(type)) history.backfill(kind, readings)
+            if (chosenMonitors().allows(type)) history.backfill(kind, readings, outside = workouts.spans(live))
             // Not taken as evidence about the clock, as sleep is. The store keeps records stamped
             // while the clock was wrong long after it is put right, and this is asked on every
             // connection, night included — where setting the clock ends the night being staged.
@@ -1120,17 +1124,15 @@ class CollectorService : Service() {
         if (probing && reading is Ring.Reading.Heart) markWorn(true)
         if (reading != null &&
             (reading is Ring.Reading.Heart || reading is Ring.Reading.Oxygen || reading is Ring.Reading.Pressure) &&
-            (System.currentTimeMillis() < probeVitalsUntil || !chosenMonitors().allows(reading))) return
+            (System.currentTimeMillis() < probeVitalsUntil ||
+                // A workout's heart rate is kept whatever the schedule's switches say: they are
+                // about the day's readings, and a workout asked for its own.
+                (!chosenMonitors().allows(reading) && !(sessionRunning && reading is Ring.Reading.Heart)))) return
         // On the charger, or off the finger, the sensor is reading the case or the air rather than
         // the wearer: drop the live vitals, keep everything else.
         if ((charging || !worn) && (reading is Ring.Reading.Heart || reading is Ring.Reading.Oxygen || reading is Ring.Reading.Pressure)) return
         when (reading) {
-            is Ring.Reading.Heart -> {
-                history.record("heart", reading.bpm, burst = duringAWorkout())
-                latest = "${reading.bpm} bpm"
-                keepBeat(reading.bpm)
-                refresh()
-            }
+            is Ring.Reading.Heart -> heard(reading.bpm)
             is Ring.Reading.Oxygen -> {
                 history.record("oxygen", reading.percent)
                 latest = "${reading.percent}% blood oxygen"

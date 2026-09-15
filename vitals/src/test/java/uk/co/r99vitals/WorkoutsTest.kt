@@ -96,6 +96,15 @@ class WorkoutsTest {
         assertEquals(listOf(emptyList<Int>(), emptyList()), workouts.all().map { it.beatSeconds })
     }
 
+    @Test fun `a session's span runs from its start past its last minute, and a live one to now`() {
+        val workouts = workouts()
+        workouts.save("Run", start, listOf(140), endedAt = start + 20 * 60_000 + 30_000)
+        val live = LiveSession(folder.newFile("session.txt")).apply { begin("Walk", start + 3_600_000, detected = true) }
+        val spans = workouts.spans(live, now = start + 3_700_000)
+        assertEquals(listOf(start..(start + 21 * 60_000), (start + 3_600_000)..(start + 3_700_000)), spans)
+        assertTrue(spans[0].contains(start + 20 * 60_000 + 30_000))
+    }
+
     @Test fun `correcting the sport keeps the distance`() {
         val workouts = workouts()
         workouts.save("Walk", start, listOf(100), metres = 2_000, movingSeconds = 1_500)
