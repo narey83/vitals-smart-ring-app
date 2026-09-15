@@ -13,7 +13,7 @@ import java.io.File
  *
  * Written as it goes rather than kept only in memory, so a collector restarted mid-run picks the
  * session up where it was instead of losing it. The first line says what the session is, and
- * every line after it is one heart reading.
+ * every line after it is one heart reading and when it was taken.
  */
 class LiveSession(private val file: File) {
     constructor(context: Context) : this(File(context.filesDir, "session.txt"))
@@ -45,22 +45,34 @@ class LiveSession(private val file: File) {
     fun rename(sport: String) = synchronized(writing) {
         runCatching {
             val now = read() ?: return@runCatching
-            val beats = beats()
-            file.writeText(header(sport, now.since, now.detected) + beats.joinToString("") { "$it\n" })
+            val readings = file.readLines().drop(1).filter { it.isNotBlank() }
+            file.writeText(header(sport, now.since, now.detected) + readings.joinToString("") { "$it\n" })
         }
         Unit
     }
 
-    fun beat(bpm: Int) = synchronized(writing) {
-        runCatching { if (file.exists()) file.appendText("$bpm\n") }
+    fun beat(bpm: Int, at: Long = System.currentTimeMillis()) = synchronized(writing) {
+        runCatching { if (file.exists()) file.appendText("$bpm,$at\n") }
         Unit
     }
 
     /** The session's curve so far, oldest first. */
-    fun beats(): List<Int> = synchronized(writing) {
+    fun beats(): List<Int> = readings().map { it.first }
+
+    /**
+     * When each of [beats] was taken, so the curve can be laid against the route. A reading
+     * written before readings carried their time has none, and reads as 0.
+     */
+    fun beatTimes(): List<Long> = readings().map { it.second }
+
+    private fun readings(): List<Pair<Int, Long>> = synchronized(writing) {
         runCatching {
             if (!file.exists()) return@runCatching emptyList()
-            file.readLines().drop(1).mapNotNull { it.toIntOrNull() }
+            file.readLines().drop(1).mapNotNull { line ->
+                val parts = line.split(",")
+                val bpm = parts[0].toIntOrNull() ?: return@mapNotNull null
+                bpm to (parts.getOrNull(1)?.toLongOrNull() ?: 0L)
+            }
         }.getOrDefault(emptyList())
     }
 

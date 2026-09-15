@@ -31,7 +31,12 @@ class Workouts(private val file: File) {
         /** How far it went, from the phone's GPS, for a walk, run or ride that recorded a route. */
         val metres: Int = 0,
         /** Time spent moving rather than stood at a crossing — what pace is measured over. */
-        val movingSeconds: Int = 0
+        val movingSeconds: Int = 0,
+        /**
+         * Seconds from the start at which each of [beats] was taken, so the curve can be laid
+         * against the route's pace. Empty for sessions saved before readings kept their time.
+         */
+        val beatSeconds: List<Int> = emptyList()
     ) {
         /** Metres a second over moving time, or null without a route. */
         val speed: Double? get() = if (metres > 0 && movingSeconds > 0) metres.toDouble() / movingSeconds else null
@@ -59,7 +64,8 @@ class Workouts(private val file: File) {
         detected: Boolean = false,
         steps: Int = 0,
         metres: Int = 0,
-        movingSeconds: Int = 0
+        movingSeconds: Int = 0,
+        beatTimes: List<Long> = emptyList()
     ): Boolean {
         // A session the ring gave no readings for is nothing at all — unless it was detected,
         // where the steps are the record, or it went somewhere, where the route is: a ring off
@@ -68,7 +74,11 @@ class Workouts(private val file: File) {
         val minutes = ((endedAt - startedAt) / 60_000).toInt().coerceAtLeast(1)
         val line = listOf(
             startedAt.toString(), sport, minutes.toString(), beats.joinToString(" "),
-            if (detected) "1" else "0", steps.toString(), metres.toString(), movingSeconds.toString()
+            if (detected) "1" else "0", steps.toString(), metres.toString(), movingSeconds.toString(),
+            // Only when every reading has its time: a curve half laid out in time is worse than none.
+            if (beatTimes.size == beats.size && beatTimes.none { it == 0L }) {
+                beatTimes.joinToString(" ") { ((it - startedAt) / 1000).coerceAtLeast(0).toString() }
+            } else ""
         ).joinToString(",")
         return synchronized(writing) { runCatching { file.appendText("$line\n") }.isSuccess }
     }
@@ -107,7 +117,10 @@ class Workouts(private val file: File) {
                     detected = parts.getOrNull(4) == "1",
                     steps = parts.getOrNull(5)?.toIntOrNull() ?: 0,
                     metres = parts.getOrNull(6)?.toIntOrNull() ?: 0,
-                    movingSeconds = parts.getOrNull(7)?.toIntOrNull() ?: 0
+                    movingSeconds = parts.getOrNull(7)?.toIntOrNull() ?: 0,
+                    beatSeconds = parts.getOrNull(8)?.split(" ")?.mapNotNull { it.toIntOrNull() }
+                        ?.takeIf { it.size == parts[3].split(" ").count { b -> b.toIntOrNull() != null } }
+                        ?: emptyList()
                 )
             }
         }.getOrDefault(emptyList())

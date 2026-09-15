@@ -36,6 +36,24 @@ class LiveSessionTest {
         assertEquals(listOf(110, 124, 131), again.beats())
     }
 
+    @Test fun `each reading keeps when it was taken, through a rename`() {
+        val live = session()
+        live.begin("Walk", start, detected = true)
+        live.beat(100, start + 5_000); live.beat(104, start + 10_000)
+        live.rename("Run")
+        assertEquals(listOf(100, 104), live.beats())
+        assertEquals(listOf(start + 5_000, start + 10_000), live.beatTimes())
+    }
+
+    /** A session in flight when the app updated holds readings written without their time. */
+    @Test fun `readings written before they carried a time still read`() {
+        val file = File(folder.root, "session.txt")
+        file.writeText("Run,$start,0\n120\n125,${start + 5_000}\n")
+        val live = session(file)
+        assertEquals(listOf(120, 125), live.beats())
+        assertEquals(listOf(0L, start + 5_000), live.beatTimes())
+    }
+
     @Test fun `beginning again forgets the last session's readings`() {
         val live = session()
         live.begin("Walk", start, detected = true)

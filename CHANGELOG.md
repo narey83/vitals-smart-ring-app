@@ -8,6 +8,10 @@ One version covers the whole repository. Both apps are built from `r99.version` 
 
 ### Fixed
 
+- **Pace no longer carries on through a stop.** Stood at a crossing, the pace shown was the pace
+  from before the stop, since nothing new arrived to replace it. It now clears after half a minute
+  without moving.
+
 - **A workout you start keeps recording with the app closed.** It used to live in the Workout
   screen's own memory, so it ended whenever Android reclaimed the screen, as it often does during a
   run with the phone in a pocket. The collector now runs it, as it already ran detected walks, and
@@ -39,6 +43,9 @@ One version covers the whole repository. Both apps are built from `r99.version` 
   finished session lists its distance and pace, and **Show route** opens the shape of the route
   drawn without a map, its splits per kilometre or mile, and moving time against the whole. A
   route can be deleted from there, with a second tap to be sure, keeping the session's distance.
+- **Pace and heart rate on one timeline**, under a finished workout's route: when the pace
+  dropped on a hill and the heart rate rose anyway. Heart readings in a workout now keep the time
+  they were taken; workouts saved before this show the route and splits without the chart.
 - **Share a route as GPX**, from **Show route** on a finished workout, to any app that opens one
   (OsmAnd, Strava and the like), which is how a route gets onto a real map. Nothing is sent
   unless you pick an app to send it to.

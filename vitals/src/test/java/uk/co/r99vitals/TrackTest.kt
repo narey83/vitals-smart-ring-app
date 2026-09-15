@@ -107,6 +107,16 @@ class TrackTest {
         assertEquals(Track.of("Run", fixes).metres, track.metres, 0.0)
     }
 
+    @Test fun `speed through a route is sampled every half minute, and a wait has none`() {
+        val walk = heading(seconds = 300, speed = 1.5)
+        val wait = heading(seconds = 120, speed = 0.0, from = 450.0, startAt = start + 300_000, random = Random(11))
+        val samples = Track.speeds("Walk", walk + wait)
+        assertEquals(listOf(30, 60, 90), samples.take(3).map { it.first })
+        assertEquals(1.5, samples[5].second!!, 0.3)
+        // Well into the wait, the half minute before has no movement in it.
+        assertNull(samples.first { it.first == 390 }.second)
+    }
+
     @Test fun `pace reads per kilometre or mile, and a ride reads as speed`() {
         assertEquals("5:33 /km", Track.pace(3.0, metric = true))
         assertEquals("8:56 /mi", Track.pace(3.0, metric = false))

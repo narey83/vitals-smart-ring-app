@@ -77,3 +77,62 @@ private fun drawable(fixes: List<Route.Fix>): List<Route.Fix> {
 }
 
 private const val MOST_POINTS = 600
+
+/**
+ * Heart rate and speed on one clock, so a climb in one can be read against the other: the hill
+ * where the pace dropped and the heart rate went up anyway.
+ *
+ * Each line has its own scale, top to bottom of the box, since beats and metres a second share
+ * no unit; what is compared is when they move, not their heights. Faster is drawn higher. The
+ * speed line breaks where the wearer stood still rather than falling to the floor.
+ */
+@Composable
+fun PaceHeartChart(
+    beats: List<Int>,
+    beatSeconds: List<Int>,
+    speeds: List<Pair<Int, Double?>>,
+    heart: Color,
+    pace: Color,
+    modifier: Modifier
+) {
+    Canvas(modifier) {
+        val end = maxOf(beatSeconds.lastOrNull() ?: 0, speeds.lastOrNull()?.first ?: 0)
+        if (end <= 0) return@Canvas
+        val pad = 6.dp.toPx()
+        val tall = size.height - pad * 2
+        fun x(second: Int) = size.width * second / end
+
+        // Faint quarter lines: enough to see where half-way was without becoming graph paper.
+        for (q in 1..3) {
+            val at = size.width * q / 4
+            drawLine(pace.copy(alpha = 0.12f), Offset(at, 0f), Offset(at, size.height), strokeWidth = 1.dp.toPx())
+        }
+
+        val moving = speeds.mapNotNull { it.second }
+        if (moving.size >= 2) {
+            val low = moving.min(); val span = (moving.max() - low).coerceAtLeast(0.3)
+            fun y(v: Double) = (pad + tall - (v - low) / span * tall).toFloat()
+            var path: Path? = null
+            val lines = mutableListOf<Path>()
+            speeds.forEach { (second, speed) ->
+                if (speed == null) { path = null; return@forEach }
+                val p = path
+                if (p == null) path = Path().apply { moveTo(x(second), y(speed)) }.also { lines += it }
+                else p.lineTo(x(second), y(speed))
+            }
+            lines.forEach { drawPath(it, pace, style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round)) }
+        }
+
+        if (beats.size >= 2 && beatSeconds.size == beats.size) {
+            // The same short running mean the heart curve uses elsewhere, for the one-beat staircase.
+            val smooth = beats.indices.map { i -> beats.subList((i - 2).coerceAtLeast(0), (i + 3).coerceAtMost(beats.size)).average() }
+            val low = smooth.min(); val span = (smooth.max() - low).coerceAtLeast(6.0)
+            fun y(v: Double) = (pad + tall - (v - low) / span * tall).toFloat()
+            val line = Path().apply {
+                moveTo(x(beatSeconds[0]), y(smooth[0]))
+                for (i in 1 until smooth.size) lineTo(x(beatSeconds[i]), y(smooth[i]))
+            }
+            drawPath(line, heart, style = Stroke(width = 2.5.dp.toPx(), cap = StrokeCap.Round, join = StrokeJoin.Round))
+        }
+    }
+}

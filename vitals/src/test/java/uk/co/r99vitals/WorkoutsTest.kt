@@ -82,6 +82,20 @@ class WorkoutsTest {
         assertEquals(listOf("Ride"), workouts.all().map { it.sport })
     }
 
+    @Test fun `a session keeps when each reading was taken`() {
+        val workouts = workouts()
+        workouts.save("Run", start, listOf(120, 140, 150), beatTimes = listOf(start + 5_000, start + 65_000, start + 125_000))
+        assertEquals(listOf(5, 65, 125), workouts.all().single().beatSeconds)
+    }
+
+    /** Laid out in time or not at all: one reading without a time would shift every one after it. */
+    @Test fun `readings not all timed are kept without times`() {
+        val workouts = workouts()
+        workouts.save("Run", start, listOf(120, 140), beatTimes = listOf(0L, start + 5_000))
+        workouts.save("Walk", start + 1, listOf(90, 95), beatTimes = listOf(start + 5_000))
+        assertEquals(listOf(emptyList<Int>(), emptyList()), workouts.all().map { it.beatSeconds })
+    }
+
     @Test fun `correcting the sport keeps the distance`() {
         val workouts = workouts()
         workouts.save("Walk", start, listOf(100), metres = 2_000, movingSeconds = 1_500)

@@ -361,6 +361,24 @@ private fun RouteDetail(
     var confirming by remember { mutableStateOf(false) }
     Column {
         RouteMap(fixes, Ink.motion, Modifier.fillMaxWidth().height(190.dp))
+        if (session.beatSeconds.isNotEmpty() && fixes.size > 1) {
+            val speeds = remember(fixes) { Track.speeds(session.sport, fixes) }
+            Spacer(Modifier.height(12.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Legend(Ink.heart, "Heart rate")
+                Spacer(Modifier.width(14.dp))
+                Legend(Ink.motion, if (session.sport == "Ride") "Speed" else "Pace")
+            }
+            Spacer(Modifier.height(6.dp))
+            PaceHeartChart(
+                session.beats, session.beatSeconds, speeds, Ink.heart, Ink.motion,
+                Modifier.fillMaxWidth().height(110.dp)
+            )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("0:00", color = Ink.muted, fontSize = 10.sp)
+                Text(clock((maxOf(session.beatSeconds.last(), speeds.lastOrNull()?.first ?: 0)) * 1000L), color = Ink.muted, fontSize = 10.sp)
+            }
+        }
         if (track.splits.isNotEmpty()) {
             Spacer(Modifier.height(12.dp))
             Text(
@@ -400,6 +418,15 @@ private fun RouteDetail(
             color = if (confirming) Ink.heart else Ink.muted, fontSize = 13.sp,
             modifier = Modifier.clickableNoRippleShared { if (confirming) onDelete() else confirming = true }
         )
+    }
+}
+
+@Composable
+private fun Legend(colour: androidx.compose.ui.graphics.Color, label: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Spacer(Modifier.size(8.dp).background(colour, CircleShape))
+        Spacer(Modifier.width(6.dp))
+        Text(label, color = Ink.muted, fontSize = 11.sp)
     }
 }
 

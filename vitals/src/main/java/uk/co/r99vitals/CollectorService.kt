@@ -80,6 +80,7 @@ class CollectorService : Service() {
 
     /** The heart curve of the session going on now, kept whole rather than folded into the day. */
     private var sessionBeats = mutableListOf<Int>()
+    private var sessionBeatTimes = mutableListOf<Long>()
     private var lastBeatAt = 0L
 
     /** Set when a previous run of this service left the ring measuring for a lost session. */
@@ -175,6 +176,7 @@ class CollectorService : Service() {
         if (left != null && !left.detected && System.currentTimeMillis() - left.since < MANUAL_STALE) {
             manual = left
             sessionBeats = live.beats().toMutableList()
+            sessionBeatTimes = live.beatTimes().toMutableList()
             log.note("carrying on the ${left.sport} started at ${clock.format(java.util.Date(left.since))}")
         } else {
             // detectedSince is where a session was written down before 0.4.2.
@@ -558,6 +560,7 @@ class CollectorService : Service() {
 
     private fun startSession(sport: String, since: Long, detected: Boolean) {
         sessionBeats = mutableListOf()
+        sessionBeatTimes = mutableListOf()
         lastBeatAt = 0L
         // Written down so the screen can show the session, and so a service killed mid-session
         // knows on restart what it was in the middle of.
@@ -587,7 +590,8 @@ class CollectorService : Service() {
         val went = Track.of(own.sport, route.fixes())
         val kept = workouts.save(
             own.sport, own.since, sessionBeats.toList(),
-            metres = went.metres.toInt(), movingSeconds = (went.movingMillis / 1000).toInt()
+            metres = went.metres.toInt(), movingSeconds = (went.movingMillis / 1000).toInt(),
+            beatTimes = sessionBeatTimes.toList()
         )
         // A route belongs to a session. One that was not worth keeping takes its route with it.
         if (!kept) route.delete()
@@ -601,7 +605,8 @@ class CollectorService : Service() {
         val beats = sessionBeats.toList()
         workouts.save(
             sport = event.sport, startedAt = event.startedAt, beats = beats,
-            endedAt = event.endedAt, detected = true, steps = event.steps
+            endedAt = event.endedAt, detected = true, steps = event.steps,
+            beatTimes = sessionBeatTimes.toList()
         )
         forgetSession(putTheSensorBack = true)
         // After the save, never before: the notification says a session was recorded, and it is
@@ -620,6 +625,7 @@ class CollectorService : Service() {
         live.clear()
         detectedSport = null
         sessionBeats = mutableListOf()
+        sessionBeatTimes = mutableListOf()
         lastBeatAt = 0L
     }
 
@@ -645,7 +651,8 @@ class CollectorService : Service() {
         if (now - lastBeatAt < 5_000) return
         lastBeatAt = now
         sessionBeats.add(bpm)
-        live.beat(bpm)
+        sessionBeatTimes.add(now)
+        live.beat(bpm, now)
         refresh()
     }
 

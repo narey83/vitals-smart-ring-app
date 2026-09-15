@@ -118,8 +118,13 @@ class Track(
      * anything, or when nothing has moved in it — standing still has no pace.
      */
     fun currentSpeed(): Double? {
-        val newest = recent.lastOrNull() ?: return null
-        val oldest = recent.first()
+        // Measured back from the last fix heard, not the last place moved to. Stood still, no new
+        // anchor arrives to push old ones out, and the pace from before the wait would otherwise
+        // be shown all the way through it.
+        val now = last?.at ?: return null
+        val window = recent.filter { now - it.fix.at <= PACE_WINDOW }
+        val newest = window.lastOrNull() ?: return null
+        val oldest = window.first()
         val span = newest.fix.at - oldest.fix.at
         if (span < SHORTEST_PACE || newest.moving == oldest.moving) return null
         // Over moving time, so a pause inside the window does not drag the pace down.
@@ -180,6 +185,26 @@ class Track(
             val dLon = Math.toRadians(b.longitude - a.longitude)
             val h = sin(dLat / 2).let { it * it } + cos(lat1) * cos(lat2) * sin(dLon / 2).let { it * it }
             return 2 * EARTH * asin(sqrt(h.coerceIn(0.0, 1.0)))
+        }
+
+        /**
+         * Speed through the route, sampled every [every]: seconds from the first fix, and metres a
+         * second then — or null where the wearer was stood still or the GPS had nothing, so a line
+         * drawn from it breaks at a wait rather than diving to zero.
+         */
+        fun speeds(sport: String, fixes: List<Route.Fix>, every: Long = 30_000L): List<Pair<Int, Double?>> {
+            val start = fixes.firstOrNull()?.at ?: return emptyList()
+            val track = Track(sport)
+            var next = start + every
+            val samples = mutableListOf<Pair<Int, Double?>>()
+            fixes.forEach { fix ->
+                track.add(fix)
+                while (fix.at >= next) {
+                    samples += ((next - start) / 1000).toInt() to track.currentSpeed()
+                    next += every
+                }
+            }
+            return samples
         }
 
         fun of(sport: String, fixes: List<Route.Fix>, metric: Boolean = true) =
