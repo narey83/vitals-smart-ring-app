@@ -344,7 +344,7 @@ Two consequences for Vitals:
   with varying live readings; off a finger the same start aborts in ~1 s with `04 0E … 00 02`
   and no readings. So Vitals can tell worn from unworn by starting a measurement and reading that
   byte — the only such signal over BLE, and stronger than charging alone. Vitals' collector
-  probes on this every ten minutes off the charger and pauses recording when it comes back
+  probes on this off the charger — every 15 s while the state is changing or a link is fresh, easing to every 45 s once it holds — and pauses recording when it comes back
   unworn; see `watchWear` in the Vitals sources.
 
 This corrected an earlier under-observation: the `04 0E` row once recorded the second payload

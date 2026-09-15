@@ -6,6 +6,14 @@ One version covers the whole repository. Both apps are built from `r99.version` 
 
 ## Unreleased
 
+### Changed
+
+- **Finger on/off is detected faster.** The wear probe now quickens to every 15 seconds while the
+  state is changing or just after connecting, and eases back to every 45 seconds once it holds, so
+  taking the ring off or putting it on is noticed within a probe or two rather than up to a minute.
+  A probe the link glitched on is retried straight away instead of after a full wait, and the probe
+  is given a little longer to hear a slow finger, so an on-finger ring is never briefly misread as off.
+
 ### Fixed
 
 - **Workout heart rate stays with the workout.** Readings taken during a workout were written

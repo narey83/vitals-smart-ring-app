@@ -117,7 +117,7 @@ class CollectorService : Service() {
 
     /**
      * Whether the ring is on a finger, as the last completed measurement said. Kept fresh by a
-     * probe every [WEAR_ASK] — see [watchWear]. Starts true so a genuine reading is never dropped
+     * probe that quickens when it changes — see [watchWear]. Starts true so a genuine reading is never dropped
      * before the first probe has had its say, and is not carried across restarts: unlike charging
      * it changes too often, and the ring gives no history to read it back from.
      */
@@ -834,21 +834,38 @@ class CollectorService : Service() {
     }
 
     /**
-     * Every [WEAR_ASK], off the charger and outside a workout: run a short measurement purely to
-     * learn whether the ring is on a finger. It is the only on-finger signal this firmware gives
-     * over BLE — the wear-status commands are refused and the SIG contact bit is stuck, so
-     * PROTOCOL.md's finger-detection section settles on this. A measurement taken off the finger
-     * the ring aborts in about a second with a `04 0E` result of [Ring.MEASURE_NOT_WORN] and no
-     * reading; a real one streams heart values, which [store] records as usual and which end the
-     * probe early in [markWorn]. Skipped while charging (already paused) or mid-workout (those
-     * measurements report wear for free).
+     * Whether an answer to the probe in flight has arrived, so a probe that timed out with
+     * neither a reading nor a result is told from one that was answered, and retried sooner.
+     */
+    private var probeAnswered = false
+
+    /**
+     * Probe fast until this moment, then settle back. Set on connecting and whenever wear
+     * changes, so a ring just taken off or put on is noticed within a probe or two, while a ring
+     * sitting steadily on a finger is left to a slower probe that costs its sensor less.
+     */
+    private var wearFastUntil = 0L
+
+    /**
+     * Off the charger and outside a workout: run a short measurement purely to learn whether the
+     * ring is on a finger. It is the only on-finger signal this firmware gives over BLE — the
+     * wear-status commands are refused and the SIG contact bit is stuck, so PROTOCOL.md's
+     * finger-detection section settles on this. A measurement taken off the finger the ring aborts
+     * in about a second with a `04 0E` result of [Ring.MEASURE_NOT_WORN] and no reading; a real
+     * one streams heart values, which [store] records as usual and which end the probe early in
+     * [markWorn]. Skipped while charging (already paused) or mid-workout (those measurements
+     * report wear for free).
+     *
+     * How soon it runs again depends on whether anything is changing: [WEAR_ASK_FAST] within
+     * [FAST_WINDOW] of a change or a fresh connection, [WEAR_ASK_STEADY] once the state has held.
      */
     private val watchWear = object : Runnable {
         override fun run() {
-            handler.postDelayed(this, WEAR_ASK)
+            handler.postDelayed(this, if (System.currentTimeMillis() < wearFastUntil) WEAR_ASK_FAST else WEAR_ASK_STEADY)
             if (charging || probing || sessionRunning) return
             val link = gatt?.takeIf { connected } ?: return
             probing = true
+            probeAnswered = false
             suppressAutomaticVitalsFor(PROBE_TIMEOUT + PROBE_SETTLE)
             enqueue { writeCommand(link, Ring.startMeasuring(Ring.HEART)) }
             // A probe that brings back neither a reading nor a result is abandoned, so a lost one
@@ -857,7 +874,21 @@ class CollectorService : Service() {
         }
     }
 
-    private val endProbe = Runnable { endProbeNow() }
+    /**
+     * The probe timed out. If nothing answered it was a glitch — the link stuttered, or the
+     * sensor was slow — so probe again soon rather than wait a whole steady interval to retry.
+     */
+    private val endProbe = Runnable {
+        if (probing && !probeAnswered) probeFastFor(FAST_WINDOW)
+        endProbeNow()
+    }
+
+    /** Enter the fast-probe window, and bring the next probe forward if it was due later. */
+    private fun probeFastFor(window: Long) {
+        wearFastUntil = maxOf(wearFastUntil, System.currentTimeMillis() + window)
+        handler.removeCallbacks(watchWear)
+        handler.postDelayed(watchWear, WEAR_ASK_FAST)
+    }
 
     /** Stops a probe's measurement, once its answer is in or it has waited long enough. */
     private fun endProbeNow() {
@@ -869,12 +900,15 @@ class CollectorService : Service() {
 
     /**
      * On or off a finger, as a completed measurement just said. Only a change is logged and shown;
-     * a probe in flight is ended here, since its answer has now arrived.
+     * a probe in flight is ended here, since its answer has now arrived. A change keeps probing
+     * fast for a while, so a ring taken off and put straight back is caught both ways.
      */
     private fun markWorn(on: Boolean) {
+        probeAnswered = true
         endProbeNow()
         if (on == worn) return
         worn = on
+        probeFastFor(FAST_WINDOW)
         // Shared with the open app, which shows it on the home page and cannot probe for itself.
         saved.edit().putBoolean("worn", on).apply()
         log.note(if (on) "ring on a finger: readings resume" else "ring off a finger: readings paused")
@@ -1003,6 +1037,8 @@ class CollectorService : Service() {
             if (sessionRunning) handler.post { measureForTheSession() }
             else if (settleSensor) send(Ring.stopMeasuring(), Ring.streamLive(false))
             settleSensor = false
+            // A fresh link may be a ring just picked up; learn its wear promptly, then settle.
+            handler.post { probeFastFor(FAST_WINDOW) }
         }
 
         override fun onMtuChanged(gatt: BluetoothGatt, mtu: Int, status: Int) {
@@ -1155,7 +1191,9 @@ class CollectorService : Service() {
             is Ring.Reading.Finished -> when {
                 reading.notWorn -> markWorn(false)
                 reading.result == Ring.MEASURE_OK -> markWorn(true)
-                else -> endProbeNow()
+                // The ring answered, but with neither worn nor not-worn; the probe is done, and
+                // it counts as answered so it is not retried as a glitch.
+                else -> { probeAnswered = true; endProbeNow() }
             }
             // ponytail: heart arrives on the SIG characteristic above, but automatic blood
             // oxygen and pressure still show up nowhere. Log what else the ring pushes while
@@ -1232,12 +1270,20 @@ class CollectorService : Service() {
         private const val STORED_ASK = 30 * 60 * 1000L
         /** How often the ring is asked whether it is on the charger. */
         private const val CHARGING_ASK = 2 * 60 * 1000L
-        /** How often the ring is probed for whether it is on a finger. See watchWear. */
-        private const val WEAR_ASK = 60 * 1000L
+        /** How often the ring is probed for wear while something is changing. See watchWear. */
+        private const val WEAR_ASK_FAST = 15 * 1000L
+        /** And once the state has held for a while, to spare the ring's sensor. */
+        private const val WEAR_ASK_STEADY = 45 * 1000L
+        /** How long a change, a fresh connection, or a glitched probe keeps probing fast. */
+        private const val FAST_WINDOW = 2 * 60 * 1000L
         /** The first state should be known soon after a collector restart and connection. */
         private const val FIRST_WEAR_ASK = 15 * 1000L
-        /** A wear probe bringing back nothing is abandoned after this. */
-        private const val PROBE_TIMEOUT = 8 * 1000L
+        /**
+         * A wear probe bringing back nothing is abandoned after this. Longer than the ~1 s an
+         * off-finger abort takes and the few seconds an on-finger measurement needs to stream its
+         * first reading, so a slow finger is never timed out and misread as off.
+         */
+        private const val PROBE_TIMEOUT = 12 * 1000L
         /** Lets optical notifications already queued by a stopped probe drain harmlessly. */
         private const val PROBE_SETTLE = 2 * 1000L
         /** Drops held characteristic values replayed while a new link is being established. */
