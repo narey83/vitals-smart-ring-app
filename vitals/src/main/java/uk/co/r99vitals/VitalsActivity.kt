@@ -332,6 +332,7 @@ class VitalsActivity : AppCompatActivity() {
                         RouteFile(Route.folder(this), at).delete()
                         ui = ui.copy(routes = routesHeld())
                     },
+                    onShareRoute = { at -> shareRoute(at) },
                     onCalibrate = { sheet = Sheet.Calibrate },
                     onRefreshSteps = { refreshSteps() },
                     dayFor = { pageFor(it) }
@@ -650,7 +651,7 @@ class VitalsActivity : AppCompatActivity() {
             Setup.Health -> {
                 if (!health.available || saved.getBoolean("askedHealth", false)) return
                 saved.edit().putBoolean("askedHealth", true).apply()
-                lifecycleScope.launch { if (!health.granted()) healthPermission.launch(health.permissions) }
+                lifecycleScope.launch { if (!health.granted()) healthPermission.launch(health.requested) }
             }
         }
     }
@@ -1187,7 +1188,7 @@ class VitalsActivity : AppCompatActivity() {
         healthLabel = "Checking Health Connect…"
         lifecycleScope.launch {
             if (health.granted()) writeToHealthConnect()
-            else healthPermission.launch(health.permissions)
+            else healthPermission.launch(health.requested)
         }
     }
 
@@ -1197,13 +1198,38 @@ class VitalsActivity : AppCompatActivity() {
             val outcome = runCatching {
                 val entries = history.all()
                 health.send(entries) + health.sendSteps(entries) +
-                    health.sendSleep(SleepInsight.merge(nights.all()))
+                    health.sendSleep(SleepInsight.merge(nights.all())) +
+                    health.sendWorkouts(workouts.all()) { at -> RouteFile(Route.folder(this@VitalsActivity), at).fixes() }
             }
             healthLabel = outcome.fold(
                 onSuccess = { if (it == 0) "Nothing to send yet" else "Sent $it records to Health Connect" },
                 onFailure = { "Health Connect refused: ${it.message ?: "unknown"}" }
             )
         }
+    }
+
+    /**
+     * One route, as GPX, to whichever app the wearer picks. Written to a folder of the cache that
+     * is emptied each time, so a shared route does not linger outside its workout.
+     */
+    private fun shareRoute(startedAt: Long) {
+        val session = ui.pastWorkouts.firstOrNull { it.at.time == startedAt } ?: return
+        val fixes = RouteFile(Route.folder(this), startedAt).fixes()
+        if (fixes.isEmpty()) return
+        val folder = java.io.File(cacheDir, "shared").apply { deleteRecursively(); mkdirs() }
+        val file = java.io.File(folder, Gpx.fileName(session.sport, startedAt))
+        runCatching { file.writeText(Gpx.of(session.sport, startedAt, fixes)) }.onFailure { return }
+        val uri = androidx.core.content.FileProvider.getUriForFile(this, "$packageName.shared", file)
+        startActivity(
+            Intent.createChooser(
+                Intent(Intent.ACTION_SEND).apply {
+                    type = "application/gpx+xml"
+                    putExtra(Intent.EXTRA_STREAM, uri)
+                    putExtra(Intent.EXTRA_SUBJECT, "${session.sport} route")
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }, "Share route"
+            )
+        )
     }
 
     private fun shareReadings() {

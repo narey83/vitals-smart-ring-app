@@ -168,7 +168,8 @@ all the time, and never follows it outside a workout.
 - **What it uses:** Android's own GPS provider, not Google's location service, so it works on
   phones without Google apps.
 - **Where it goes:** a file per workout in the app's own storage, `files/routes/<start>.csv`.
-  Nothing is sent anywhere. The route is drawn without a map, because map tiles would have to
+  Vitals sends it nowhere by itself. You can share one as a GPX file with an app of your choice,
+  and routes go to Health Connect with their workouts if you send those and allow routes there. The route is drawn without a map, because map tiles would have to
   be fetched from a server that would then know where you had been.
 - **Turning it off:** per sport in Settings → Workouts, or refuse the permission. A workout is
   still recorded without it, just without a route. Any single route can be deleted from its

@@ -4,12 +4,17 @@ import android.content.Context
 import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.BloodPressureRecord
+import androidx.health.connect.client.records.DistanceRecord
+import androidx.health.connect.client.records.ExerciseRoute
+import androidx.health.connect.client.records.ExerciseSessionRecord
 import androidx.health.connect.client.records.HeartRateRecord
 import androidx.health.connect.client.records.OxygenSaturationRecord
+import androidx.health.connect.client.records.Record
 import androidx.health.connect.client.records.SleepSessionRecord
 import androidx.health.connect.client.records.StepsRecord
 import androidx.health.connect.client.records.metadata.Device
 import androidx.health.connect.client.records.metadata.Metadata
+import androidx.health.connect.client.units.Length
 import androidx.health.connect.client.units.Percentage
 import androidx.health.connect.client.units.Pressure
 import java.time.Instant
@@ -30,11 +35,73 @@ class HealthExport(private val context: Context) {
         HealthPermission.getWritePermission(OxygenSaturationRecord::class),
         HealthPermission.getWritePermission(BloodPressureRecord::class),
         HealthPermission.getWritePermission(StepsRecord::class),
-        HealthPermission.getWritePermission(SleepSessionRecord::class)
+        HealthPermission.getWritePermission(SleepSessionRecord::class),
+        HealthPermission.getWritePermission(ExerciseSessionRecord::class),
+        HealthPermission.getWritePermission(DistanceRecord::class)
     )
+
+    /**
+     * What is asked for: everything above, and routes. Routes are asked for but not required —
+     * Health Connect lets them be refused on their own, and a workout goes across without its
+     * route rather than not at all.
+     */
+    val requested = permissions + HealthPermission.PERMISSION_WRITE_EXERCISE_ROUTE
 
     // The ring took these readings itself, so they are attributed to it rather than to the phone.
     private val ring = Metadata.autoRecorded(Device(type = Device.TYPE_RING))
+
+    companion object {
+        /**
+         * One workout as Health Connect records: the session, and its distance if it went
+         * anywhere. Kept apart from the client so it can be checked without Health Connect.
+         */
+        fun workoutRecords(session: Workouts.Session, fixes: List<Route.Fix>, zone: java.time.ZoneOffset): List<Record> {
+            val start = session.at.time
+            val good = fixes.filter { it.at >= start && (it.accuracy ?: 0f) <= Track.WORST_ACCURACY }
+            // The session is kept to the minute, and a route's last fix can land in the seconds
+            // after it; Health Connect refuses a route that runs past the end of its session.
+            val end = maxOf(start + session.minutes * 60_000L, (good.lastOrNull()?.at ?: 0L) + 1_000L)
+            val id = "workout-$start"
+            // Started by the wearer is actively recorded; found in the step counter is not.
+            val phone = Device(type = Device.TYPE_PHONE)
+            fun meta(kind: String) = if (session.detected) Metadata.autoRecorded(phone, "$id-$kind", 1)
+                else Metadata.activelyRecorded(phone, "$id-$kind", 1)
+            val route = good.takeIf { it.size >= 2 }?.let { kept ->
+                ExerciseRoute(kept.map { fix ->
+                    ExerciseRoute.Location(
+                        time = Instant.ofEpochMilli(fix.at),
+                        latitude = fix.latitude,
+                        longitude = fix.longitude,
+                        horizontalAccuracy = fix.accuracy?.let { Length.meters(it.toDouble()) },
+                        altitude = fix.altitude?.let { Length.meters(it) }
+                    )
+                })
+            }
+            val exercise = ExerciseSessionRecord(
+                startTime = Instant.ofEpochMilli(start), startZoneOffset = zone,
+                endTime = Instant.ofEpochMilli(end), endZoneOffset = zone,
+                metadata = meta("session"),
+                exerciseType = when (session.sport) {
+                    "Walk" -> ExerciseSessionRecord.EXERCISE_TYPE_WALKING
+                    "Run" -> ExerciseSessionRecord.EXERCISE_TYPE_RUNNING
+                    "Ride" -> ExerciseSessionRecord.EXERCISE_TYPE_BIKING
+                    "Yoga" -> ExerciseSessionRecord.EXERCISE_TYPE_YOGA
+                    else -> ExerciseSessionRecord.EXERCISE_TYPE_OTHER_WORKOUT
+                },
+                title = session.sport,
+                exerciseRoute = route
+            )
+            val distance = session.metres.takeIf { it > 0 }?.let {
+                DistanceRecord(
+                    startTime = Instant.ofEpochMilli(start), startZoneOffset = zone,
+                    endTime = Instant.ofEpochMilli(end), endZoneOffset = zone,
+                    distance = Length.meters(it.toDouble()),
+                    metadata = meta("distance")
+                )
+            }
+            return listOfNotNull(exercise, distance)
+        }
+    }
 
     fun availability(): Int = HealthConnectClient.getSdkStatus(context)
 
@@ -45,6 +112,24 @@ class HealthExport(private val context: Context) {
 
     suspend fun granted(): Boolean =
         client?.permissionController?.getGrantedPermissions()?.containsAll(permissions) ?: false
+
+    /**
+     * Workouts, each as an exercise session with its route where one was kept and allowed, and
+     * the distance it covered. Written with the start time as the record's own id, so sending
+     * again replaces a session rather than adding a second copy of it — including one whose sport
+     * has been corrected since.
+     */
+    suspend fun sendWorkouts(sessions: List<Workouts.Session>, routeOf: (Long) -> List<Route.Fix>): Int {
+        val connect = client ?: return 0
+        val routes = HealthPermission.PERMISSION_WRITE_EXERCISE_ROUTE in connect.permissionController.getGrantedPermissions()
+        val zone = ZoneId.systemDefault().rules.getOffset(Instant.now())
+        val records = sessions.flatMap { session ->
+            workoutRecords(session, if (routes) routeOf(session.at.time) else emptyList(), zone)
+        }
+        if (records.isEmpty()) return 0
+        records.chunked(400).forEach { connect.insertRecords(it) }
+        return records.size
+    }
 
     /**
      * Writes everything held to Health Connect and reports how many records went across.

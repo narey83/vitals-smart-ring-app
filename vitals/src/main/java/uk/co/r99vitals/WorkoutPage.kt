@@ -56,7 +56,8 @@ fun WorkoutPage(
     onStop: () -> Unit,
     onRelabel: (Long, String) -> Unit = { _, _ -> },
     routeOf: (Long) -> List<Route.Fix> = { emptyList() },
-    onDeleteRoute: (Long) -> Unit = {}
+    onDeleteRoute: (Long) -> Unit = {},
+    onShareRoute: (Long) -> Unit = {}
 ) {
     var pending by remember { mutableStateOf<String?>(null) }
     // Which finished session has its sports opened for correction, by its start time.
@@ -104,6 +105,7 @@ fun WorkoutPage(
                         hasRoute = session.at.time in state.routes,
                         routeOf = routeOf,
                         onDeleteRoute = onDeleteRoute,
+                        onShareRoute = onShareRoute,
                         onCorrect = {
                             correcting = if (correcting == session.at.time) null else session.at.time
                         },
@@ -261,6 +263,7 @@ private fun PastSession(
     hasRoute: Boolean = false,
     routeOf: (Long) -> List<Route.Fix> = { emptyList() },
     onDeleteRoute: (Long) -> Unit = {},
+    onShareRoute: (Long) -> Unit = {},
     onCorrect: () -> Unit = {},
     onRelabel: (String) -> Unit = {}
 ) {
@@ -301,7 +304,11 @@ private fun PastSession(
             if (hasRoute) {
                 Spacer(Modifier.height(12.dp))
                 if (showingRoute) {
-                    RouteDetail(session, metric, routeOf, onDelete = { onDeleteRoute(session.at.time); showingRoute = false })
+                    RouteDetail(
+                        session, metric, routeOf,
+                        onShare = { onShareRoute(session.at.time) },
+                        onDelete = { onDeleteRoute(session.at.time); showingRoute = false }
+                    )
                 } else {
                     Text(
                         "Show route", color = Ink.motion, fontSize = 13.sp,
@@ -346,6 +353,7 @@ private fun RouteDetail(
     session: Workouts.Session,
     metric: Boolean,
     routeOf: (Long) -> List<Route.Fix>,
+    onShare: () -> Unit,
     onDelete: () -> Unit
 ) {
     val fixes = remember(session.at.time) { routeOf(session.at.time) }
@@ -381,6 +389,11 @@ private fun RouteDetail(
             Spacer(Modifier.height(8.dp))
             Text("Moving ${clock(session.movingSeconds * 1000L)} of ${session.minutes} min", color = Ink.muted, fontSize = 12.sp)
         }
+        Spacer(Modifier.height(10.dp))
+        Text(
+            "Share as GPX", color = Ink.motion, fontSize = 13.sp,
+            modifier = Modifier.clickableNoRippleShared(onShare)
+        )
         Spacer(Modifier.height(10.dp))
         Text(
             if (confirming) "Tap again to delete this route for good" else "Delete route",

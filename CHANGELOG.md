@@ -39,6 +39,13 @@ One version covers the whole repository. Both apps are built from `r99.version` 
   finished session lists its distance and pace, and **Show route** opens the shape of the route
   drawn without a map, its splits per kilometre or mile, and moving time against the whole. A
   route can be deleted from there, with a second tap to be sure, keeping the session's distance.
+- **Share a route as GPX**, from **Show route** on a finished workout, to any app that opens one
+  (OsmAnd, Strava and the like), which is how a route gets onto a real map. Nothing is sent
+  unless you pick an app to send it to.
+- **Workouts go to Health Connect**, with the other readings, when you send them: each as an
+  exercise session of the right sport, with its route where one was kept and Health Connect's
+  separate route permission is allowed, and its distance. Sending again replaces a workout rather
+  than adding it twice.
 - **Settings → Workouts chooses which sports record a route**: walks, runs and rides, all on
   unless turned off.
 - **Setup asks for location**, on a page of its own before finding the ring, saying to choose
