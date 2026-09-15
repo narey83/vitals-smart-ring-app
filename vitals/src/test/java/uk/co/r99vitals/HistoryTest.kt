@@ -152,6 +152,16 @@ class HistoryTest {
         assertEquals(listOf(62, 88), history.all().filter { it.kind == "heart" }.map { it.value })
     }
 
+    /** The ring hands its store over again on every connection; a reading taken out stays out. */
+    @Test fun `a dismissed reading is not put back by the next backfill`() {
+        val history = history()
+        val stored = listOf(Triple(1_700_000_000_000L, 71, 0), Triple(1_700_000_900_000L, 68, 0))
+        history.backfill("heart", stored)
+        history.dismiss("heart", 1_700_000_000_000L)
+        history.backfill("heart", stored)
+        assertEquals(listOf(68), history.all().map { it.value })
+    }
+
     /** Blood pressure is two numbers. A backfill that kept only the systolic would lose half. */
     @Test fun `a backfilled blood pressure keeps both halves`() {
         val history = history()

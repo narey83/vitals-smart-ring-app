@@ -30,6 +30,9 @@ class History private constructor(private val dbFile: File, legacy: File?) {
     private val db = SQLiteDatabase.openOrCreateDatabase(dbFile, null).apply {
         execSQL("CREATE TABLE IF NOT EXISTS readings (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, kind TEXT NOT NULL, value INTEGER NOT NULL, extra INTEGER NOT NULL DEFAULT 0, manual INTEGER NOT NULL DEFAULT 0)")
         execSQL("CREATE INDEX IF NOT EXISTS readings_kind_at ON readings(kind, at)")
+        // Readings taken out on purpose, so the ring handing the same record back does not put
+        // it in again. See dismiss.
+        execSQL("CREATE TABLE IF NOT EXISTS dismissed (kind TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY (kind, at))")
     }
 
     init { migrate(legacy) }
@@ -92,7 +95,7 @@ class History private constructor(private val dbFile: File, legacy: File?) {
         if (readings.isEmpty()) return
         synchronized(writing) { transaction {
             readings.forEach { (at, value, extra) ->
-                if (chargingAt(at) || outside.any { at in it }) return@forEach
+                if (chargingAt(at) || outside.any { at in it } || isDismissed(kind, at)) return@forEach
                 db.rawQuery("SELECT 1 FROM readings WHERE kind=? AND at>? AND at<? LIMIT 1",
                     arrayOf(kind, (at - BURST).toString(), (at + BURST).toString())).use {
                     if (!it.moveToFirst()) insert(at, kind, value, extra, false)
@@ -100,6 +103,26 @@ class History private constructor(private val dbFile: File, legacy: File?) {
             }
         } }
     }
+
+    /**
+     * Takes a reading out and keeps it out.
+     *
+     * The ring keeps its stored records until it rotates them away, and hands the whole store
+     * over on every connection, so a reading simply deleted comes straight back with the next
+     * backfill. Its time is remembered instead, and a stored record at exactly that time is not
+     * written again.
+     */
+    fun dismiss(kind: String, at: Long) = synchronized(writing) {
+        transaction {
+            db.delete("readings", "kind = ? AND at = ?", arrayOf(kind, at.toString()))
+            db.insertWithOnConflict("dismissed", null, ContentValues().apply { put("kind", kind); put("at", at) },
+                SQLiteDatabase.CONFLICT_IGNORE)
+        }
+    }
+
+    private fun isDismissed(kind: String, at: Long) =
+        db.rawQuery("SELECT 1 FROM dismissed WHERE kind = ? AND at = ? LIMIT 1", arrayOf(kind, at.toString()))
+            .use { it.moveToFirst() }
 
     private fun transaction(action: () -> Unit) {
         db.beginTransaction()
