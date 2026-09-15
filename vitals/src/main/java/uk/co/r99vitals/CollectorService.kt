@@ -577,12 +577,21 @@ class CollectorService : Service() {
         handler.postDelayed(keepMeasuring, 35_000)
     }
 
-    /** The wearer finishing their own session. Kept whole: its sport, its length and its curve. */
+    /** The wearer finishing their own session. Kept whole: its sport, its length, its curve and its route. */
     private fun finishOwn() {
         val own = manual ?: return
-        workouts.save(own.sport, own.since, sessionBeats.toList())
-        log.note("${own.sport} finished from the Workout tab")
         stopRoute()
+        // Measured from the file rather than the live track, which a restart mid-run may not have
+        // been able to pick back up: the file has every fix whoever was listening at the time.
+        val route = RouteFile(Route.folder(this), own.since)
+        val went = Track.of(own.sport, route.fixes())
+        val kept = workouts.save(
+            own.sport, own.since, sessionBeats.toList(),
+            metres = went.metres.toInt(), movingSeconds = (went.movingMillis / 1000).toInt()
+        )
+        // A route belongs to a session. One that was not worth keeping takes its route with it.
+        if (!kept) route.delete()
+        log.note("${own.sport} finished from the Workout tab" + if (went.metres > 0) ", ${went.metres.toInt()} m" else "")
         manual = null
         forgetSession(putTheSensorBack = true)
         refresh()

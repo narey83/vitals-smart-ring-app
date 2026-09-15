@@ -1,6 +1,8 @@
 package uk.co.r99vitals
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -63,6 +65,30 @@ class WorkoutsTest {
         assertTrue(sessions[0].detected)
     }
 
+    @Test fun `a session that went somewhere keeps its distance and moving time`() {
+        val workouts = workouts()
+        workouts.save("Run", start, listOf(140, 150), endedAt = start + 30 * 60_000, metres = 5_120, movingSeconds = 1_710)
+        val session = workouts.all().single()
+        assertEquals(5_120, session.metres)
+        assertEquals(1_710, session.movingSeconds)
+        assertEquals(5_120.0 / 1_710, session.speed!!, 1e-9)
+    }
+
+    /** A ring off the finger on a ride gives no heart rate, and the ride still happened. */
+    @Test fun `a route alone is enough to keep a session`() {
+        val workouts = workouts()
+        assertTrue(workouts.save("Ride", start, emptyList(), metres = 12_400, movingSeconds = 2_400))
+        assertFalse(workouts.save("Yoga", start + 1, emptyList()))
+        assertEquals(listOf("Ride"), workouts.all().map { it.sport })
+    }
+
+    @Test fun `correcting the sport keeps the distance`() {
+        val workouts = workouts()
+        workouts.save("Walk", start, listOf(100), metres = 2_000, movingSeconds = 1_500)
+        workouts.relabel(start, "Run")
+        assertEquals(2_000, workouts.all().single().metres)
+    }
+
     /** Rows written before sessions could be detected have four fields, and still read. */
     @Test fun `sessions written by an older version still open`() {
         val file = folder.newFile("old.csv")
@@ -73,5 +99,7 @@ class WorkoutsTest {
         assertEquals(listOf(70, 72, 74), session.beats)
         assertTrue(!session.detected)
         assertEquals(0, session.steps)
+        assertEquals(0, session.metres)
+        assertNull(session.speed)
     }
 }

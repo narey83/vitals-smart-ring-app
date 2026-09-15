@@ -27,8 +27,15 @@ class Workouts(private val file: File) {
         /** Found in the step counter rather than started by the wearer. */
         val detected: Boolean = false,
         /** Steps taken during it, which is the whole evidence a detected session rests on. */
-        val steps: Int = 0
+        val steps: Int = 0,
+        /** How far it went, from the phone's GPS, for a walk, run or ride that recorded a route. */
+        val metres: Int = 0,
+        /** Time spent moving rather than stood at a crossing — what pace is measured over. */
+        val movingSeconds: Int = 0
     ) {
+        /** Metres a second over moving time, or null without a route. */
+        val speed: Double? get() = if (metres > 0 && movingSeconds > 0) metres.toDouble() / movingSeconds else null
+
         val low get() = beats.minOrNull() ?: 0
         val high get() = beats.maxOrNull() ?: 0
         val average get() = if (beats.isEmpty()) 0 else beats.average().toInt()
@@ -40,6 +47,9 @@ class Workouts(private val file: File) {
      * [endedAt] is passed rather than assumed to be now, because a detected session is only
      * recognised as over once it has been quiet for a while — taking the clock at the moment of
      * writing would stretch every one of them by the length of that silence.
+     *
+     * Answers whether anything was written, so a route recorded for a session that turned out to
+     * be nothing can be thrown away with it.
      */
     fun save(
         sport: String,
@@ -47,17 +57,20 @@ class Workouts(private val file: File) {
         beats: List<Int>,
         endedAt: Long = System.currentTimeMillis(),
         detected: Boolean = false,
-        steps: Int = 0
-    ) {
+        steps: Int = 0,
+        metres: Int = 0,
+        movingSeconds: Int = 0
+    ): Boolean {
         // A session the ring gave no readings for is nothing at all — unless it was detected,
-        // where the steps are the record and the heart curve is what could not be had.
-        if (beats.isEmpty() && steps == 0) return
+        // where the steps are the record, or it went somewhere, where the route is: a ring off
+        // the finger on a ride does not make the ride not have happened.
+        if (beats.isEmpty() && steps == 0 && metres == 0) return false
         val minutes = ((endedAt - startedAt) / 60_000).toInt().coerceAtLeast(1)
         val line = listOf(
             startedAt.toString(), sport, minutes.toString(), beats.joinToString(" "),
-            if (detected) "1" else "0", steps.toString()
+            if (detected) "1" else "0", steps.toString(), metres.toString(), movingSeconds.toString()
         ).joinToString(",")
-        synchronized(writing) { runCatching { file.appendText("$line\n") } }
+        return synchronized(writing) { runCatching { file.appendText("$line\n") }.isSuccess }
     }
 
     /**
@@ -80,7 +93,7 @@ class Workouts(private val file: File) {
         Unit
     }
 
-    /** Every session held, oldest first. Lines written before sessions were detected still read. */
+    /** Every session held, oldest first. Lines written before sessions were detected, or had routes, still read. */
     fun all(): List<Session> = synchronized(writing) {
         runCatching {
             file.readLines().mapNotNull { line ->
@@ -92,7 +105,9 @@ class Workouts(private val file: File) {
                     minutes = parts[2].toIntOrNull() ?: 0,
                     beats = parts[3].split(" ").mapNotNull { it.toIntOrNull() },
                     detected = parts.getOrNull(4) == "1",
-                    steps = parts.getOrNull(5)?.toIntOrNull() ?: 0
+                    steps = parts.getOrNull(5)?.toIntOrNull() ?: 0,
+                    metres = parts.getOrNull(6)?.toIntOrNull() ?: 0,
+                    movingSeconds = parts.getOrNull(7)?.toIntOrNull() ?: 0
                 )
             }
         }.getOrDefault(emptyList())
